@@ -25,7 +25,7 @@ SECRET_KEY = os.getenv(
 
 DEBUG = False
 
-ALLOWED_HOSTS = get_csv("DJANGO_ALLOWED_HOSTS", default=("127.0.0.1", "localhost"))
+ALLOWED_HOSTS = ["*"]
 
 DJANGO_APPS = [
     "django.contrib.admin",
