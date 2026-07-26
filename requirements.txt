@@ -1,0 +1,7 @@
+# Runtime dependencies for local development and deployment.
+Django>=5.2,<5.3
+djangorestframework>=3.16,<3.17
+psycopg[binary]>=3.1.8,<4.0
+python-dotenv>=1.0,<2.0
+openpyxl>=3.1,<4.0
+aiogram>=3.0,<4.0

@@ -1,0 +1,11 @@
+{% extends "admin/base_site.html" %}
+
+{% block content %}
+  <h1>{{ title }}</h1>
+  <form method="post" enctype="multipart/form-data">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <div class="submit-row"><input type="submit" value="Import qilish"></div>
+  </form>
+  <p>Kutiladigan ustunlar: employee_id, employee_name, group_code, order_id, status, sale_amount, profit_amount, ordered_at.</p>
+{% endblock %}

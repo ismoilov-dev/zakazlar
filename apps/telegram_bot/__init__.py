@@ -1,0 +1,1 @@
+"""Telegram presentation adapter application."""

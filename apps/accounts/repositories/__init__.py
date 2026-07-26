@@ -1,0 +1,1 @@
+"""Telegram account persistence adapters."""

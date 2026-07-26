@@ -1,0 +1,31 @@
+[build-system]
+requires = ["hatchling>=1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "sales-telegram-bot"
+version = "0.1.0"
+description = "Internal sales reporting platform with a Django admin and Telegram bot."
+readme = "README.md"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+    "Django>=5.2,<5.3",
+    "djangorestframework>=3.16,<3.17",
+    "psycopg[binary]>=3.1.8,<4.0",
+    "python-dotenv>=1.0,<2.0",
+    "openpyxl>=3.1,<4.0",
+    "aiogram>=3.0,<4.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["apps", "config"]
+
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+python_files = ["test_*.py", "*_tests.py"]

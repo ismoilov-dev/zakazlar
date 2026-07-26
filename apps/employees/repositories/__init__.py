@@ -1,0 +1,1 @@
+"""Employee persistence adapters."""

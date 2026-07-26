@@ -1,0 +1,1 @@
+"""Reporting-query persistence adapters."""

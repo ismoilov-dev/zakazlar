@@ -1,0 +1,1 @@
+"""Sales-group persistence adapters."""
