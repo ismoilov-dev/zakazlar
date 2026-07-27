@@ -8,10 +8,10 @@ from apps.common.models import TimeStampedModel
 class TelegramAccount(TimeStampedModel):
     """One Telegram identity bound to one active employee."""
 
-    employee = models.OneToOneField(
+    employee = models.ForeignKey(
         "employees.Employee",
         on_delete=models.CASCADE,
-        related_name="telegram_account",
+        related_name="telegram_accounts",
     )
     telegram_id = models.BigIntegerField(unique=True)
     username = models.CharField(max_length=255, blank=True)

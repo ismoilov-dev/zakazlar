@@ -2,7 +2,15 @@
 
 from django.contrib import admin
 
+from apps.accounts.models import TelegramAccount
 from apps.employees.models import Employee
+
+
+class TelegramAccountInline(admin.TabularInline):
+    model = TelegramAccount
+    extra = 0
+    readonly_fields = ("telegram_id", "username", "bound_at")
+    can_delete = True
 
 
 @admin.register(Employee)
@@ -12,3 +20,4 @@ class EmployeeAdmin(admin.ModelAdmin):
     search_fields = ("employee_id", "full_name")
     list_select_related = ("group",)
     ordering = ("employee_id",)
+    inlines = [TelegramAccountInline]

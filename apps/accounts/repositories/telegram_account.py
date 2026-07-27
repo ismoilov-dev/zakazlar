@@ -17,9 +17,8 @@ class TelegramAccountRepository(DjangoRepository[TelegramAccount]):
 
     @transaction.atomic
     def bind(self, *, employee: Employee, telegram_id: int, username: str) -> TelegramAccount:
-        self.model.objects.filter(telegram_id=telegram_id).exclude(employee=employee).delete()
         account, _ = self.model.objects.update_or_create(
-            employee=employee,
-            defaults={"telegram_id": telegram_id, "username": username},
+            telegram_id=telegram_id,
+            defaults={"employee": employee, "username": username},
         )
         return account

@@ -11,6 +11,13 @@ from typing import Any
 
 
 def postgresql_database() -> dict[str, dict[str, Any]]:
+    if os.getenv("USE_SQLITE", "false").lower() in ("true", "1"):
+        return {
+            "default": {
+                "ENGINE": "django.db.backends.sqlite3",
+                "NAME": ":memory:",
+            }
+        }
     """Build Django's default PostgreSQL connection configuration.
 
     `CONN_MAX_AGE` remains zero because this project exposes ASGI and uses an
