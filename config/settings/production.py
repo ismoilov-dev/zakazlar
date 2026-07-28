@@ -12,10 +12,15 @@ if not SECRET_KEY or SECRET_KEY.startswith(("django-insecure-", "replace-with-")
     message = "DJANGO_SECRET_KEY must be set to a secure value in production."
     raise RuntimeError(message)
 
-SESSION_COOKIE_SECURE = True
-CSRF_COOKIE_SECURE = True
+from .env import get_bool
+
+use_https = get_bool("DJANGO_USE_HTTPS", default=True)
+
+SESSION_COOKIE_SECURE = use_https
+CSRF_COOKIE_SECURE = use_https
 SECURE_CONTENT_TYPE_NOSNIFF = True
 SECURE_REFERRER_POLICY = "same-origin"
-SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
-SECURE_SSL_REDIRECT = True
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https") if use_https else None
+SECURE_SSL_REDIRECT = use_https
 X_FRAME_OPTIONS = "DENY"
+
