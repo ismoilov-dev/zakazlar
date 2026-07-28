@@ -15,7 +15,23 @@ class StatisticsRepository:
 
     def _get_current_month_qs(self):
         now = timezone.localtime()
-        return Sale.objects.filter(ordered_at__year=now.year, ordered_at__month=now.month)
+        qs_current = Sale.objects.filter(ordered_at__year=now.year, ordered_at__month=now.month)
+        if qs_current.exists():
+            return qs_current
+
+        latest_sale = Sale.objects.order_by("-ordered_at").first()
+        if latest_sale and latest_sale.ordered_at:
+            dt = timezone.localtime(latest_sale.ordered_at)
+            return Sale.objects.filter(ordered_at__year=dt.year, ordered_at__month=dt.month)
+
+        return Sale.objects.none()
+
+    def get_active_month_str(self) -> str:
+        qs = self._get_current_month_qs()
+        first_sale = qs.order_by("-ordered_at").first()
+        if first_sale and first_sale.ordered_at:
+            return timezone.localtime(first_sale.ordered_at).strftime("%m.%Y")
+        return timezone.localtime().strftime("%m.%Y")
 
     def employee_totals(self, employee_id: int) -> dict[str, object]:
         return self._aggregate(self._get_current_month_qs().filter(employee_id=employee_id))

@@ -35,6 +35,7 @@ class EmployeeDashboard:
     conversion_rate: float
     real_conversion_rate: float
     sources: list[dict[str, object]]
+    month_str: str = ""
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
@@ -48,6 +49,7 @@ class GroupDashboard:
     total_profit: Decimal
     leader_bonus: Decimal
     leader_personal_profit: Decimal
+    month_str: str = ""
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
@@ -138,6 +140,7 @@ class StatisticsService:
             conversion_rate=round(conversion_rate, 4),
             real_conversion_rate=round(real_conversion_rate, 4),
             sources=self.statistics.employee_sources(employee.pk),
+            month_str=self.statistics.get_active_month_str(),
         )
 
     def _group_dashboard(self, group: SalesGroup, leader: Employee) -> GroupDashboard:
@@ -151,4 +154,5 @@ class StatisticsService:
             total_profit=total_profit,
             leader_bonus=total_profit * LEADER_BONUS_RATE,
             leader_personal_profit=Decimal(leader_totals["total_profit"]),
+            month_str=self.statistics.get_active_month_str(),
         )
