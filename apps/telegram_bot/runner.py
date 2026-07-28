@@ -15,6 +15,7 @@ async def run_polling(token: str) -> None:
     dispatcher = Dispatcher()
     dispatcher.include_router(router)
     try:
+        await bot.delete_webhook(drop_pending_updates=True)
         await dispatcher.start_polling(bot, allowed_updates=dispatcher.resolve_used_update_types())
     finally:
         await bot.session.close()

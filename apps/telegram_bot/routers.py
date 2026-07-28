@@ -24,22 +24,27 @@ from apps.telegram_bot.services.formatting import employee_dashboard_text, group
 router = Router(name="sales_bot")
 
 
-def _run_background_sync() -> None:
-    try:
-        SheetsSyncService().sync_if_needed(force=False)
-    except Exception:
-        pass
+_sync_lock = asyncio.Lock()
 
 
 async def ensure_fresh_data_and_get_timestamp() -> tuple[str, bool]:
-    """Get DB sync timestamp instantly (0.001s) and trigger non-blocking background sync if needed."""
-    last_attempt = await sync_to_async(SyncLog.objects.order_by("-started_at").first)()
-    last_successful = await sync_to_async(SyncLog.get_last_successful)()
+    """Get DB sync timestamp instantly (0.01s) and trigger single-flight background sync if needed."""
     now = timezone.now()
+    last_attempt = await sync_to_async(lambda: SyncLog.objects.order_by("-started_at").first())()
+    last_successful = await sync_to_async(SyncLog.get_last_successful)()
 
-    # Trigger background sync if last sync was > 10 seconds ago or never
-    if not last_successful or not last_successful.finished_at or (now - last_successful.finished_at).total_seconds() > 10:
-        asyncio.create_task(asyncio.to_thread(_run_background_sync))
+    # Trigger background sync if not currently syncing and last sync is older than 15s
+    if not _sync_lock.locked():
+        if not last_successful or not last_successful.finished_at or (now - last_successful.finished_at).total_seconds() > 15:
+
+            async def _bg_sync():
+                async with _sync_lock:
+                    try:
+                        await sync_to_async(SheetsSyncService().sync_if_needed)(force=True)
+                    except Exception as exc:
+                        logger.warning("Background sync failed: %s", exc)
+
+            asyncio.create_task(_bg_sync())
 
     is_stale = False
     if last_attempt and last_attempt.status == SyncStatus.FAILED:
@@ -75,56 +80,6 @@ async def start(message: Message) -> None:
 
 @router.message(F.text.regexp(r"^\d{1,32}$"))
 async def bind_and_show_employee_stats(message: Message) -> None:
-    """Bind the sender Telegram identity and return full employee calculations with real-time sync."""
-    if message.from_user is None or message.text is None:
-        return
-
-    try:
-        user_id = normalize_employee_id(message.text)
-    except DomainError as exc:
-        await message.answer(str(exc))
-        return
-    except Exception as exc:
-        await message.answer(f"ID ko'rinishida xatolik: {exc}")
-        return
-
-STALE_THRESHOLD_SECONDS = 300
-
-
-async def _trigger_sync_fast() -> tuple[str, bool]:
-    """Sync Google Sheets with 1.2s timeout, falling back to background task if network is slow."""
-    is_stale = False
-    try:
-        await asyncio.wait_for(
-            sync_to_async(SheetsSyncService().sync_if_needed)(force=True),
-            timeout=1.2,
-        )
-    except Exception as exc:
-        logger.warning("Real-time sync slow or timed out (running in background): %s", exc)
-        # Run sync in background so user receives instant Telegram response
-        asyncio.create_task(sync_to_async(SheetsSyncService().sync_if_needed)(force=True))
-        is_stale = True
-
-    last_log = await sync_to_async(lambda: SyncLog.objects.first())()
-    last_successful = await sync_to_async(SyncLog.get_last_successful)()
-
-    if last_log and last_log.status == SyncStatus.FAILED:
-        is_stale = True
-
-    if last_successful and last_successful.finished_at:
-        ts_str = timezone.localtime(last_successful.finished_at).strftime("%d.%m.%Y %H:%M:%S")
-        elapsed = (timezone.now() - last_successful.finished_at).total_seconds()
-        if elapsed > STALE_THRESHOLD_SECONDS:
-            is_stale = True
-    else:
-        ts_str = timezone.localtime().strftime("%d.%m.%Y %H:%M:%S")
-        is_stale = True
-
-    return ts_str, is_stale
-
-
-@router.message(F.text.regexp(r"^\d{1,32}$"))
-async def bind_and_show_employee_stats(message: Message) -> None:
     """Bind the sender Telegram identity and return full employee calculations instantly."""
     if message.from_user is None or message.text is None:
         return
@@ -138,7 +93,7 @@ async def bind_and_show_employee_stats(message: Message) -> None:
         await message.answer(f"ID ko'rinishida xatolik: {exc}")
         return
 
-    ts_str, is_stale = await _trigger_sync_fast()
+    ts_str, is_stale = await ensure_fresh_data_and_get_timestamp()
 
     try:
         await sync_to_async(TelegramBindingService().bind)(
@@ -163,7 +118,7 @@ async def employee_stats(message: Message) -> None:
     if message.from_user is None:
         return
 
-    ts_str, is_stale = await _trigger_sync_fast()
+    ts_str, is_stale = await ensure_fresh_data_and_get_timestamp()
 
     parts = (message.text or "").split()
 
