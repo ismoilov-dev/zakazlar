@@ -6,7 +6,7 @@ After=network.target postgresql.service
 User=root
 WorkingDirectory=/var/www/zakazlar
 EnvironmentFile=/var/www/zakazlar/.env
-ExecStart=/var/www/zakazlar/.venv/bin/python manage.py run_bot
+ExecStart=/var/www/zakazlar/venv/bin/python manage.py run_bot
 Restart=always
 RestartSec=5
 
