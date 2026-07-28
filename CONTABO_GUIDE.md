@@ -48,7 +48,7 @@ Ushbu script avtomatik ravishda:
 5. Systemd Web (`zakazlar-web.service`) va Bot (`zakazlar-bot.service`) servislarini hamda Nginx'ni sozlab ishga tushiradi.
 
 ### 5-qadam: Admin panelga birinchi marta kirish tartibi
-1. `.env` faylini to'ldiring (`DJANGO_USE_HTTPS=false`, `DJANGO_ALLOWED_HOSTS`, `DJANGO_SECRET_KEY`, va hokazo).
+1. `.env` faylini to'ldiring (`DJANGO_USE_HTTPS=false`, `DJANGO_ALLOWED_HOSTS`, `DJANGO_CSRF_TRUSTED_ORIGINS=http://<IP>:8080`, `DJANGO_SECRET_KEY`, va hokazo).
 2. Deploy holatini tekshiring:
    ```bash
    python manage.py check_deploy
@@ -65,16 +65,39 @@ Ushbu script avtomatik ravishda:
    ```bash
    python manage.py collectstatic --noinput
    ```
-6. Superuser adminda foydalanuvchi yarating:
+6. Superuser admin foydalanuvchisini yarating:
    ```bash
    python manage.py createsuperuser
    ```
-7. Web xizmatini qayta ishga tushiring:
+7. Web xizmatini qayta ishga tushiring hamda Nginx ni yangilang:
    ```bash
    systemctl restart zakazlar-web
+   nginx -t && systemctl reload nginx
    ```
 8. Brauzerda Admin panelga kiring:
-   `http://<IP>/panel/`
+   `http://<IP>:8080/panel/`
+
+
+---
+
+## 🔀 Bitta Serverda Bir Nechta Loyiha (Multi-Project Port Isolation)
+
+Serverda bir vaqtning o'zida bir nechta loyihalar (masalan, `eduqash` va `zakazlar`) bo'lganda:
+
+- **Nega `default_server` ishlatilmaydi?**
+  Nginx'da 80-port uchun faqat bitta `default_server` bo'lishi mumkin. Agar ikkala loyiha ham `default_server` e'lon qilsa, `nginx -t` `duplicate default server` xatosini beradi va Nginx to'xtaydi.
+- **Port ajratish:**
+  `zakazlar` loyihasi alohida `8080` portda tinglaydi (`listen 8080;`). Skript orqali o'zgartirish:
+  ```bash
+  sudo bash scripts/setup_contabo.sh 8080
+  ```
+- **Xavfsizlik devori (Firewall):**
+  Serverda UFW yoqilgan bo'lsa, 8080 portni oching:
+  ```bash
+  sudo ufw allow 8080/tcp
+  sudo ufw status
+  ```
+
 
 
 ---
@@ -190,17 +213,20 @@ sudo systemctl enable --now zakazlar-web zakazlar-bot zakazlar-sync
 
 ### Muammo bo'lganda ishlatiladigan diagnostika buyruqlari:
 ```bash
-# Web servis holatini tekshirish
-systemctl status zakazlar-web
+# 1. Gunicorn backend to'g'ridan-to'g meksiz ishlayotganini tekshirish
+curl -I http://127.0.0.1:8005/panel/
 
-# Web servisning oxirgi 50 qator loglarini ko'rish
-journalctl -u zakazlar-web -n 50
+# 2. Nginx 8080 port orqali javob berayotganini tekshirish
+curl -I http://169.58.72.177:8080/panel/
 
-# Nginx sintaksisini tekshirish
+# 3. Nginx sintaksisi va konfiguratsiyalarini tekshirish
 nginx -t
 
-# Gunicorn lokal interfeysda ishlayotganini tekshirish
-curl -I http://127.0.0.1:8005/panel/
+# 4. Web servis xatolarini (oxirgi 50 qator) ko'rish
+journalctl -u zakazlar-web -n 50
+
+# 5. UFW firewall port holatini tekshirish
+ufw status
 ```
 
 ### Servislarni qayta ishga tushirish (Update yuborilganda):
@@ -212,6 +238,7 @@ git pull
 ./venv/bin/python manage.py createcachetable
 ./venv/bin/python manage.py collectstatic --noinput
 systemctl restart zakazlar-web zakazlar-bot zakazlar-sync
+nginx -t && systemctl reload nginx
 ```
 
 ---
@@ -222,7 +249,7 @@ Google Sheets o'zgarganda Django backendiga darhol `POST` signal yuborish uchun 
 
 ```javascript
 function onSheetChange(e) {
-  var url = "http://169.58.72.177/api/v1/imports/sheet-changed/";
+  var url = "http://169.58.72.177:8080/api/v1/imports/sheet-changed/";
   var secret = "YOUR_SHEETS_WEBHOOK_SECRET"; // .env dagi SHEETS_WEBHOOK_SECRET bilan bir xil bo'lsin
   
   var options = {
@@ -250,17 +277,30 @@ Trigger o'rnatish:
 
 ---
 
-## 🔒 Domeningizga Tekin SSL (HTTPS) Sertifikatini O'rnatish
+## 🔒 Domen va Tekin SSL (HTTPS) Sertifikatini O'rnatish
 
-Agar domeningizni server IP manziliga yo'naltirgan bo'lsangiz, tekin Let's Encrypt SSL sertifikatini ulash:
+Kelajakda domen yoki subdomen (masalan `zakazlar.example.com`) biriktirilganda:
 
-```bash
-sudo apt update
-sudo apt install -y certbot python3-certbot-nginx
-sudo certbot --nginx -d yourdomain.com
-```
+1. Domen A-rekordini server IP manziliga yo'naltiring.
+2. Nginx faylida (`/etc/nginx/sites-available/zakazlar`) `server_name zakazlar.example.com;` qiling va `listen 80;` deb o'zgartiring (subdomen bo'yicha Nginx 80-portda to'g'ri ajratib oladi).
+3. Certbot orqali tekin SSL sertifikatini oling:
+   ```bash
+   sudo apt update
+   sudo apt install -y certbot python3-certbot-nginx
+   sudo certbot --nginx -d zakazlar.example.com
+   ```
+4. Certbot Nginx konfiguratsiyasini avtomatik HTTPS (443-port) ga o'tkazadi.
+5. `.env` faylida quyidagi o'zgarishlarni kiriting:
+   ```env
+   DJANGO_USE_HTTPS=true
+   DJANGO_CSRF_TRUSTED_ORIGINS=https://zakazlar.example.com
+   ```
+6. Servislarni qayta ishga tushiring:
+   ```bash
+   systemctl restart zakazlar-web zakazlar-bot zakazlar-sync
+   nginx -t && systemctl reload nginx
+   ```
 
-Certbot avtomatik ravishda Nginx konfiguratsiyasiga HTTPS sozlamalarini va avtomatik yangilanishni qo'shib beradi. Sertifikat o'rnatilgach `.env` da `DJANGO_USE_HTTPS=true` ga o'zgartiring va servislarni qayta ishga tushiring!
 
 ---
 
