@@ -110,13 +110,15 @@ class StatisticsService:
         total_sales = Decimal(str(totals["total_sales"]))
         
         earned_salary = employee.monthly_salary
+        if employee.summary_data and "earned_salary" in employee.summary_data:
+            earned_salary = Decimal(str(employee.summary_data["earned_salary"]))
             
         successful_sales_sum = perv_sales + baza_sales
         conversion_rate = float(successful_sales_sum / total_sales) if total_sales > 0 else 0.0
         denom = total_sales - v_proc_sales
         real_conversion_rate = float(successful_sales_sum / denom) if denom > 0 else 0.0
 
-        if employee.summary_data:
+        if totals["total_orders"] == 0 and employee.summary_data:
             s = employee.summary_data
             total_sales = Decimal(str(s.get("total_sales", total_sales)))
             perv_sales = Decimal(str(s.get("perv_sales", perv_sales)))

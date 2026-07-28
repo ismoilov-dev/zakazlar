@@ -71,6 +71,9 @@ class DataImporter:
                     group_cache[clean_code] = self.groups.get_or_create(code=clean_code)
                 return group_cache[clean_code]
 
+            # Wipe stale Sale records to ensure DB is an exact 1:1 snapshot of active Google Sheet
+            Sale.objects.all().delete()
+
             # 2. Upsert sales & employees
             sales_to_upsert: list[Sale] = []
             for row in orders:
