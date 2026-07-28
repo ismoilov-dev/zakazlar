@@ -8,11 +8,12 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
-
+credentials/
+*.json
 # Virtual environments
 .venv/
 venv/
-
+credentials/service-account.json
 # Django runtime files
 db.sqlite3
 staticfiles/
