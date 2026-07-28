@@ -10,6 +10,7 @@ from typing import NamedTuple
 
 from django.db import transaction
 
+from apps.employees.models import Employee
 from apps.employees.repositories.employee import EmployeeRepository
 from apps.groups.repositories.group import SalesGroupRepository
 from apps.imports.dto import OrderDTO, PayrollDTO
@@ -41,6 +42,8 @@ class DataImporter:
     ) -> ImportResult:
         """Persist payroll and orders inside a single atomic transaction."""
         with transaction.atomic():
+            payroll_employee_ids = {row.employee_id for row in payroll}
+
             # 1. Upsert payroll & employees
             for row in payroll:
                 group = self.groups.get_or_create(code=row.group_code)
@@ -51,15 +54,42 @@ class DataImporter:
                     monthly_salary=row.monthly_salary,
                 )
 
+            # Pre-load all employees into a map to eliminate N+1 queries
+            employee_map = {
+                emp.employee_id: emp
+                for emp in Employee.objects.select_related("group").all()
+            }
+            group_cache = {}
+
+            def get_group(code: str):
+                clean_code = code.strip().upper()
+                if clean_code not in group_cache:
+                    group_cache[clean_code] = self.groups.get_or_create(code=clean_code)
+                return group_cache[clean_code]
+
             # 2. Upsert sales & employees
             sales_to_upsert: list[Sale] = []
             for row in orders:
-                group = self.groups.get_or_create(code=row.group_code)
-                employee = self.employees.upsert(
-                    employee_id=row.employee_id,
-                    full_name=row.employee_name,
-                    group=group,
-                )
+                if row.employee_id in employee_map:
+                    employee = employee_map[row.employee_id]
+                    if row.employee_id not in payroll_employee_ids:
+                        order_group = get_group(row.group_code)
+                        if employee.group_id != order_group.id or employee.full_name != row.employee_name:
+                            employee = self.employees.upsert(
+                                employee_id=row.employee_id,
+                                full_name=row.employee_name,
+                                group=order_group,
+                            )
+                            employee_map[row.employee_id] = employee
+                else:
+                    order_group = get_group(row.group_code)
+                    employee = self.employees.upsert(
+                        employee_id=row.employee_id,
+                        full_name=row.employee_name,
+                        group=order_group,
+                    )
+                    employee_map[row.employee_id] = employee
+
                 sales_to_upsert.append(
                     Sale(
                         external_order_id=row.order_id,

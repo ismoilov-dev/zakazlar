@@ -58,3 +58,36 @@ class DataImporterTest(TestCase):
         self.assertEqual(emp.full_name, "Amir Karimov")
         self.assertEqual(emp.monthly_salary, Decimal("5000000.00"))
         self.assertEqual(Sale.objects.count(), 1)
+
+    def test_order_row_does_not_override_payroll_group(self) -> None:
+        from apps.statistics.services.statistics import StatisticsService
+        importer = DataImporter()
+        now = timezone.now()
+        payroll = [
+            PayrollDTO(
+                employee_id="0191",
+                employee_name="Amir Karimov",
+                group_code="BAZA",
+                monthly_salary=Decimal("5000000.00"),
+            )
+        ]
+        orders = [
+            OrderDTO(
+                employee_id="0191",
+                employee_name="Amir Karimov",
+                group_code="A",  # Order row specifies 'A', but payroll specified 'BAZA'
+                order_id="47180",
+                status=SaleStatus.SUCCESSFUL,
+                source="Baza",
+                sale_amount=Decimal("1000000.00"),
+                ordered_at=now,
+            )
+        ]
+        importer.import_dto_lists(orders=orders, payroll=payroll)
+        emp = Employee.objects.get(employee_id="0191")
+        self.assertEqual(emp.group.code, "BAZA")
+
+        # BAZA group rate: 12% perv + 12% baza = 1000000 * 0.12 = 120000
+        dashboard = StatisticsService().employee_dashboard_for_employee("0191")
+        self.assertEqual(dashboard.earned_salary, Decimal("120000.00"))
+
