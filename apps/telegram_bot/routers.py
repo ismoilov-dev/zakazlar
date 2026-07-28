@@ -23,6 +23,8 @@ from apps.telegram_bot.services.formatting import employee_dashboard_text, group
 
 router = Router(name="sales_bot")
 
+STALE_THRESHOLD_SECONDS = 300
+
 
 _sync_lock = asyncio.Lock()
 
