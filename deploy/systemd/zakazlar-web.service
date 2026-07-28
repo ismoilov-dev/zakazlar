@@ -1,0 +1,15 @@
+[Unit]
+Description=Zakazlar Django Gunicorn Web Service
+After=network.target postgresql.service
+
+[Service]
+User=root
+Group=www-data
+WorkingDirectory=/var/www/zakazlar
+EnvironmentFile=/var/www/zakazlar/.env
+ExecStart=/var/www/zakazlar/.venv/bin/gunicorn config.wsgi:application --bind 127.0.0.1:8000 --workers 3 --timeout 120
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

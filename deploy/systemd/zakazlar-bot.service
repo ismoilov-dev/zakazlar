@@ -1,0 +1,14 @@
+[Unit]
+Description=Zakazlar Aiogram Telegram Bot Service
+After=network.target postgresql.service
+
+[Service]
+User=root
+WorkingDirectory=/var/www/zakazlar
+EnvironmentFile=/var/www/zakazlar/.env
+ExecStart=/var/www/zakazlar/.venv/bin/python manage.py run_bot
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

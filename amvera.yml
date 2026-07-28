@@ -1,9 +1,0 @@
-meta:
-  environment: python
-  tool: pip
-
-build:
-  requirementsPath: requirements.txt
-
-run:
-  command: bash start.sh

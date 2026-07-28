@@ -67,3 +67,9 @@ Admin huquqiga ega autentifikatsiyalangan foydalanuvchilar uchun:
 
 Arxitektura va qatlamlar qoidalari [ARCHITECTURE.md](ARCHITECTURE.md) hamda
 [docs/PROJECT_STRUCTURE.md](docs/PROJECT_STRUCTURE.md) fayllarida berilgan.
+
+## Contabo VPS ga Deploy Qilish
+
+Contabo VPS serveriga Nginx, Gunicorn, PostgreSQL va Systemd orqali to'g'ridan-to'g me'morchilikda o'rnatish yo'riqnomasi [CONTABO_GUIDE.md](CONTABO_GUIDE.md) faylida keltirilgan.
+
+
