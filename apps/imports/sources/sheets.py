@@ -1,20 +1,19 @@
-"""Google Sheets data source for live synchronization."""
+"""Google Sheets implementation of BaseSource using gspread."""
 
 from __future__ import annotations
 
+from decimal import Decimal
 import json
 import os
-from datetime import datetime
-from decimal import Decimal, InvalidOperation
+import re
 
-from django.utils import timezone
+from django.core.exceptions import ValidationError
+from django.utils.dateparse import parse_date as parse_iso_date
 import gspread
 from google.oauth2.service_account import Credentials
 
-from apps.common.services.exceptions import ValidationError
 from apps.imports.dto import OrderDTO, PayrollDTO, normalize_employee_id, normalize_order_id
 from apps.imports.sources.base import BaseSource
-from apps.sales.models import SaleStatus
 
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets.readonly",
@@ -22,49 +21,44 @@ SCOPES = [
 ]
 
 STATUS_MAP = {
-    "успешно": SaleStatus.SUCCESSFUL,
-    "отказ": SaleStatus.CANCELLED,
-    "в процесс": SaleStatus.PENDING,
-    "у курьера": SaleStatus.PENDING,
+    "успешно": "Muvaffaqiyatli",
+    "muvaffaqiyatli": "Muvaffaqiyatli",
+    "отказ": "Bekor qilingan",
+    "bekor qilingan": "Bekor qilingan",
+    "в процесс": "Jarayonda",
+    "v protsess": "Jarayonda",
+    "jarayonda": "Jarayonda",
+    "у курьера": "Jarayonda",
 }
 
 
-def clean_sheet_id(raw_id: str) -> str:
-    s = raw_id.strip()
-    if "/d/" in s:
-        s = s.split("/d/")[1].split("/")[0]
-    return s.strip("/ ")
-
-
 class SheetsSource(BaseSource):
-    """Reads live orders and payroll from Google Sheets using gspread (Read-only)."""
+    """Fetch live data from Google Sheets."""
 
-    def __init__(
-        self,
-        sheet_id: str | None = None,
-        json_credentials: str | None = None,
-        file_credentials: str | None = None,
-    ) -> None:
-        raw_sheet_id = sheet_id or os.getenv("GOOGLE_SHEET_ID", "")
-        if not raw_sheet_id:
-            raise ValidationError("GOOGLE_SHEET_ID environment variable is missing.")
-        self.sheet_id = clean_sheet_id(raw_sheet_id)
+    def __init__(self, sheet_id: str | None = None, credentials_path: str | None = None) -> None:
+        self.sheet_id = (sheet_id or os.environ.get("GOOGLE_SHEET_ID") or "").strip().strip("/")
+        if not self.sheet_id:
+            raise ValidationError("GOOGLE_SHEET_ID muhit o'zgaruvchisi o'rnatilmagan.")
 
-        self.json_credentials = json_credentials or os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "")
-        self.file_credentials = file_credentials or os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE", "credentials/service-account.json")
+        self.file_credentials = credentials_path or os.environ.get(
+            "GOOGLE_SERVICE_ACCOUNT_FILE", "credentials/service-account.json"
+        )
+        self.json_credentials = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON")
 
-        self.client = self._get_client()
+        self.client = self._authenticate()
 
-    def _get_client(self) -> gspread.Client:
-        if self.json_credentials and self.json_credentials.strip():
+    def _authenticate(self) -> gspread.Client:
+        # Prefer raw JSON env string if present (useful for server deployments)
+        if self.json_credentials:
             try:
                 info = json.loads(self.json_credentials)
                 creds = Credentials.from_service_account_info(info, scopes=SCOPES)
                 return gspread.authorize(creds)
             except Exception as exc:
-                raise ValidationError(f"GOOGLE_SERVICE_ACCOUNT_JSON formatida xatolik: {exc}") from exc
+                raise ValidationError(f"GOOGLE_SERVICE_ACCOUNT_JSON ni tahlil qilishda xatolik: {exc}") from exc
 
-        if self.file_credentials and os.path.exists(self.file_credentials) and os.path.getsize(self.file_credentials) > 0:
+        # Fallback to credentials file
+        if self.file_credentials and os.path.exists(self.file_credentials):
             try:
                 creds = Credentials.from_service_account_file(self.file_credentials, scopes=SCOPES)
                 return gspread.authorize(creds)
@@ -87,12 +81,27 @@ class SheetsSource(BaseSource):
 
         orders = self._parse_orders(worksheets["list1"])
 
-        # Check 'Ish haqi' tab first, fallback to 'List2'
-        payroll_ws = worksheets.get("ish haqi") or worksheets.get("list2")
-        if not payroll_ws:
-            raise ValidationError("Google Sheet'da 'Ish haqi' yoki 'List2' varog'i topilmadi.")
+        # Check all candidate payroll worksheets: 'xodimlar maoshi', 'ish haqi', 'list2'
+        payroll_candidates: list[gspread.Worksheet] = []
+        for name in ["xodimlar maoshi", "ish haqi", "list2"]:
+            ws = worksheets.get(name)
+            if ws and ws not in payroll_candidates:
+                payroll_candidates.append(ws)
 
-        payroll = self._parse_payroll(payroll_ws)
+        if not payroll_candidates:
+            raise ValidationError("Google Sheet'da 'Xodimlar maoshi', 'Ish haqi' yoki 'List2' varog'i topilmadi.")
+
+        payroll_by_id: dict[str, PayrollDTO] = {}
+        for ws in payroll_candidates:
+            try:
+                parsed = self._parse_payroll(ws)
+                for dto in parsed:
+                    if dto.employee_id not in payroll_by_id:
+                        payroll_by_id[dto.employee_id] = dto
+            except Exception:
+                pass  # Skip optional candidate parse failures
+
+        payroll = list(payroll_by_id.values())
 
         if not orders:
             raise ValidationError("List1 varog'idan birorta ham buyurtma o'qilmadi.")
@@ -100,10 +109,6 @@ class SheetsSource(BaseSource):
         return orders, payroll
 
     def _parse_orders(self, worksheet: gspread.Worksheet) -> list[OrderDTO]:
-        # CHOICE OF VALUE FORMATTING:
-        # We deliberately use gspread's default get_all_values() which requests FORMATTED_VALUE
-        # from Google Sheets API. This ensures dates arrive as human-readable string text (e.g., '01.06.2026'),
-        # avoiding Excel serial date number ambiguity (such as 46174) returned by UNFORMATTED_VALUE.
         raw_rows = worksheet.get_all_values()
         if not raw_rows:
             raise ValidationError("List1 varog'i bo'sh.")
@@ -165,16 +170,27 @@ class SheetsSource(BaseSource):
         if not raw_rows:
             raise ValidationError(f"'{worksheet.title}' varog'i bo'sh.")
 
-        headings = raw_rows[0]
+        # Locate header row dynamically in the first 5 rows
+        header_row_idx = None
+        for i, row in enumerate(raw_rows[:5]):
+            row_str_cells = [str(c).strip() for c in row]
+            if any(cell in ["ID", "Tabel raqami"] for cell in row_str_cells):
+                header_row_idx = i
+                break
 
-        # Check header formats for 'Ish haqi' or 'List2'
+        if header_row_idx is None:
+            raise ValidationError(f"'{worksheet.title}' varog'ida 'ID' yoki 'Tabel raqami' ustuni topilmadi.")
+
+        headings = raw_rows[header_row_idx]
+
+        # Check header formats for 'Ish haqi', 'Xodimlar maoshi', or 'List2'
         id_idx = self._find_single_column_index(headings, candidates=["Tabel raqami", "ID"], name="ID")
-        name_idx = self._find_single_column_index(headings, candidates=["FISH", "XODIMLAR ISMLARI "], name="xodim ismi")
+        name_idx = self._find_single_column_index(headings, candidates=["FISH", "XODIMLAR ISMLARI", "Оператор"], name="xodim ismi")
         group_idx = self._find_single_column_index(headings, candidates=["Guruhi", "Bo'lim "], name="guruh", required=False)
-        salary_idx = self._find_single_column_index(headings, candidates=["Ish haqi", "OYLIK MOASH "], name="ish haqi")
+        salary_idx = self._find_single_column_index(headings, candidates=["Ish haqi", "OYLIK MOASH", "Oylik maoshi 12%"], name="ish haqi", required=False)
 
         payroll: list[PayrollDTO] = []
-        for row in raw_rows[1:]:
+        for row in raw_rows[header_row_idx + 1:]:
             if not any(str(cell).strip() for cell in row):
                 continue  # Skip fully empty rows
 
@@ -185,7 +201,8 @@ class SheetsSource(BaseSource):
             emp_id = normalize_employee_id(id_val)
             emp_name = self._require_text(self._get_cell(row, name_idx), "Xodim ismi")
             grp_code = (self._get_cell(row, group_idx) or "A").strip().upper()
-            salary = self._parse_money(self._get_cell(row, salary_idx))
+            salary_str = self._get_cell(row, salary_idx) if salary_idx is not None else ""
+            salary = self._parse_money(salary_str) if salary_str else Decimal("0.00")
 
             payroll.append(
                 PayrollDTO(
@@ -240,42 +257,51 @@ class SheetsSource(BaseSource):
 
     @staticmethod
     def _parse_money(val: str) -> Decimal:
-        if not val or val.startswith("#"):
+        if not val:
             return Decimal("0.00")
-        clean_str = val.replace(",", "").replace(" ", "").replace("\xa0", "").strip()
+        clean = val.replace(" ", "").replace(",", "").replace("$", "").replace("so'm", "").replace("som", "").strip()
+        if not clean:
+            return Decimal("0.00")
         try:
-            return Decimal(clean_str).quantize(Decimal("0.01"))
-        except (InvalidOperation, TypeError, ValueError):
-            return Decimal("0.00")
+            return Decimal(clean)
+        except Exception as exc:
+            raise ValidationError(f"Noto'g'ri pul summasi formati ('{val}').") from exc
+
+    @staticmethod
+    def _parse_date(val: str):
+        if not val:
+            raise ValidationError("Sana maydoni bo'sh bo'lishi mumkin emas.")
+        # Try dd.mm.yyyy format
+        m = re.match(r"^(\d{1,2})\.(\d{1,2})\.(\d{4})$", val.strip())
+        if m:
+            day, month, year = int(m.group(1)), int(m.group(2)), int(m.group(3))
+            try:
+                from datetime import date
+                return date(year, month, day)
+            except ValueError as exc:
+                raise ValidationError(f"Noto'g'ri sana ('{val}'): {exc}") from exc
+
+        # Fallback to ISO parsing (yyyy-mm-dd)
+        parsed = parse_iso_date(val.strip())
+        if parsed:
+            return parsed
+
+        raise ValidationError(f"Noto'g'ri sana formati ('{val}'). Kutilmoqda: dd.mm.yyyy")
 
     @staticmethod
     def _parse_status(val: str) -> str:
+        if not val:
+            raise ValidationError("Status maydoni bo'sh bo'lishi mumkin emas.")
         raw = val.strip().lower()
         if raw in STATUS_MAP:
             return STATUS_MAP[raw]
         raise ValidationError(f"Noma'lum status: '{val}'")
 
     @staticmethod
-    def _parse_date(val: str) -> datetime:
-        # Expecting dd.mm.yyyy string format from FORMATTED_VALUE
-        if not val:
-            raise ValidationError("Sana maydoni bo'sh.")
-        formats = ["%d.%m.%Y", "%Y-%m-%d", "%d.%m.%Y %H:%M:%S", "%Y-%m-%d %H:%M:%S"]
-        for fmt in formats:
-            try:
-                dt = datetime.strptime(val.strip(), fmt)
-                if timezone.is_naive(dt):
-                    return timezone.make_aware(dt, timezone.get_current_timezone())
-                return dt
-            except ValueError:
-                continue
-        raise ValidationError(f"Sana formati noto'g'ri: '{val}'. Kutilgan format: dd.mm.yyyy")
-
-    @staticmethod
-    def _normalize_source(raw: str) -> str:
-        s = raw.strip().lower()
-        if "perv" in s or "первич" in s:
+    def _normalize_source(val: str) -> str:
+        raw = val.strip().lower()
+        if "первичный" in raw or "pervich" in raw:
             return "Pervichka"
-        if "baza" in s or "база" in s:
+        if "база" in raw or "baza" in raw:
             return "Baza"
-        return raw.strip() if raw.strip() else "Pervichka"
+        return "Pervichka"
