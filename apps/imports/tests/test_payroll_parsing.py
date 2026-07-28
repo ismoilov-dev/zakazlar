@@ -11,8 +11,8 @@ class PayrollParsingTest(TestCase):
         ws_orders = MagicMock()
         ws_orders.title = "List1"
         ws_orders.get_all_values.return_value = [
-            ["№", "ID", "Ответственный", "Сумма", "Дата Заказа", "статус", " "],
-            ["101", "0191", "Test User", "10000", "01.07.2026", "успешно", "A"]
+            ["№", "ID", "Ответственный", "Сумма", "Дата Заказа", "статус", "Источник", " "],
+            ["101", "0191", "Test User", "10000", "01.07.2026", "успешно", "Baza", "A"]
         ]
 
         ws_payroll = MagicMock()

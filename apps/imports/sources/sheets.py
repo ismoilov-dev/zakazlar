@@ -169,9 +169,13 @@ class SheetsSource(BaseSource):
         if group_idx is None:
             group_idx = self._find_single_column_index(headings, candidates=["Guruhi", "Bo'lim ", "Guruh"], name="guruh", required=False)
 
-        source_idx = self._find_single_column_index(headings, candidates=["Столбец 2", "Контакт", "Источник"], name="manba", required=False)
+        source_candidates = ["Столбец 2", "Контакт", "Источник"]
+        source_idx = self._find_single_column_index(headings, candidates=source_candidates, name="manba", required=False)
         if source_idx is None:
-            logger.warning("List1 varog'ida manba ustuni ('Источник' / 'Столбец 2' / 'Контакт') topilmadi.")
+            logger.error("List1 varog'ida manba ustuni topilmadi. Qidirilgan nomlar: %s | Mavjud sarlavhalar: %s", source_candidates, headings)
+            raise ValidationError(
+                f"List1 varog'ida manba ustuni topilmadi. Qidirilgan nomlar: {source_candidates}. Mavjud sarlavhalar: {headings}"
+            )
 
         self.last_header_row_idx = header_row_idx
         self.last_headings = headings
