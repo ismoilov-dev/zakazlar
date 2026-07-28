@@ -10,7 +10,10 @@ import re
 
 logger = logging.getLogger(__name__)
 
-from apps.common.services.exceptions import ValidationError
+from django.core.exceptions import ValidationError
+from apps.common.services.exceptions import ValidationError as DomainValidationError
+
+PARSE_ERRORS = (ValidationError, DomainValidationError)
 from django.utils.dateparse import parse_date as parse_iso_date
 import gspread
 from google.oauth2.service_account import Credentials
@@ -214,7 +217,7 @@ class SheetsSource(BaseSource):
                 try:
                     emp_id = normalize_employee_id(id_val)
                     last_seen_emp_id = emp_id
-                except ValidationError as exc:
+                except PARSE_ERRORS as exc:
                     dropped_invalid_id += 1
                     reason = f"ID formati noto'g'ri: {exc}"
                     first_6 = [str(c).strip() for c in row[:6]]
@@ -244,13 +247,18 @@ class SheetsSource(BaseSource):
             try:
                 clean_ord = normalize_order_id(ord_raw) if ord_raw else f"ROW-{row_idx}"
                 ord_id = f"{emp_id}_{clean_ord}_{row_idx}"
-            except ValidationError:
+            except PARSE_ERRORS:
                 ord_id = f"{emp_id}_ROW_{row_idx}"
 
             try:
                 stat_val = self._parse_status(stat_raw)
-            except ValidationError:
-                stat_val = "successful"
+            except PARSE_ERRORS as exc:
+                dropped_invalid_id += 1
+                reason = f"Status xatosi: {exc}"
+                first_6 = [str(c).strip() for c in row[:6]]
+                dropped_rows.append({"row_idx": row_idx, "reason": reason, "raw_cells": first_6, "row_data": row})
+                logger.warning("List1 %s-qator tashlandi: %s | Birinchi 6 katak: %s", row_idx, reason, first_6)
+                continue
 
             src_val = self._normalize_source(self._get_cell(row, source_idx) if source_idx is not None else "")
             amount = self._parse_money(amount_str, sheet_name="List1", row_idx=row_idx)
@@ -258,7 +266,7 @@ class SheetsSource(BaseSource):
             date_raw = self._get_cell(row, date_idx) if date_idx is not None else ""
             try:
                 ordered_at = self._parse_date(date_raw)
-            except ValidationError:
+            except PARSE_ERRORS:
                 from django.utils import timezone
                 ordered_at = timezone.now()
 
@@ -301,11 +309,11 @@ class SheetsSource(BaseSource):
         if not raw_rows:
             raise ValidationError(f"'{worksheet.title}' varog'i bo'sh.")
 
-        # Locate header row dynamically in the first 5 rows
+        # Locate header row dynamically in the first 15 rows
         header_row_idx = None
-        for i, row in enumerate(raw_rows[:5]):
-            row_str_cells = [str(c).strip() for c in row]
-            if any(cell in ["ID", "Tabel raqami"] for cell in row_str_cells):
+        for i, row in enumerate(raw_rows[:15]):
+            row_str_cells = [str(c).strip().lower() for c in row]
+            if any(cell in ["id", "tabel raqami"] for cell in row_str_cells):
                 header_row_idx = i
                 break
 
@@ -335,60 +343,64 @@ class SheetsSource(BaseSource):
         real_conv_idx = self._find_single_column_index(headings, candidates=["Real konversiya", "Реальная конверсия"], name="real_conversion", required=False)
 
         payroll: list[PayrollDTO] = []
-        for row in raw_rows[header_row_idx + 1:]:
+        for row_idx, row in enumerate(raw_rows[header_row_idx + 1:], start=header_row_idx + 2):
             if not any(str(cell).strip() for cell in row):
                 continue  # Skip fully empty rows
 
-            id_val = self._get_cell(row, id_idx)
-            if not id_val:
-                continue
+            try:
+                id_val = self._get_cell(row, id_idx)
+                if not id_val:
+                    continue
 
-            emp_id = normalize_employee_id(id_val)
-            emp_name = self._require_text(self._get_cell(row, name_idx), "Xodim ismi")
-            grp_code = (self._get_cell(row, group_idx) or "A").strip().upper()
-            salary_str = self._get_cell(row, salary_idx) if salary_idx is not None else ""
-            salary = self._parse_money(salary_str) if salary_str else Decimal("0.00")
+                emp_id = normalize_employee_id(id_val)
+                emp_name = self._require_text(self._get_cell(row, name_idx), "Xodim ismi")
+                grp_code = (self._get_cell(row, group_idx) or "A").strip().upper()
+                salary_str = self._get_cell(row, salary_idx) if salary_idx is not None else ""
+                salary = self._parse_money(salary_str) if salary_str else Decimal("0.00")
 
-            summary: dict[str, object] = {}
-            if total_sales_idx is not None and self._get_cell(row, total_sales_idx):
-                summary["total_sales"] = str(self._parse_money(self._get_cell(row, total_sales_idx)))
-            if perv_sales_idx is not None and self._get_cell(row, perv_sales_idx):
-                summary["perv_sales"] = str(self._parse_money(self._get_cell(row, perv_sales_idx)))
-            if baza_sales_idx is not None and self._get_cell(row, baza_sales_idx):
-                summary["baza_sales"] = str(self._parse_money(self._get_cell(row, baza_sales_idx)))
-            if otkaz_sales_idx is not None and self._get_cell(row, otkaz_sales_idx):
-                summary["otkaz_sales"] = str(self._parse_money(self._get_cell(row, otkaz_sales_idx)))
-            if v_proc_sales_idx is not None and self._get_cell(row, v_proc_sales_idx):
-                summary["v_proc_sales"] = str(self._parse_money(self._get_cell(row, v_proc_sales_idx)))
-            if upakovka_idx is not None and self._get_cell(row, upakovka_idx):
-                try:
-                    summary["successful_orders"] = int(float(str(self._get_cell(row, upakovka_idx)).replace(",", ".")))
-                except Exception:
-                    pass
-            if salary_str:
-                summary["earned_salary"] = str(salary)
-            if conv_idx is not None and self._get_cell(row, conv_idx):
-                raw_c = str(self._get_cell(row, conv_idx)).replace("%", "").replace(",", ".").strip()
-                try:
-                    summary["conversion_rate"] = float(Decimal(raw_c) / 100) if float(Decimal(raw_c)) > 1 else float(Decimal(raw_c))
-                except Exception:
-                    pass
-            if real_conv_idx is not None and self._get_cell(row, real_conv_idx):
-                raw_rc = str(self._get_cell(row, real_conv_idx)).replace("%", "").replace(",", ".").strip()
-                try:
-                    summary["real_conversion_rate"] = float(Decimal(raw_rc) / 100) if float(Decimal(raw_rc)) > 1 else float(Decimal(raw_rc))
-                except Exception:
-                    pass
+                summary: dict[str, object] = {}
+                if total_sales_idx is not None and self._get_cell(row, total_sales_idx):
+                    summary["total_sales"] = str(self._parse_money(self._get_cell(row, total_sales_idx)))
+                if perv_sales_idx is not None and self._get_cell(row, perv_sales_idx):
+                    summary["perv_sales"] = str(self._parse_money(self._get_cell(row, perv_sales_idx)))
+                if baza_sales_idx is not None and self._get_cell(row, baza_sales_idx):
+                    summary["baza_sales"] = str(self._parse_money(self._get_cell(row, baza_sales_idx)))
+                if otkaz_sales_idx is not None and self._get_cell(row, otkaz_sales_idx):
+                    summary["otkaz_sales"] = str(self._parse_money(self._get_cell(row, otkaz_sales_idx)))
+                if v_proc_sales_idx is not None and self._get_cell(row, v_proc_sales_idx):
+                    summary["v_proc_sales"] = str(self._parse_money(self._get_cell(row, v_proc_sales_idx)))
+                if upakovka_idx is not None and self._get_cell(row, upakovka_idx):
+                    try:
+                        summary["successful_orders"] = int(float(str(self._get_cell(row, upakovka_idx)).replace(",", ".")))
+                    except Exception:
+                        pass
+                if salary_str:
+                    summary["earned_salary"] = str(salary)
+                if conv_idx is not None and self._get_cell(row, conv_idx):
+                    raw_c = str(self._get_cell(row, conv_idx)).replace("%", "").replace(",", ".").strip()
+                    try:
+                        summary["conversion_rate"] = float(Decimal(raw_c) / 100) if float(Decimal(raw_c)) > 1 else float(Decimal(raw_c))
+                    except Exception:
+                        pass
+                if real_conv_idx is not None and self._get_cell(row, real_conv_idx):
+                    raw_rc = str(self._get_cell(row, real_conv_idx)).replace("%", "").replace(",", ".").strip()
+                    try:
+                        summary["real_conversion_rate"] = float(Decimal(raw_rc) / 100) if float(Decimal(raw_rc)) > 1 else float(Decimal(raw_rc))
+                    except Exception:
+                        pass
 
-            payroll.append(
-                PayrollDTO(
-                    employee_id=emp_id,
-                    employee_name=emp_name,
-                    group_code=grp_code if grp_code else "A",
-                    monthly_salary=salary,
-                    summary_data=summary if summary else None,
+                payroll.append(
+                    PayrollDTO(
+                        employee_id=emp_id,
+                        employee_name=emp_name,
+                        group_code=grp_code if grp_code else "A",
+                        monthly_salary=salary,
+                        summary_data=summary if summary else None,
+                    )
                 )
-            )
+            except PARSE_ERRORS as exc:
+                logger.warning("Payroll varog'i '%s', %s-qator tahlil xatosi: %s", worksheet.title, row_idx, exc)
+                continue
 
         return payroll
 
@@ -503,6 +515,10 @@ class SheetsSource(BaseSource):
         raw = val.strip().lower()
         if raw in STATUS_MAP:
             return STATUS_MAP[raw]
+        if any(term in raw for term in ["отказ", "возврат", "otkaz", "bekor"]):
+            return "cancelled"
+        if any(term in raw for term in ["процесс", "курьер", "ожидан", "protsess", "process", "jarayon", "kuryer"]):
+            return "pending"
         raise ValidationError(f"Noma'lum status: '{val}'")
 
     @staticmethod

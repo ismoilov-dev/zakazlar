@@ -88,6 +88,9 @@ async def bind_and_show_employee_stats(message: Message) -> None:
         await message.answer(f"ID ko'rinishida xatolik: {exc}")
         return
 
+STALE_THRESHOLD_SECONDS = 300
+
+
 async def _trigger_sync_fast() -> tuple[str, bool]:
     """Sync Google Sheets with 1.2s timeout, falling back to background task if network is slow."""
     is_stale = False
@@ -102,11 +105,20 @@ async def _trigger_sync_fast() -> tuple[str, bool]:
         asyncio.create_task(sync_to_async(SheetsSyncService().sync_if_needed)(force=True))
         is_stale = True
 
+    last_log = await sync_to_async(lambda: SyncLog.objects.first())()
     last_successful = await sync_to_async(SyncLog.get_last_successful)()
+
+    if last_log and last_log.status == SyncStatus.FAILED:
+        is_stale = True
+
     if last_successful and last_successful.finished_at:
         ts_str = timezone.localtime(last_successful.finished_at).strftime("%d.%m.%Y %H:%M:%S")
+        elapsed = (timezone.now() - last_successful.finished_at).total_seconds()
+        if elapsed > STALE_THRESHOLD_SECONDS:
+            is_stale = True
     else:
         ts_str = timezone.localtime().strftime("%d.%m.%Y %H:%M:%S")
+        is_stale = True
 
     return ts_str, is_stale
 

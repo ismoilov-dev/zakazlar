@@ -1,7 +1,10 @@
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
 from django.test import TestCase
-from apps.common.services.exceptions import ValidationError
+from django.core.exceptions import ValidationError as DjangoValidationError
+from apps.common.services.exceptions import ValidationError as DomainValidationError
+
+PARSE_ERRORS = (DjangoValidationError, DomainValidationError)
 
 from apps.imports.dto import normalize_employee_id
 from apps.imports.models import SyncLog, SyncStatus
@@ -71,7 +74,7 @@ class DroppedRowsAndDiagnosticsTest(TestCase):
         mock_worksheet.title = "List1"
         mock_worksheet.get_all_values.return_value = raw_data
 
-        with self.assertRaises(ValidationError):
+        with self.assertRaises(PARSE_ERRORS):
             source._parse_orders(mock_worksheet)
 
     @patch("apps.imports.services.sheets_sync.SheetsSource")
@@ -93,6 +96,6 @@ class DroppedRowsAndDiagnosticsTest(TestCase):
         """normalize_employee_id strips non-breaking spaces and rejects formula error strings explicitly."""
         self.assertEqual(normalize_employee_id(" 191\xa0"), "0191")
 
-        with self.assertRaises(ValidationError) as ctx:
+        with self.assertRaises(PARSE_ERRORS) as ctx:
             normalize_employee_id("#N/A")
         self.assertIn("Formula xatosi", str(ctx.exception))
