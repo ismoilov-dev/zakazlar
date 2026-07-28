@@ -9,7 +9,7 @@ from io import BytesIO
 from openpyxl import load_workbook
 
 from apps.common.services.exceptions import ValidationError
-from apps.imports.dto import OrderDTO, PayrollDTO, normalize_employee_id
+from apps.imports.dto import OrderDTO, PayrollDTO, normalize_employee_id, normalize_order_id
 from apps.imports.sources.base import BaseSource
 from apps.sales.models import SaleStatus
 
@@ -68,7 +68,7 @@ class ExcelSource(BaseSource):
                         employee_id=normalize_employee_id(values[columns["ID"]]),
                         employee_name=self._text(values[columns["Ответственный"]], "Ответственный"),
                         group_code=self._text(values[group_index], "guruh").upper(),
-                        order_id=self._text(values[columns["№"]], "№"),
+                        order_id=normalize_order_id(values[columns["№"]]),
                         status=self._status(values[columns["статус"]]),
                         source=self._normalize_source(
                             str(values[columns["Столбец 2"]] or "").strip()

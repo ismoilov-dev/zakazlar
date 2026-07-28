@@ -12,7 +12,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 
 from apps.common.services.exceptions import ValidationError
-from apps.imports.dto import OrderDTO, PayrollDTO, normalize_employee_id
+from apps.imports.dto import OrderDTO, PayrollDTO, normalize_employee_id, normalize_order_id
 from apps.imports.sources.base import BaseSource
 from apps.sales.models import SaleStatus
 
@@ -137,7 +137,7 @@ class SheetsSource(BaseSource):
                 grp_code = (self._get_cell(row, group_idx) or "A").strip().upper()
                 if not grp_code:
                     grp_code = "A"
-                ord_id = self._require_text(self._get_cell(row, columns["№"]), "№")
+                ord_id = normalize_order_id(self._get_cell(row, columns["№"]))
                 stat_val = self._parse_status(self._get_cell(row, columns["статус"]))
                 src_val = self._normalize_source(self._get_cell(row, source_idx) if source_idx is not None else "")
                 amount = self._parse_money(self._get_cell(row, columns["Сумма"]))

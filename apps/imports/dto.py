@@ -24,6 +24,18 @@ def normalize_employee_id(value: object) -> str:
     return result
 
 
+def normalize_order_id(value: object) -> str:
+    """Normalize order ID (e.g. '51197.0' -> '51197')."""
+    if value is None:
+        raise ValidationError("Order ID cannot be empty.")
+    raw = str(value).strip()
+    if not raw:
+        raise ValidationError("Order ID cannot be empty.")
+    if raw.endswith(".0"):
+        raw = raw[:-2]
+    return raw
+
+
 @dataclass(frozen=True, slots=True)
 class OrderDTO:
     employee_id: str
