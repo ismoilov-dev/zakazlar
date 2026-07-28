@@ -13,8 +13,20 @@ logger = logging.getLogger(__name__)
 class StatisticsRepository:
     """Calculate aggregates in PostgreSQL instead of loading sale rows."""
 
-    def _get_current_month_qs(self):
-        return Sale.objects.all()
+    def _get_current_month_qs(self, target_date=None):
+        if target_date is None:
+            latest_sale = Sale.objects.order_by("-ordered_at").first()
+            if latest_sale and latest_sale.ordered_at:
+                now = timezone.localtime(latest_sale.ordered_at)
+            else:
+                now = timezone.localtime()
+        else:
+            now = timezone.localtime(target_date)
+
+        return Sale.objects.filter(
+            ordered_at__year=now.year,
+            ordered_at__month=now.month,
+        )
 
     def get_active_month_str(self) -> str:
         first_sale = Sale.objects.order_by("-ordered_at").first()
@@ -22,15 +34,15 @@ class StatisticsRepository:
             return timezone.localtime(first_sale.ordered_at).strftime("%m.%Y")
         return timezone.localtime().strftime("%m.%Y")
 
-    def employee_totals(self, employee_id: int) -> dict[str, object]:
-        return self._aggregate(self._get_current_month_qs().filter(employee_id=employee_id))
+    def employee_totals(self, employee_id: int, target_date=None) -> dict[str, object]:
+        return self._aggregate(self._get_current_month_qs(target_date).filter(employee_id=employee_id))
 
-    def group_totals(self, group_id: int) -> dict[str, object]:
-        return self._aggregate(self._get_current_month_qs().filter(employee__group_id=group_id))
+    def group_totals(self, group_id: int, target_date=None) -> dict[str, object]:
+        return self._aggregate(self._get_current_month_qs(target_date).filter(employee__group_id=group_id))
 
-    def employee_sources(self, employee_id: int) -> list[dict[str, object]]:
+    def employee_sources(self, employee_id: int, target_date=None) -> list[dict[str, object]]:
         return list(
-            self._get_current_month_qs()
+            self._get_current_month_qs(target_date)
             .filter(employee_id=employee_id)
             .values("source")
             .annotate(

@@ -48,8 +48,8 @@ class StatisticsMonthFilterTest(TestCase):
 
         dashboard = StatisticsService().employee_dashboard_for_employee("0191")
 
-        # Total orders should equal 2 (all sales in dataset)
-        self.assertEqual(dashboard.total_orders, 2)
-        self.assertEqual(dashboard.total_sales, Decimal("1500000.00"))
+        # Total orders should equal 1 (only current month sale in dataset)
+        self.assertEqual(dashboard.total_orders, 1)
+        self.assertEqual(dashboard.total_sales, Decimal("500000.00"))
         # Earned salary comes directly from Google Sheets monthly_salary
         self.assertEqual(dashboard.earned_salary, Decimal("5000000.00"))
