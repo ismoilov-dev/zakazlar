@@ -127,11 +127,18 @@ WantedBy=multi-user.target
 EOF
 
 # Generate Nginx config
+SERVER_NAME_ARG="$1"
+FIRST_ALLOWED_HOST=$(echo "${DJANGO_ALLOWED_HOSTS:-}" | cut -d',' -f1 | tr -d ' ')
+SERVER_NAME="${SERVER_NAME_ARG:-${FIRST_ALLOWED_HOST:-169.58.72.177}}"
+if [ "$SERVER_NAME" = "*" ] || [ -z "$SERVER_NAME" ]; then
+    SERVER_NAME="169.58.72.177"
+fi
+
 cat <<EOF > /etc/nginx/sites-available/zakazlar
 server {
-    listen 80 default_server;
-    listen [::]:80 default_server;
-    server_name _;
+    listen 80;
+    listen [::]:80;
+    server_name $SERVER_NAME;
 
     client_max_body_size 50M;
 
@@ -160,10 +167,16 @@ server {
 EOF
 
 ln -sf /etc/nginx/sites-available/zakazlar /etc/nginx/sites-enabled/
-rm -f /etc/nginx/sites-enabled/default
 
 # Test Nginx syntax
-nginx -t
+if ! nginx -t; then
+    echo "❌ XATOLIK: Nginx konfiguratsiyasida xatolik yuz berdi (nginx -t yiqildi)."
+    echo "Iltimos, /etc/nginx/sites-enabled/ va /etc/nginx/sites-available/ katalogidagi fayllarni va duplikatsiya e'lonlarini (masalan, boshqa loyihadagi default_server) tekshiring."
+    exit 1
+fi
+
+rm -f /etc/nginx/sites-enabled/default
+
 
 # Enable & Restart Services
 systemctl daemon-reload
