@@ -13,9 +13,14 @@ def normalize_employee_id(value: object) -> str:
     """Normalize employee ID to 4-digit zero-padded string (e.g. 191 -> '0191')."""
     if value is None:
         raise ValidationError("Employee ID cannot be empty.")
-    raw = str(value).strip()
+    raw = str(value).replace("\xa0", "").strip()
     if not raw:
         raise ValidationError("Employee ID cannot be empty.")
+    
+    upper_raw = raw.upper()
+    if any(upper_raw.startswith(err) for err in ["#N/A", "#REF!", "#VALUE!", "#NAME?", "#DIV/0!", "#NULL!", "#NUM!", "#ERROR!"]):
+        raise ValidationError(f"Formula xatosi tufayli ID o'qilmadi: '{value}'")
+
     if raw.endswith(".0"):
         raw = raw[:-2]
     result = raw.zfill(4)

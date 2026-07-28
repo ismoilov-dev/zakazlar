@@ -10,7 +10,7 @@ import re
 
 logger = logging.getLogger(__name__)
 
-from django.core.exceptions import ValidationError
+from apps.common.services.exceptions import ValidationError
 from django.utils.dateparse import parse_date as parse_iso_date
 import gspread
 from google.oauth2.service_account import Credentials
@@ -22,6 +22,9 @@ SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets.readonly",
     "https://www.googleapis.com/auth/drive.readonly",
 ]
+
+SHEETS_FORWARD_FILL_EMPLOYEE_ID = True
+MAX_SKIPPED_ROWS_RATIO_THRESHOLD = 0.05
 
 STATUS_MAP = {
     "успешно": "successful",
@@ -131,17 +134,22 @@ class SheetsSource(BaseSource):
         return orders, payroll
 
     def _parse_orders(self, worksheet: gspread.Worksheet) -> list[OrderDTO]:
-        raw_rows = worksheet.get_all_values()
+        raw_rows = worksheet.get_all_values(combine_merged_cells=True)
         if not raw_rows:
             raise ValidationError("List1 varog'i bo'sh.")
 
-        # Dynamically locate header row in first 5 rows
-        header_row_idx = 0
-        for i, r in enumerate(raw_rows[:5]):
-            row_str_cells = [str(c).strip() for c in r]
-            if any(cell in ["ID", "Tabel raqami", "№"] for cell in row_str_cells):
+        # Dynamically locate header row in first 15 rows with case-insensitive trimmed matching
+        header_row_idx = None
+        for i, r in enumerate(raw_rows[:15]):
+            row_str_cells = [str(c).strip().lower() for c in r]
+            if any(cell in ["id", "tabel raqami", "№"] for cell in row_str_cells):
                 header_row_idx = i
                 break
+
+        if header_row_idx is None:
+            raise ValidationError(
+                f"Google Sheet '{worksheet.title}' varog'ida sarlavha qatori (ID / Tabel raqami / №) topilmadi. Dastlabki 3 qator: {raw_rows[:3]}"
+            )
 
         headings = raw_rows[header_row_idx]
 
@@ -188,6 +196,7 @@ class SheetsSource(BaseSource):
         dropped_empty_id = 0
         dropped_invalid_id = 0
         parsed_rows_count = 0
+        last_seen_emp_id: str | None = None
 
         for row_idx, row in enumerate(raw_rows[header_row_idx + 1:], start=header_row_idx + 2):
             if not any(str(cell).strip() for cell in row):
@@ -195,23 +204,34 @@ class SheetsSource(BaseSource):
                 continue  # Skip fully empty rows
 
             id_val = self._get_cell(row, id_idx)
-            if not id_val:
-                dropped_empty_id += 1
-                reason = "ID katakchasi bo'sh"
-                first_6 = [str(c).strip() for c in row[:6]]
-                dropped_rows.append({"row_idx": row_idx, "reason": reason, "raw_cells": first_6, "row_data": row})
-                logger.warning("List1 %s-qator tashlandi: %s | Birinchi 6 katak: %s", row_idx, reason, first_6)
-                continue
+            ord_raw = self._get_cell(row, ord_idx) if ord_idx is not None else ""
+            amount_str = self._get_cell(row, amount_idx) if amount_idx is not None else ""
+            stat_raw = self._get_cell(row, status_idx) if status_idx is not None else ""
+            has_meaningful_content = bool(ord_raw.strip() or amount_str.strip() or stat_raw.strip())
 
-            try:
-                emp_id = normalize_employee_id(id_val)
-            except ValidationError as exc:
-                dropped_invalid_id += 1
-                reason = f"ID formati noto'g'ri: {exc}"
-                first_6 = [str(c).strip() for c in row[:6]]
-                dropped_rows.append({"row_idx": row_idx, "reason": reason, "raw_cells": first_6, "row_data": row})
-                logger.warning("List1 %s-qator tashlandi: %s | Birinchi 6 katak: %s", row_idx, reason, first_6)
-                continue
+            emp_id: str | None = None
+            if id_val:
+                try:
+                    emp_id = normalize_employee_id(id_val)
+                    last_seen_emp_id = emp_id
+                except ValidationError as exc:
+                    dropped_invalid_id += 1
+                    reason = f"ID formati noto'g'ri: {exc}"
+                    first_6 = [str(c).strip() for c in row[:6]]
+                    dropped_rows.append({"row_idx": row_idx, "reason": reason, "raw_cells": first_6, "row_data": row})
+                    logger.warning("List1 %s-qator tashlandi: %s | Birinchi 6 katak: %s", row_idx, reason, first_6)
+                    continue
+            else:
+                if has_meaningful_content and SHEETS_FORWARD_FILL_EMPLOYEE_ID and last_seen_emp_id:
+                    emp_id = last_seen_emp_id
+                    logger.info("List1 %s-qator bo'sh ID forward-fill qilindi: %s", row_idx, emp_id)
+                else:
+                    dropped_empty_id += 1
+                    reason = "ID katakchasi bo'sh"
+                    first_6 = [str(c).strip() for c in row[:6]]
+                    dropped_rows.append({"row_idx": row_idx, "reason": reason, "raw_cells": first_6, "row_data": row})
+                    logger.warning("List1 %s-qator tashlandi: %s | Birinchi 6 katak: %s", row_idx, reason, first_6)
+                    continue
 
             emp_name = self._get_cell(row, name_idx).strip() if name_idx is not None else "Noma'lum"
             if not emp_name:
@@ -221,21 +241,18 @@ class SheetsSource(BaseSource):
             if not grp_code:
                 grp_code = "A"
 
-            ord_raw = self._get_cell(row, ord_idx) if ord_idx is not None else ""
             try:
                 clean_ord = normalize_order_id(ord_raw) if ord_raw else f"ROW-{row_idx}"
                 ord_id = f"{emp_id}_{clean_ord}_{row_idx}"
             except ValidationError:
                 ord_id = f"{emp_id}_ROW_{row_idx}"
 
-            stat_raw = self._get_cell(row, status_idx) if status_idx is not None else ""
             try:
                 stat_val = self._parse_status(stat_raw)
             except ValidationError:
                 stat_val = "successful"
 
             src_val = self._normalize_source(self._get_cell(row, source_idx) if source_idx is not None else "")
-            amount_str = self._get_cell(row, amount_idx) if amount_idx is not None else ""
             amount = self._parse_money(amount_str, sheet_name="List1", row_idx=row_idx)
 
             date_raw = self._get_cell(row, date_idx) if date_idx is not None else ""
@@ -280,7 +297,7 @@ class SheetsSource(BaseSource):
         return orders
 
     def _parse_payroll(self, worksheet: gspread.Worksheet) -> list[PayrollDTO]:
-        raw_rows = worksheet.get_all_values()
+        raw_rows = worksheet.get_all_values(combine_merged_cells=True)
         if not raw_rows:
             raise ValidationError(f"'{worksheet.title}' varog'i bo'sh.")
 

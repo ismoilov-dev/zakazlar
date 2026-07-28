@@ -56,6 +56,7 @@ class SyncLog(TimeStampedModel):
     started_at = models.DateTimeField(auto_now_add=True)
     finished_at = models.DateTimeField(null=True, blank=True)
     row_count = models.PositiveIntegerField(default=0)
+    skipped_rows = models.PositiveIntegerField(default=0)
     created_sales = models.PositiveIntegerField(default=0)
     updated_sales = models.PositiveIntegerField(default=0)
     status = models.CharField(max_length=16, choices=SyncStatus.choices, default=SyncStatus.PENDING)
