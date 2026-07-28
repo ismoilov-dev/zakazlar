@@ -14,6 +14,11 @@ from apps.imports.services.importer import DataImporter
 from apps.imports.sources.excel import ExcelSource
 
 
+import logging
+
+logger = logging.getLogger(__name__)
+
+
 class WorkbookImportService:
     """Import `List1` orders and `List2` employee salaries transactionally."""
 
@@ -56,7 +61,8 @@ class WorkbookImportService:
                 created=result.created_sales,
                 updated=result.updated_sales,
             )
-        except (ValidationError, OSError, ValueError) as exc:
+        except Exception as exc:
+            logger.exception("Workbook processing failed for job_id=%s: %s", job_id, exc)
             self.jobs.mark_failed(job, [{"message": str(exc)}])
             raise
         return self.jobs.get(job_id)
