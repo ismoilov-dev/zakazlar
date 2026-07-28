@@ -75,7 +75,7 @@ async def start(message: Message) -> None:
 
 @router.message(F.text.regexp(r"^\d{1,32}$"))
 async def bind_and_show_employee_stats(message: Message) -> None:
-    """Bind the sender Telegram identity and return full employee calculations instantly."""
+    """Bind the sender Telegram identity and return full employee calculations with real-time sync."""
     if message.from_user is None or message.text is None:
         return
 
@@ -85,7 +85,19 @@ async def bind_and_show_employee_stats(message: Message) -> None:
         await message.answer(str(exc))
         return
 
-    ts_str, is_stale = await ensure_fresh_data_and_get_timestamp()
+    # Always perform real-time sync when ID is requested
+    is_stale = False
+    try:
+        await sync_to_async(SheetsSyncService().sync_if_needed)(force=True)
+    except Exception as exc:
+        logger.warning("Real-time sync failed: %s", exc)
+        is_stale = True
+
+    last_successful = await sync_to_async(SyncLog.get_last_successful)()
+    if last_successful and last_successful.finished_at:
+        ts_str = timezone.localtime(last_successful.finished_at).strftime("%d.%m.%Y %H:%M:%S")
+    else:
+        ts_str = timezone.localtime().strftime("%d.%m.%Y %H:%M:%S")
 
     try:
         await sync_to_async(TelegramBindingService().bind)(
@@ -94,15 +106,7 @@ async def bind_and_show_employee_stats(message: Message) -> None:
             username=message.from_user.username or "",
         )
     except DomainError:
-        try:
-            await sync_to_async(SheetsSyncService().sync_if_needed)(force=True)
-            await sync_to_async(TelegramBindingService().bind)(
-                employee_id=user_id,
-                telegram_id=message.from_user.id,
-                username=message.from_user.username or "",
-            )
-        except DomainError:
-            pass  # If already bound or non-fatal, proceed to show stats
+        pass
 
     try:
         dashboard = await sync_to_async(StatisticsService().employee_dashboard_for_employee)(user_id)
@@ -114,11 +118,23 @@ async def bind_and_show_employee_stats(message: Message) -> None:
 
 @router.message(Command("stats"))
 async def employee_stats(message: Message) -> None:
-    """Return requested or bound employee's dashboard instantly."""
+    """Return requested or bound employee's dashboard with real-time sync."""
     if message.from_user is None:
         return
 
-    ts_str, is_stale = await ensure_fresh_data_and_get_timestamp()
+    is_stale = False
+    try:
+        await sync_to_async(SheetsSyncService().sync_if_needed)(force=True)
+    except Exception as exc:
+        logger.warning("Real-time sync failed: %s", exc)
+        is_stale = True
+
+    last_successful = await sync_to_async(SyncLog.get_last_successful)()
+    if last_successful and last_successful.finished_at:
+        ts_str = timezone.localtime(last_successful.finished_at).strftime("%d.%m.%Y %H:%M:%S")
+    else:
+        ts_str = timezone.localtime().strftime("%d.%m.%Y %H:%M:%S")
+
     parts = (message.text or "").split()
 
     if len(parts) > 1 and parts[1].isdigit():
