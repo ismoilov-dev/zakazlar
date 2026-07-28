@@ -12,7 +12,7 @@ from django.utils import timezone
 from apps.accounts.services.binding import TelegramBindingService
 from apps.common.services.exceptions import DomainError
 from apps.imports.dto import normalize_employee_id
-from apps.imports.models import SyncLog
+from apps.imports.models import SyncLog, SyncStatus
 from apps.imports.services.sheets_sync import SheetsSyncService
 from apps.statistics.services.statistics import StatisticsService
 from apps.telegram_bot.services.formatting import employee_dashboard_text, group_dashboard_text
@@ -29,18 +29,27 @@ def _run_background_sync() -> None:
 
 async def ensure_fresh_data_and_get_timestamp() -> tuple[str, bool]:
     """Get DB sync timestamp instantly (0.001s) and trigger non-blocking background sync if needed."""
-    log = await sync_to_async(SyncLog.get_last_successful)()
+    last_attempt = await sync_to_async(SyncLog.objects.order_by("-started_at").first)()
+    last_successful = await sync_to_async(SyncLog.get_last_successful)()
     now = timezone.now()
 
     # Trigger background sync if last sync was > 10 seconds ago or never
-    if not log or not log.finished_at or (now - log.finished_at).total_seconds() > 10:
+    if not last_successful or not last_successful.finished_at or (now - last_successful.finished_at).total_seconds() > 10:
         asyncio.create_task(asyncio.to_thread(_run_background_sync))
 
     is_stale = False
-    if log and log.finished_at:
-        formatted_ts = log.finished_at.strftime("%d.%m.%Y %H:%M:%S")
-    elif log and log.started_at:
-        formatted_ts = log.started_at.strftime("%d.%m.%Y %H:%M:%S")
+    if last_attempt and last_attempt.status == SyncStatus.FAILED:
+        is_stale = True
+    elif not last_successful:
+        is_stale = True
+    elif last_successful and last_successful.finished_at:
+        if (now - last_successful.finished_at).total_seconds() > 300:
+            is_stale = True
+
+    if last_successful and last_successful.finished_at:
+        formatted_ts = timezone.localtime(last_successful.finished_at).strftime("%d.%m.%Y %H:%M:%S")
+    elif last_attempt and last_attempt.started_at:
+        formatted_ts = timezone.localtime(last_attempt.started_at).strftime("%d.%m.%Y %H:%M:%S")
     else:
         formatted_ts = "Hozirgina"
 

@@ -1,7 +1,4 @@
-"""Service for synchronized Google Sheets reads, cache freshness, and audit logging."""
-
-from __future__ import annotations
-
+import logging
 from django.core.cache import cache
 from django.db import transaction
 from django.utils import timezone
@@ -11,12 +8,15 @@ from apps.imports.models import SyncLog, SyncStatus
 from apps.imports.services.importer import DataImporter
 from apps.imports.sources.sheets import SheetsSource
 
+logger = logging.getLogger(__name__)
+
 
 class SheetsSyncService:
     """Orchestrates Google Sheets live synchronization with cache and freshness checks."""
 
     CACHE_KEY = "sheets_sync_recent_lock"
     CACHE_TTL_SECONDS = 10
+    STALE_THRESHOLD_SECONDS = 300
 
     def __init__(self) -> None:
         self.importer = DataImporter()
@@ -34,6 +34,7 @@ class SheetsSyncService:
         if not force:
             cache.set(self.CACHE_KEY, True, timeout=self.CACHE_TTL_SECONDS)
 
+        sync_log = None
         try:
             source = SheetsSource()
             sheet_id = source.sheet_id
@@ -43,7 +44,8 @@ class SheetsSyncService:
             try:
                 drive_meta = source.client.http_client.get_file_drive_metadata(sheet_id)
                 current_modified_time = str(drive_meta.get("modifiedTime", ""))
-            except Exception:
+            except Exception as exc:
+                logger.warning("Google Drive metadata olishda xatolik (sheet_id=%s): %s", sheet_id, exc)
                 current_modified_time = ""
 
             # 3. Check if spreadsheet was modified since last successful sync
@@ -70,7 +72,19 @@ class SheetsSyncService:
             return sync_log
 
         except Exception as exc:
-            # If error occurs and we have a previous successful log, fall back to it gracefully
+            logger.exception("Google Sheets sync muvaffaqiyatsiz tugadi: %s", exc)
+            if sync_log is not None:
+                sync_log.status = SyncStatus.FAILED
+                sync_log.finished_at = timezone.now()
+                sync_log.error_text = str(exc)[:1000]
+                sync_log.save(update_fields=["status", "finished_at", "error_text"])
+            else:
+                sync_log = SyncLog.objects.create(
+                    status=SyncStatus.FAILED,
+                    finished_at=timezone.now(),
+                    error_text=str(exc)[:1000],
+                )
+
             if last_successful:
                 return last_successful
             raise ValidationError(f"Google Sheets sync muvaffaqiyatsiz tugadi: {exc}") from exc
