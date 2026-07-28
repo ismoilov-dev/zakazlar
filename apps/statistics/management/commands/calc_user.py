@@ -3,8 +3,8 @@
 import os
 from decimal import Decimal
 from django.core.management.base import BaseCommand, CommandError
-from openpyxl import load_workbook
-
+from apps.imports.sources.excel import ExcelSource
+from apps.sales.models import SaleStatus
 from apps.statistics.services.statistics import StatisticsService
 
 
@@ -25,7 +25,7 @@ class Command(BaseCommand):
             self.stdout.write(self.style.MIGRATE_HEADING(f"📊 Excel faylidan hisob-kitob qilinmoqda: {file_path}"))
             self._calc_from_excel(file_path, user_id)
         else:
-            self.stdout.write(self.style.MIGRATE_HEADING(f"📊 Ma'lumotlar bazasidan hisob-kitob qilinmoqda..."))
+            self.stdout.write(self.style.MIGRATE_HEADING("📊 Ma'lumotlar bazasidan hisob-kitob qilinmoqda..."))
             try:
                 dashboard = StatisticsService().employee_dashboard_for_employee(user_id)
                 self._print_dashboard(dashboard)
@@ -33,82 +33,49 @@ class Command(BaseCommand):
                 raise CommandError(f"Xato: {exc}")
 
     def _calc_from_excel(self, file_path: str, user_id: str) -> None:
-        wb = load_workbook(file_path, data_only=True)
-        if "List1" not in wb.sheetnames or "List2" not in wb.sheetnames:
-            raise CommandError("Excel faylida 'List1' va 'List2' sahifalari bo'lishi kerak.")
+        with open(file_path, "rb") as f:
+            content = f.read()
 
-        s1 = wb["List1"]
-        s2 = wb["List2"]
+        source = ExcelSource(content)
+        orders, payroll = source.read()
 
-        # Search employee info in List2 first
         emp_info = None
-        for r in range(2, s2.max_row + 1):
-            uid = s2.cell(row=r, column=2).value
-            if uid is not None:
-                uid_str = str(uid).strip().zfill(4)
-                if uid_str == user_id:
-                    emp_info = {
-                        "name": str(s2.cell(row=r, column=3).value or "").strip(),
-                        "dept": str(s2.cell(row=r, column=4).value or "").strip(),
-                    }
-                    break
+        for p in payroll:
+            if p.employee_id == user_id:
+                emp_info = {"name": p.employee_name, "dept": p.group_code}
+                break
 
-        # Aggregate List1
-        total_orders = 0
-        successful_orders = 0
-        cancelled_orders = 0
-        pending_orders = 0
+        user_orders = [o for o in orders if o.employee_id == user_id]
+
+        if not user_orders:
+            self.stdout.write(self.style.WARNING(f"⚠️ User ID '{user_id}' bo'yicha hech qanday buyurtma topilmadi."))
+            return
+
+        emp_name = emp_info["name"] if emp_info else (user_orders[0].employee_name if user_orders else "")
+        emp_dept = emp_info["dept"] if emp_info else (user_orders[0].group_code if user_orders else "")
+
+        total_orders = len(user_orders)
+        successful_orders = sum(1 for o in user_orders if o.status == SaleStatus.SUCCESSFUL)
+        cancelled_orders = sum(1 for o in user_orders if o.status == SaleStatus.CANCELLED)
+        pending_orders = sum(1 for o in user_orders if o.status == SaleStatus.PENDING)
+
         total_sales = Decimal("0")
         perv_sales = Decimal("0")
         baza_sales = Decimal("0")
         otkaz_sales = Decimal("0")
         v_proc_sales = Decimal("0")
-        emp_name = emp_info["name"] if emp_info else ""
-        emp_dept = emp_info["dept"] if emp_info else ""
 
-        for r in range(2, s1.max_row + 1):
-            uid = s1.cell(row=r, column=8).value
-            if uid is None:
-                continue
-            uid_str = str(uid).strip().zfill(4)
-            if uid_str != user_id:
-                continue
-
-            if not emp_name:
-                emp_name = str(s1.cell(row=r, column=9).value or "").strip()
-            if not emp_dept:
-                emp_dept = str(s1.cell(row=r, column=10).value or "").strip()
-
-            amount_val = s1.cell(row=r, column=15).value or 0
-            try:
-                amount = Decimal(str(amount_val)).quantize(Decimal("0.01"))
-            except Exception:
-                amount = Decimal("0")
-
-            status = str(s1.cell(row=r, column=18).value or "").strip()
-            contact = str(s1.cell(row=r, column=20).value or "").strip()
-            category = str(s1.cell(row=r, column=22).value or "").strip()
-
-            total_orders += 1
-            total_sales += amount
-
-            if status == "Успешно":
-                successful_orders += 1
-                cat_lower = (category or contact).lower()
-                if "baza" in cat_lower or "база" in cat_lower:
-                    baza_sales += amount
+        for o in user_orders:
+            total_sales += o.sale_amount
+            if o.status == SaleStatus.SUCCESSFUL:
+                if o.source.lower() == "baza":
+                    baza_sales += o.sale_amount
                 else:
-                    perv_sales += amount
-            elif status == "Отказ":
-                cancelled_orders += 1
-                otkaz_sales += amount
-            elif status in ("В процесс", "У курьера"):
-                pending_orders += 1
-                v_proc_sales += amount
-
-        if total_orders == 0:
-            self.stdout.write(self.style.WARNING(f"⚠️ User ID '{user_id}' bo'yicha hech qanday buyurtma topilmadi."))
-            return
+                    perv_sales += o.sale_amount
+            elif o.status == SaleStatus.CANCELLED:
+                otkaz_sales += o.sale_amount
+            elif o.status == SaleStatus.PENDING:
+                v_proc_sales += o.sale_amount
 
         group_upper = emp_dept.upper()
         if group_upper == "BAZA":
