@@ -32,17 +32,13 @@ class TelegramBindingTestCase(TestCase):
         self.assertEqual(TelegramAccount.objects.count(), 2)
 
     def test_user_rebinds_updates_own_account(self) -> None:
+        from apps.common.services.exceptions import DomainError
         # User 1 binds to 0001
         self.service.bind(employee_id="0001", telegram_id=1001, username="user1")
 
-        # User 1 changes binding to 0002
-        self.service.bind(employee_id="0002", telegram_id=1001, username="user1_new")
-
-        # Total accounts should still be 1, but updated to 0002
-        self.assertEqual(TelegramAccount.objects.count(), 1)
-        account = TelegramAccount.objects.get(telegram_id=1001)
-        self.assertEqual(account.employee, self.employee2)
-        self.assertEqual(account.username, "user1_new")
+        # User 1 attempting to change binding to 0002 is rejected
+        with self.assertRaises(DomainError):
+            self.service.bind(employee_id="0002", telegram_id=1001, username="user1_new")
 
     def test_deletion_from_admin_removes_binding(self) -> None:
         self.service.bind(employee_id="0001", telegram_id=1001, username="user1")

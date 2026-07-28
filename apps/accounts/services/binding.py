@@ -1,7 +1,8 @@
 """Telegram identity binding use-case."""
 
+from apps.accounts.models import TelegramAccount
 from apps.accounts.repositories.telegram_account import TelegramAccountRepository
-from apps.common.services.exceptions import NotFoundError
+from apps.common.services.exceptions import DomainError, NotFoundError
 from apps.employees.models import Employee
 from apps.employees.repositories.employee import EmployeeRepository
 
@@ -18,5 +19,14 @@ class TelegramBindingService:
             employee = self.employees.get_active_by_employee_id(employee_id.strip())
         except Employee.DoesNotExist as exc:
             raise NotFoundError("Xodim topilmadi yoki faol emas.") from exc
+
+        existing_account = TelegramAccount.objects.filter(telegram_id=telegram_id).first()
+        if existing_account and existing_account.employee_id != employee.id:
+            raise DomainError("Sizning Telegram profilingiz allaqachon boshqa xodimga bog'langan. O'zgartirish uchun administratsiyaga murojaat qiling.")
+
+        existing_employee_binding = TelegramAccount.objects.filter(employee=employee).first()
+        if existing_employee_binding and existing_employee_binding.telegram_id != telegram_id:
+            raise DomainError("Bu Employee ID allaqachon boshqa Telegram profiliga bog'langan. Administratsiyaga murojaat qiling.")
+
         self.accounts.bind(employee=employee, telegram_id=telegram_id, username=username)
         return employee

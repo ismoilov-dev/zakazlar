@@ -19,6 +19,9 @@ class TelegramAccount(TimeStampedModel):
 
     class Meta:
         db_table = "telegram_accounts"
+        constraints = [
+            models.UniqueConstraint(fields=["employee"], name="unique_telegram_account_per_employee"),
+        ]
 
     def __str__(self) -> str:
         return f"{self.telegram_id} → {self.employee.employee_id}"

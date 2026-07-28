@@ -107,44 +107,42 @@ async def bind_and_show_employee_stats(message: Message) -> None:
             telegram_id=message.from_user.id,
             username=message.from_user.username or "",
         )
-    except Exception:
-        pass
+    except DomainError as exc:
+        await message.answer(str(exc))
+        return
+    except Exception as exc:
+        logger.exception("Binding error: %s", exc)
+        await message.answer("Bog'lanishda xatolik yuz berdi. Iltimos administratsiyaga murojaat qiling.")
+        return
 
     try:
         dashboard = await sync_to_async(StatisticsService().employee_dashboard_for_employee)(user_id)
         text = employee_dashboard_text(dashboard) + format_footer(ts_str, is_stale)
         await message.answer(text)
+    except DomainError as exc:
+        await message.answer(str(exc) + format_footer(ts_str, is_stale))
     except Exception as exc:
-        await message.answer(f"Ma'lumotlarni yuklashda xatolik: {exc}" + format_footer(ts_str, is_stale))
+        logger.exception("Dashboard error: %s", exc)
+        await message.answer("Ma'lumotlarni yuklashda xatolik yuz berdi." + format_footer(ts_str, is_stale))
 
 
 @router.message(Command("stats"))
 async def employee_stats(message: Message) -> None:
-    """Return requested or bound employee's dashboard instantly."""
+    """Return bound employee's dashboard instantly (privacy protected: no ID arguments allowed)."""
     if message.from_user is None:
         return
 
     ts_str, is_stale = await ensure_fresh_data_and_get_timestamp()
 
-    parts = (message.text or "").split()
-
-    if len(parts) > 1 and parts[1].isdigit():
-        try:
-            user_id = normalize_employee_id(parts[1])
-            dashboard = await sync_to_async(StatisticsService().employee_dashboard_for_employee)(user_id)
-            text = employee_dashboard_text(dashboard) + format_footer(ts_str, is_stale)
-            await message.answer(text)
-            return
-        except Exception as exc:
-            await message.answer(f"Ma'lumotlarni yuklashda xatolik: {exc}" + format_footer(ts_str, is_stale))
-            return
-
     try:
         dashboard = await sync_to_async(StatisticsService().employee_dashboard_for_telegram)(message.from_user.id)
         text = employee_dashboard_text(dashboard) + format_footer(ts_str, is_stale)
         await message.answer(text)
+    except DomainError as exc:
+        await message.answer(str(exc))
     except Exception as exc:
-        await message.answer(f"Ma'lumotlarni yuklashda xatolik: {exc}" + format_footer(ts_str, is_stale))
+        logger.exception("Employee stats error: %s", exc)
+        await message.answer("Ma'lumotlarni yuklashda xatolik yuz berdi." + format_footer(ts_str, is_stale))
 
 
 @router.message(Command("group_stats"))
