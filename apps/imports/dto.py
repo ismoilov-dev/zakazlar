@@ -54,6 +54,7 @@ class PayrollDTO:
     employee_name: str
     group_code: str
     monthly_salary: Decimal
+    summary_data: dict[str, object] | None = None
 
 
 # Backward-compatibility aliases if needed

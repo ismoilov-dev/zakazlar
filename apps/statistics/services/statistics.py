@@ -102,7 +102,6 @@ class StatisticsService:
 
     def _employee_dashboard(self, employee: Employee) -> EmployeeDashboard:
         totals = self.statistics.employee_totals(employee.pk)
-        group_code = (employee.group.code if employee.group else "").upper()
         
         perv_sales = Decimal(str(totals["perv_sales"]))
         baza_sales = Decimal(str(totals["baza_sales"]))
@@ -110,13 +109,48 @@ class StatisticsService:
         v_proc_sales = Decimal(str(totals["v_proc_sales"]))
         total_sales = Decimal(str(totals["total_sales"]))
         
-        # Use salary directly as calculated and parsed from Google Sheets
         earned_salary = employee.monthly_salary
             
         successful_sales_sum = perv_sales + baza_sales
         conversion_rate = float(successful_sales_sum / total_sales) if total_sales > 0 else 0.0
         denom = total_sales - v_proc_sales
         real_conversion_rate = float(successful_sales_sum / denom) if denom > 0 else 0.0
+
+        if employee.summary_data:
+            s = employee.summary_data
+            total_sales = Decimal(str(s.get("total_sales", total_sales)))
+            perv_sales = Decimal(str(s.get("perv_sales", perv_sales)))
+            baza_sales = Decimal(str(s.get("baza_sales", baza_sales)))
+            otkaz_sales = Decimal(str(s.get("otkaz_sales", otkaz_sales)))
+            v_proc_sales = Decimal(str(s.get("v_proc_sales", v_proc_sales)))
+            earned_salary = Decimal(str(s.get("earned_salary", earned_salary)))
+            successful_orders = int(s.get("successful_orders", totals["successful_orders"]))
+            if "conversion_rate" in s:
+                conversion_rate = float(s["conversion_rate"])
+            if "real_conversion_rate" in s:
+                real_conversion_rate = float(s["real_conversion_rate"])
+
+            return EmployeeDashboard(
+                full_name=employee.full_name,
+                employee_id=employee.employee_id,
+                group_code=employee.group.code if employee.group else None,
+                total_orders=successful_orders,
+                successful_orders=successful_orders,
+                cancelled_orders=int(totals["cancelled_orders"]),
+                pending_orders=int(totals["pending_orders"]),
+                total_sales=total_sales,
+                perv_sales=perv_sales,
+                baza_sales=baza_sales,
+                otkaz_sales=otkaz_sales,
+                v_proc_sales=v_proc_sales,
+                total_profit=Decimal(str(totals["total_profit"])),
+                monthly_salary=employee.monthly_salary,
+                earned_salary=earned_salary.quantize(Decimal("0.01")),
+                conversion_rate=round(conversion_rate, 4),
+                real_conversion_rate=round(real_conversion_rate, 4),
+                sources=self.statistics.employee_sources(employee.pk),
+                month_str=self.statistics.get_active_month_str(),
+            )
 
         return EmployeeDashboard(
             full_name=employee.full_name,

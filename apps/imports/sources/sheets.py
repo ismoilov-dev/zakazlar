@@ -250,6 +250,15 @@ class SheetsSource(BaseSource):
             required=False,
         )
 
+        total_sales_idx = self._find_single_column_index(headings, candidates=["Umumiy zakaz summasi", "Общая сумма", "Jami summa"], name="total_sales", required=False)
+        perv_sales_idx = self._find_single_column_index(headings, candidates=["Первичный Заказ", "Первичка"], name="perv_sales", required=False)
+        baza_sales_idx = self._find_single_column_index(headings, candidates=["База"], name="baza_sales", required=False)
+        otkaz_sales_idx = self._find_single_column_index(headings, candidates=["Otkaz", "Отказ"], name="otkaz_sales", required=False)
+        v_proc_sales_idx = self._find_single_column_index(headings, candidates=["В процесс", "В процессе"], name="v_proc_sales", required=False)
+        upakovka_idx = self._find_single_column_index(headings, candidates=["Upakovka soni", "Upakovka", "Упаковка"], name="upakovka", required=False)
+        conv_idx = self._find_single_column_index(headings, candidates=["Konversiya", "Конверсия"], name="conversion", required=False)
+        real_conv_idx = self._find_single_column_index(headings, candidates=["Real konversiya", "Реальная конверсия"], name="real_conversion", required=False)
+
         payroll: list[PayrollDTO] = []
         for row in raw_rows[header_row_idx + 1:]:
             if not any(str(cell).strip() for cell in row):
@@ -265,12 +274,44 @@ class SheetsSource(BaseSource):
             salary_str = self._get_cell(row, salary_idx) if salary_idx is not None else ""
             salary = self._parse_money(salary_str) if salary_str else Decimal("0.00")
 
+            summary: dict[str, object] = {}
+            if total_sales_idx is not None and self._get_cell(row, total_sales_idx):
+                summary["total_sales"] = str(self._parse_money(self._get_cell(row, total_sales_idx)))
+            if perv_sales_idx is not None and self._get_cell(row, perv_sales_idx):
+                summary["perv_sales"] = str(self._parse_money(self._get_cell(row, perv_sales_idx)))
+            if baza_sales_idx is not None and self._get_cell(row, baza_sales_idx):
+                summary["baza_sales"] = str(self._parse_money(self._get_cell(row, baza_sales_idx)))
+            if otkaz_sales_idx is not None and self._get_cell(row, otkaz_sales_idx):
+                summary["otkaz_sales"] = str(self._parse_money(self._get_cell(row, otkaz_sales_idx)))
+            if v_proc_sales_idx is not None and self._get_cell(row, v_proc_sales_idx):
+                summary["v_proc_sales"] = str(self._parse_money(self._get_cell(row, v_proc_sales_idx)))
+            if upakovka_idx is not None and self._get_cell(row, upakovka_idx):
+                try:
+                    summary["successful_orders"] = int(float(str(self._get_cell(row, upakovka_idx)).replace(",", ".")))
+                except Exception:
+                    pass
+            if salary_str:
+                summary["earned_salary"] = str(salary)
+            if conv_idx is not None and self._get_cell(row, conv_idx):
+                raw_c = str(self._get_cell(row, conv_idx)).replace("%", "").replace(",", ".").strip()
+                try:
+                    summary["conversion_rate"] = float(Decimal(raw_c) / 100) if float(Decimal(raw_c)) > 1 else float(Decimal(raw_c))
+                except Exception:
+                    pass
+            if real_conv_idx is not None and self._get_cell(row, real_conv_idx):
+                raw_rc = str(self._get_cell(row, real_conv_idx)).replace("%", "").replace(",", ".").strip()
+                try:
+                    summary["real_conversion_rate"] = float(Decimal(raw_rc) / 100) if float(Decimal(raw_rc)) > 1 else float(Decimal(raw_rc))
+                except Exception:
+                    pass
+
             payroll.append(
                 PayrollDTO(
                     employee_id=emp_id,
                     employee_name=emp_name,
                     group_code=grp_code if grp_code else "A",
                     monthly_salary=salary,
+                    summary_data=summary if summary else None,
                 )
             )
 

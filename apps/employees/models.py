@@ -18,6 +18,7 @@ class Employee(TimeStampedModel):
     )
     full_name = models.CharField(max_length=255)
     monthly_salary = models.DecimalField(max_digits=16, decimal_places=2, default=Decimal("0"))
+    summary_data = models.JSONField(default=dict, blank=True)
     group = models.ForeignKey(
         "groups.SalesGroup",
         on_delete=models.PROTECT,

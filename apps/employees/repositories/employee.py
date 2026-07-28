@@ -20,11 +20,19 @@ class EmployeeRepository(DjangoRepository[Employee]):
 
     @transaction.atomic
     def upsert(
-        self, *, employee_id: str, full_name: str, group: SalesGroup, monthly_salary: object | None = None
+        self,
+        *,
+        employee_id: str,
+        full_name: str,
+        group: SalesGroup,
+        monthly_salary: object | None = None,
+        summary_data: dict[str, object] | None = None,
     ) -> Employee:
         defaults: dict[str, object] = {"full_name": full_name, "group": group, "is_active": True}
         if monthly_salary is not None:
             defaults["monthly_salary"] = monthly_salary
+        if summary_data is not None:
+            defaults["summary_data"] = summary_data
         employee, _ = self.model.objects.update_or_create(
             employee_id=employee_id,
             defaults=defaults,
