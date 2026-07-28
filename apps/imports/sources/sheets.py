@@ -259,11 +259,24 @@ class SheetsSource(BaseSource):
             if not grp_code:
                 grp_code = "A"
 
+            if not ord_raw.strip():
+                dropped_invalid_id += 1
+                reason = "Zakaz raqami (№) bo'sh"
+                first_6 = [str(c).strip() for c in row[:6]]
+                dropped_rows.append({"row_idx": row_idx, "reason": reason, "raw_cells": first_6, "row_data": row})
+                logger.warning("List1 %s-qator tashlandi: %s | Birinchi 6 katak: %s", row_idx, reason, first_6)
+                continue
+
             try:
-                clean_ord = normalize_order_id(ord_raw) if ord_raw else f"ROW-{row_idx}"
-                ord_id = f"{emp_id}_{clean_ord}_{row_idx}"
-            except PARSE_ERRORS:
-                ord_id = f"{emp_id}_ROW_{row_idx}"
+                clean_ord = normalize_order_id(ord_raw)
+                ord_id = f"{emp_id}_{clean_ord}"
+            except PARSE_ERRORS as exc:
+                dropped_invalid_id += 1
+                reason = f"Zakaz raqami (№) formati noto'g'ri: {exc}"
+                first_6 = [str(c).strip() for c in row[:6]]
+                dropped_rows.append({"row_idx": row_idx, "reason": reason, "raw_cells": first_6, "row_data": row})
+                logger.warning("List1 %s-qator tashlandi: %s | Birinchi 6 katak: %s", row_idx, reason, first_6)
+                continue
 
             try:
                 stat_val = self._parse_status(stat_raw)
