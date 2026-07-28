@@ -71,6 +71,9 @@ echo "[5/6] Database migratsiyalari o'tkazilmoqda va statik fayllar yig'ilmoqda.
 
 # 6. Configure Nginx and Systemd Services
 echo "[6/6] Nginx va Systemd servislari sozlanmoqda..."
+echo "⚠️ OGOHLANTIRISH: Ushbu serverda boshqa Nginx saytlari ham bo'lishi mumkin. Skript ularning konfiguratsiyalariga tegmaydi va ularni o'chirmaydi."
+
+NGINX_PORT="${1:-8080}"
 
 # Generate Systemd Web service
 cat <<EOF > /etc/systemd/system/zakazlar-web.service
@@ -127,18 +130,11 @@ WantedBy=multi-user.target
 EOF
 
 # Generate Nginx config
-SERVER_NAME_ARG="$1"
-FIRST_ALLOWED_HOST=$(echo "${DJANGO_ALLOWED_HOSTS:-}" | cut -d',' -f1 | tr -d ' ')
-SERVER_NAME="${SERVER_NAME_ARG:-${FIRST_ALLOWED_HOST:-169.58.72.177}}"
-if [ "$SERVER_NAME" = "*" ] || [ -z "$SERVER_NAME" ]; then
-    SERVER_NAME="169.58.72.177"
-fi
-
 cat <<EOF > /etc/nginx/sites-available/zakazlar
 server {
-    listen 80;
-    listen [::]:80;
-    server_name $SERVER_NAME;
+    listen $NGINX_PORT;
+    listen [::]:$NGINX_PORT;
+    server_name _;
 
     client_max_body_size 50M;
 
@@ -166,22 +162,24 @@ server {
 }
 EOF
 
+# Create symlink and test Nginx syntax
 ln -sf /etc/nginx/sites-available/zakazlar /etc/nginx/sites-enabled/
 
-# Test Nginx syntax
 if ! nginx -t; then
-    echo "❌ XATOLIK: Nginx konfiguratsiyasida xatolik yuz berdi (nginx -t yiqildi)."
-    echo "Iltimos, /etc/nginx/sites-enabled/ va /etc/nginx/sites-available/ katalogidagi fayllarni va duplikatsiya e'lonlarini (masalan, boshqa loyihadagi default_server) tekshiring."
+    echo "❌ XATOLIK: Nginx sintaksisida yoki konfiguratsiyasida xatolik yuz berdi (nginx -t yiqildi)."
+    echo "Mumkin bo'lgan sabablar:"
+    echo " - /etc/nginx/sites-enabled/ katalogidagi qaysidir faylda 'duplicate default server' yoki sintaktik xato bor."
+    echo " - Port $NGINX_PORT band bo'lishi mumkin."
+    echo "Iltimos, boshqa loyiha konfiguratsiyalarini tekshiring."
+    rm -f /etc/nginx/sites-enabled/zakazlar
     exit 1
 fi
 
-rm -f /etc/nginx/sites-enabled/default
-
-
-# Enable & Restart Services
+# Enable & Reload/Restart Services
 systemctl daemon-reload
 systemctl enable zakazlar-web zakazlar-bot zakazlar-sync nginx
-systemctl restart zakazlar-web zakazlar-bot zakazlar-sync nginx
+systemctl restart zakazlar-web zakazlar-bot zakazlar-sync
+systemctl reload nginx
 
 echo "=================================================="
 echo "  Tabriklaymiz! Loyiha Nginx va Systemd orqali     "
