@@ -1,4 +1,6 @@
 import logging
+import time
+from django.conf import settings
 from django.core.cache import cache
 from django.db import transaction
 from django.utils import timezone
@@ -10,6 +12,8 @@ from apps.imports.sources.sheets import SheetsSource
 
 logger = logging.getLogger(__name__)
 
+SHEETS_RECALC_DELAY_SECONDS = getattr(settings, "SHEETS_RECALC_DELAY_SECONDS", 3)
+
 
 class SheetsSyncService:
     """Orchestrates Google Sheets live synchronization with cache and freshness checks."""
@@ -17,9 +21,16 @@ class SheetsSyncService:
     CACHE_KEY = "sheets_sync_recent_lock"
     CACHE_TTL_SECONDS = 10
     STALE_THRESHOLD_SECONDS = 300
+    SHEETS_RECALC_DELAY_SECONDS = SHEETS_RECALC_DELAY_SECONDS
 
     def __init__(self) -> None:
         self.importer = DataImporter()
+
+    @classmethod
+    def clear_cache_lock(cls) -> None:
+        """Clear cache lock so next sync_if_needed executes immediately."""
+        cache.delete(cls.CACHE_KEY)
+
 
     def sync_if_needed(self, force: bool = False) -> SyncLog:
         """Check Drive modifiedTime & cache lock. Perform atomic DB snapshot update if fresh data exists."""
@@ -58,7 +69,12 @@ class SheetsSyncService:
                 sheet_modified_at=current_modified_time,
             )
 
+            if self.SHEETS_RECALC_DELAY_SECONDS > 0:
+                logger.info("Google Sheets hisob-kitoblari yakunlanishi uchun %s sekund kutilmoqda...", self.SHEETS_RECALC_DELAY_SECONDS)
+                time.sleep(self.SHEETS_RECALC_DELAY_SECONDS)
+
             orders, payroll = source.read()
+
             skipped_rows = len(getattr(source, "last_dropped_rows", []))
 
             with transaction.atomic():

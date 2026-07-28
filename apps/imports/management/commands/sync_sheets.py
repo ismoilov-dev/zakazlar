@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import logging
+import signal
+import time
 from typing import Any
 
 from django.core.management.base import BaseCommand, CommandError
@@ -9,9 +12,15 @@ from django.core.management.base import BaseCommand, CommandError
 from apps.common.services.exceptions import ValidationError
 from apps.imports.services.sheets_sync import SheetsSyncService
 
+logger = logging.getLogger(__name__)
+
 
 class Command(BaseCommand):
     help = "Synchronize live Google Sheets data into PostgreSQL database inside an atomic transaction."
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.keep_running = True
 
     def add_arguments(self, parser: Any) -> None:
         parser.add_argument(
@@ -19,13 +28,53 @@ class Command(BaseCommand):
             action="store_true",
             help="Bypass freshness and cache checks and force sync.",
         )
+        parser.add_argument(
+            "--watch",
+            action="store_true",
+            help="Run continuously as a daemon, syncing every interval seconds.",
+        )
+        parser.add_argument(
+            "--interval",
+            type=int,
+            default=30,
+            help="Interval in seconds between sync checks when running in watch mode (default: 30).",
+        )
+
+    def _handle_signal(self, signum: int, frame: Any) -> None:
+        self.stdout.write(self.style.WARNING(f"\nSignal {signum} qabul qilindi. Jarayon toza to'xtatilmoqda..."))
+        self.keep_running = False
 
     def handle(self, *args: Any, **options: Any) -> None:
         force = options.get("force", False)
-        self.stdout.write("Google Sheets sinxronizatsiyasi boshlanmoqda...")
+        watch = options.get("watch", False)
+        interval = options.get("interval", 30)
 
-        try:
+        if watch:
+            signal.signal(signal.SIGINT, self._handle_signal)
+            signal.signal(signal.SIGTERM, self._handle_signal)
+            self.stdout.write(self.style.SUCCESS(f"Google Sheets davriy sinxronizatsiyasi boshlandi (interval={interval}s)..."))
+
             service = SheetsSyncService()
+            while self.keep_running:
+                try:
+                    self._sync_once(service, force=force)
+                except Exception as exc:
+                    logger.error("Watch rejimida sinxronizatsiya xatoligi: %s", exc)
+
+                sleep_chunk = 1
+                slept = 0
+                while self.keep_running and slept < interval:
+                    time.sleep(min(sleep_chunk, interval - slept))
+                    slept += sleep_chunk
+
+            self.stdout.write(self.style.SUCCESS("Davriy sinxronizatsiya toza yakunlandi."))
+        else:
+            self.stdout.write("Google Sheets sinxronizatsiyasi boshlanmoqda...")
+            service = SheetsSyncService()
+            self._sync_once(service, force=force)
+
+    def _sync_once(self, service: SheetsSyncService, force: bool) -> None:
+        try:
             sync_log = service.sync_if_needed(force=force)
 
             if sync_log.status == "success":
