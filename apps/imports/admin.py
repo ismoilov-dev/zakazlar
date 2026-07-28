@@ -61,8 +61,6 @@ class ImportJobAdmin(admin.ModelAdmin):
 
     @staticmethod
     def _cascade_delete(jobs: list[ImportJob]) -> None:
-        from apps.employees.models import Employee
-        from apps.groups.models import SalesGroup
         from apps.sales.models import Sale
 
         job_ids = [j.pk for j in jobs]
@@ -72,12 +70,6 @@ class ImportJobAdmin(admin.ModelAdmin):
 
         # 2. Delete the import jobs
         ImportJob.objects.filter(id__in=job_ids).delete()
-
-        # 3. Delete any employees that have no sales left
-        Employee.objects.filter(sales__isnull=True).delete()
-
-        # 4. Clean up any empty sales groups
-        SalesGroup.objects.filter(employees__isnull=True).delete()
 
 
 
