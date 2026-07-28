@@ -95,14 +95,19 @@ class SheetsSource(BaseSource):
             raise ValidationError("Google Sheet'da 'Xodimlar maoshi', 'Ish haqi' yoki 'List2' varog'i topilmadi.")
 
         payroll_by_id: dict[str, PayrollDTO] = {}
+        successful_parses = 0
         for ws in payroll_candidates:
             try:
                 parsed = self._parse_payroll(ws)
                 for dto in parsed:
                     if dto.employee_id not in payroll_by_id:
                         payroll_by_id[dto.employee_id] = dto
-            except Exception:
-                pass  # Skip optional candidate parse failures
+                successful_parses += 1
+            except Exception as exc:
+                logger.warning("Payroll varag'ini ('%s') tahlil qilishda xatolik: %s", ws.title, exc)
+
+        if successful_parses == 0:
+            raise ValidationError("Birorta ham payroll varog'ini tahlil qilib bo'lmadi.")
 
         payroll = list(payroll_by_id.values())
 
