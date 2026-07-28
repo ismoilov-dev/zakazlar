@@ -159,31 +159,50 @@ class SheetsSource(BaseSource):
 
             try:
                 emp_id = normalize_employee_id(id_val)
-                emp_name = self._require_text(self._get_cell(row, columns["Ответственный"]), "Ответственный")
-                grp_code = (self._get_cell(row, group_idx) or "A").strip().upper()
-                if not grp_code:
-                    grp_code = "A"
-                ord_id = normalize_order_id(self._get_cell(row, columns["№"]))
-                stat_val = self._parse_status(self._get_cell(row, columns["статус"]))
-                src_val = self._normalize_source(self._get_cell(row, source_idx) if source_idx is not None else "")
-                amount = self._parse_money(self._get_cell(row, columns["Сумма"]), sheet_name="List1", row_idx=row_idx)
-                ordered_at = self._parse_date(self._get_cell(row, columns["Дата Заказа"]))
-
-                orders.append(
-                    OrderDTO(
-                        employee_id=emp_id,
-                        employee_name=emp_name,
-                        group_code=grp_code,
-                        order_id=ord_id,
-                        status=stat_val,
-                        source=src_val,
-                        sale_amount=amount,
-                        ordered_at=ordered_at,
-                    )
-                )
             except ValidationError as exc:
-                logger.warning("List1 varog'i, %s-qator o'tkazib yuborildi: %s", row_idx, exc)
+                logger.warning("List1 varog'i, %s-qator ID xatosi: %s", row_idx, exc)
                 continue
+
+            emp_name = self._get_cell(row, columns["Ответственный"]).strip() or "Noma'lum"
+            
+            grp_code = (self._get_cell(row, group_idx) or "A").strip().upper()
+            if not grp_code:
+                grp_code = "A"
+
+            ord_raw = self._get_cell(row, columns["№"])
+            try:
+                ord_id = normalize_order_id(ord_raw) if ord_raw else f"ROW-{row_idx}"
+            except ValidationError:
+                ord_id = f"ROW-{row_idx}"
+
+            stat_raw = self._get_cell(row, columns["статус"])
+            try:
+                stat_val = self._parse_status(stat_raw)
+            except ValidationError:
+                stat_val = "successful"
+
+            src_val = self._normalize_source(self._get_cell(row, source_idx) if source_idx is not None else "")
+            amount = self._parse_money(self._get_cell(row, columns["Сумма"]), sheet_name="List1", row_idx=row_idx)
+
+            date_raw = self._get_cell(row, columns["Дата Заказа"])
+            try:
+                ordered_at = self._parse_date(date_raw)
+            except ValidationError:
+                from django.utils import timezone
+                ordered_at = timezone.now()
+
+            orders.append(
+                OrderDTO(
+                    employee_id=emp_id,
+                    employee_name=emp_name,
+                    group_code=grp_code,
+                    order_id=ord_id,
+                    status=stat_val,
+                    source=src_val,
+                    sale_amount=amount,
+                    ordered_at=ordered_at,
+                )
+            )
 
         return orders
 
