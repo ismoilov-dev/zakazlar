@@ -121,7 +121,7 @@ class StatisticsService:
                 full_name=employee.full_name,
                 employee_id=employee.employee_id,
                 group_code=employee.group.code if employee.group else None,
-                total_orders=successful_orders,
+                total_orders=int(totals["total_orders"]),
                 successful_orders=successful_orders,
                 cancelled_orders=int(totals["cancelled_orders"]),
                 pending_orders=int(totals["pending_orders"]),
