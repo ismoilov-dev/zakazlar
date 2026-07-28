@@ -110,11 +110,8 @@ class StatisticsService:
         v_proc_sales = Decimal(str(totals["v_proc_sales"]))
         total_sales = Decimal(str(totals["total_sales"]))
         
-        # Calculate salary: Baza group = 12% perv + 12% baza; Others = 12% perv + 16% baza
-        if group_code == "BAZA":
-            earned_salary = (perv_sales * Decimal("0.12")) + (baza_sales * Decimal("0.12"))
-        else:
-            earned_salary = (perv_sales * Decimal("0.12")) + (baza_sales * Decimal("0.16"))
+        # Use salary directly as calculated and parsed from Google Sheets
+        earned_salary = employee.monthly_salary
             
         successful_sales_sum = perv_sales + baza_sales
         conversion_rate = float(successful_sales_sum / total_sales) if total_sales > 0 else 0.0

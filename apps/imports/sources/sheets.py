@@ -229,7 +229,12 @@ class SheetsSource(BaseSource):
         id_idx = self._find_single_column_index(headings, candidates=["Tabel raqami", "ID"], name="ID")
         name_idx = self._find_single_column_index(headings, candidates=["FISH", "XODIMLAR ISMLARI", "Оператор"], name="xodim ismi")
         group_idx = self._find_single_column_index(headings, candidates=["Guruhi", "Bo'lim "], name="guruh", required=False)
-        salary_idx = self._find_single_column_index(headings, candidates=["Ish haqi", "OYLIK MOASH", "Oylik maoshi 12%"], name="ish haqi", required=False)
+        salary_idx = self._find_single_column_index(
+            headings,
+            candidates=["Ish haqi", "OYLIK MOASH", "OYLIK MAOSH", "Oylik maosh", "Oylik maoshi 12%", "Oylik", "Maosh", "Зарплата", "Оклад"],
+            name="ish haqi",
+            required=False,
+        )
 
         payroll: list[PayrollDTO] = []
         for row in raw_rows[header_row_idx + 1:]:

@@ -87,7 +87,7 @@ class DataImporterTest(TestCase):
         emp = Employee.objects.get(employee_id="0191")
         self.assertEqual(emp.group.code, "BAZA")
 
-        # BAZA group rate: 12% perv + 12% baza = 1000000 * 0.12 = 120000
+        # Salary matches monthly_salary from Google Sheets PayrollDTO
         dashboard = StatisticsService().employee_dashboard_for_employee("0191")
-        self.assertEqual(dashboard.earned_salary, Decimal("120000.00"))
+        self.assertEqual(dashboard.earned_salary, Decimal("5000000.00"))
 
