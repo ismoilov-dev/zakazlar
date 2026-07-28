@@ -24,6 +24,7 @@ from apps.telegram_bot.services.formatting import employee_dashboard_text, group
 router = Router(name="sales_bot")
 
 STALE_THRESHOLD_SECONDS = 300
+SYNC_TIMEOUT_SECONDS = 4.0
 
 
 _sync_lock = asyncio.Lock()
@@ -42,9 +43,12 @@ async def ensure_fresh_data_and_get_timestamp() -> tuple[str, bool]:
             async def _bg_sync():
                 async with _sync_lock:
                     try:
-                        await sync_to_async(SheetsSyncService().sync_if_needed)(force=True)
+                        await asyncio.wait_for(
+                            sync_to_async(SheetsSyncService().sync_if_needed)(force=False),
+                            timeout=SYNC_TIMEOUT_SECONDS,
+                        )
                     except Exception as exc:
-                        logger.warning("Background sync failed: %s", exc)
+                        logger.warning("Background sync failed or timed out: %s", exc)
 
             asyncio.create_task(_bg_sync())
 
