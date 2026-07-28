@@ -1,25 +1,32 @@
-"""Read-optimized aggregate queries for reporting services."""
-
+import logging
 from decimal import Decimal
 
 from django.db.models import Count, Q, Sum
 from django.db.models.functions import Coalesce
+from django.utils import timezone
 
 from apps.sales.models import Sale, SaleStatus
+
+logger = logging.getLogger(__name__)
 
 
 class StatisticsRepository:
     """Calculate aggregates in PostgreSQL instead of loading sale rows."""
 
+    def _get_current_month_qs(self):
+        now = timezone.localtime()
+        return Sale.objects.filter(ordered_at__year=now.year, ordered_at__month=now.month)
+
     def employee_totals(self, employee_id: int) -> dict[str, object]:
-        return self._aggregate(Sale.objects.filter(employee_id=employee_id))
+        return self._aggregate(self._get_current_month_qs().filter(employee_id=employee_id))
 
     def group_totals(self, group_id: int) -> dict[str, object]:
-        return self._aggregate(Sale.objects.filter(employee__group_id=group_id))
+        return self._aggregate(self._get_current_month_qs().filter(employee__group_id=group_id))
 
     def employee_sources(self, employee_id: int) -> list[dict[str, object]]:
         return list(
-            Sale.objects.filter(employee_id=employee_id)
+            self._get_current_month_qs()
+            .filter(employee_id=employee_id)
             .values("source")
             .annotate(
                 total_orders=Count("id"),

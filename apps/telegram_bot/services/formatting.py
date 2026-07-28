@@ -1,4 +1,4 @@
-"""Formatting adapters for Telegram messages."""
+from django.utils import timezone
 
 from apps.statistics.services.statistics import EmployeeDashboard, GroupDashboard
 
@@ -8,6 +8,7 @@ def employee_dashboard_text(dashboard: EmployeeDashboard) -> str:
     group = dashboard.group_code or "Biriktirilmagan"
     conv_pct = f"{dashboard.conversion_rate * 100:.2f}%"
     real_conv_pct = f"{dashboard.real_conversion_rate * 100:.2f}%"
+    month_str = timezone.localtime().strftime("%m.%Y")
     
     sources = "\n".join(
         f"• {item['source'] or 'Noma\'lum'}: {item['successful_orders']} ta uspešno, "
@@ -18,7 +19,8 @@ def employee_dashboard_text(dashboard: EmployeeDashboard) -> str:
     return (
         f"👤 <b>{dashboard.full_name.strip()}</b>\n"
         f"🆔 ID: <code>{dashboard.employee_id}</code>\n"
-        f"🏢 Bo'lim: <b>{group}</b>\n\n"
+        f"🏢 Bo'lim: <b>{group}</b>\n"
+        f"📅 Oy: <b>{month_str}</b>\n\n"
         f"📦 Upakovka (Muvaffaqiyatli): <b>{dashboard.successful_orders} ta</b>\n"
         f"❌ Otraz (Bekor qilingan): <b>{dashboard.cancelled_orders} ta</b>\n"
         f"⏳ V protsess (Jarayonda): <b>{dashboard.pending_orders} ta</b>\n"
@@ -38,8 +40,10 @@ def employee_dashboard_text(dashboard: EmployeeDashboard) -> str:
 
 def group_dashboard_text(dashboard: GroupDashboard) -> str:
     """Render a group-leader dashboard without performing calculations."""
+    month_str = timezone.localtime().strftime("%m.%Y")
     return (
-        f"<b>{dashboard.group_name} ({dashboard.group_code})</b>\n\n"
+        f"<b>{dashboard.group_name} ({dashboard.group_code})</b>\n"
+        f"📅 Oy: <b>{month_str}</b>\n\n"
         f"Muvaffaqiyatli savdolar: <b>{dashboard.successful_orders}</b>\n"
         f"Guruh foydasi: <b>{dashboard.total_profit:,.2f}</b>\n"
         f"Rahbar 2% bonusi: <b>{dashboard.leader_bonus:,.2f}</b>\n"
