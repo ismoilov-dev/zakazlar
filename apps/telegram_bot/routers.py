@@ -84,13 +84,19 @@ async def bind_and_show_employee_stats(message: Message) -> None:
     except DomainError as exc:
         await message.answer(str(exc))
         return
+    except Exception as exc:
+        await message.answer(f"ID ko'rinishida xatolik: {exc}")
+        return
 
-    # Always perform real-time sync when ID is requested
+    # Perform real-time sync with 5 second timeout so handler never hangs
     is_stale = False
     try:
-        await sync_to_async(SheetsSyncService().sync_if_needed)(force=True)
+        await asyncio.wait_for(
+            sync_to_async(SheetsSyncService().sync_if_needed)(force=True),
+            timeout=5.0,
+        )
     except Exception as exc:
-        logger.warning("Real-time sync failed: %s", exc)
+        logger.warning("Real-time sync failed or timed out: %s", exc)
         is_stale = True
 
     last_successful = await sync_to_async(SyncLog.get_last_successful)()
@@ -105,15 +111,15 @@ async def bind_and_show_employee_stats(message: Message) -> None:
             telegram_id=message.from_user.id,
             username=message.from_user.username or "",
         )
-    except DomainError:
+    except Exception:
         pass
 
     try:
         dashboard = await sync_to_async(StatisticsService().employee_dashboard_for_employee)(user_id)
         text = employee_dashboard_text(dashboard) + format_footer(ts_str, is_stale)
         await message.answer(text)
-    except DomainError as exc:
-        await message.answer(str(exc) + format_footer(ts_str, is_stale))
+    except Exception as exc:
+        await message.answer(f"Ma'lumotlarni yuklashda xatolik: {exc}" + format_footer(ts_str, is_stale))
 
 
 @router.message(Command("stats"))
@@ -124,9 +130,12 @@ async def employee_stats(message: Message) -> None:
 
     is_stale = False
     try:
-        await sync_to_async(SheetsSyncService().sync_if_needed)(force=True)
+        await asyncio.wait_for(
+            sync_to_async(SheetsSyncService().sync_if_needed)(force=True),
+            timeout=5.0,
+        )
     except Exception as exc:
-        logger.warning("Real-time sync failed: %s", exc)
+        logger.warning("Real-time sync failed or timed out: %s", exc)
         is_stale = True
 
     last_successful = await sync_to_async(SyncLog.get_last_successful)()
@@ -144,16 +153,16 @@ async def employee_stats(message: Message) -> None:
             text = employee_dashboard_text(dashboard) + format_footer(ts_str, is_stale)
             await message.answer(text)
             return
-        except DomainError as exc:
-            await message.answer(str(exc) + format_footer(ts_str, is_stale))
+        except Exception as exc:
+            await message.answer(f"Ma'lumotlarni yuklashda xatolik: {exc}" + format_footer(ts_str, is_stale))
             return
 
     try:
         dashboard = await sync_to_async(StatisticsService().employee_dashboard_for_telegram)(message.from_user.id)
         text = employee_dashboard_text(dashboard) + format_footer(ts_str, is_stale)
         await message.answer(text)
-    except DomainError as exc:
-        await message.answer(str(exc) + format_footer(ts_str, is_stale))
+    except Exception as exc:
+        await message.answer(f"Ma'lumotlarni yuklashda xatolik: {exc}" + format_footer(ts_str, is_stale))
 
 
 @router.message(Command("group_stats"))
