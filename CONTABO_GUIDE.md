@@ -48,25 +48,34 @@ Ushbu script avtomatik ravishda:
 5. Systemd Web (`zakazlar-web.service`) va Bot (`zakazlar-bot.service`) servislarini hamda Nginx'ni sozlab ishga tushiradi.
 
 ### 5-qadam: Admin panelga birinchi marta kirish tartibi
-1. `.env` faylida IP va HTTP sozlamalarini o'rnating:
-   ```env
-   DJANGO_USE_HTTPS=false
-   DJANGO_ALLOWED_HOSTS=169.58.72.177,localhost,127.0.0.1
-   DJANGO_CSRF_TRUSTED_ORIGINS=http://169.58.72.177
-   SHEETS_WEBHOOK_SECRET=your_secret_here
-   ```
-2. Migratsiya, kesh jadvali va statik fayllarni yig'ing:
+1. `.env` faylini to'ldiring (`DJANGO_USE_HTTPS=false`, `DJANGO_ALLOWED_HOSTS`, `DJANGO_SECRET_KEY`, va hokazo).
+2. Deploy holatini tekshiring:
    ```bash
-   /var/www/zakazlar/.venv/bin/python manage.py migrate --noinput
-   /var/www/zakazlar/.venv/bin/python manage.py createcachetable
-   /var/www/zakazlar/.venv/bin/python manage.py collectstatic --noinput
+   python manage.py check_deploy
    ```
-3. Superuser yaratish:
+3. Database migratsiyasini bajaring:
    ```bash
-   /var/www/zakazlar/.venv/bin/python manage.py createsuperuser
+   python manage.py migrate --noinput
    ```
-4. Servislarni qayta ishga tushiring va brauzerda oching:
-   `http://169.58.72.177/panel/`
+4. Cache jadvalini yarating:
+   ```bash
+   python manage.py createcachetable
+   ```
+5. Statik fayllarni yig'ing:
+   ```bash
+   python manage.py collectstatic --noinput
+   ```
+6. Superuser adminda foydalanuvchi yarating:
+   ```bash
+   python manage.py createsuperuser
+   ```
+7. Web xizmatini qayta ishga tushiring:
+   ```bash
+   systemctl restart zakazlar-web
+   ```
+8. Brauzerda Admin panelga kiring:
+   `http://<IP>/panel/`
+
 
 ---
 
@@ -91,7 +100,7 @@ After=network.target postgresql.service
 [Service]
 User=root
 WorkingDirectory=/var/www/zakazlar
-ExecStart=/var/www/zakazlar/.venv/bin/gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 2 --timeout 120
+ExecStart=/var/www/zakazlar/venv/bin/gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 2 --timeout 120
 Restart=always
 RestartSec=5
 
@@ -108,7 +117,7 @@ After=network.target postgresql.service
 [Service]
 User=root
 WorkingDirectory=/var/www/zakazlar
-ExecStart=/var/www/zakazlar/.venv/bin/python manage.py run_bot
+ExecStart=/var/www/zakazlar/venv/bin/python manage.py run_bot
 Restart=always
 RestartSec=5
 
@@ -125,7 +134,7 @@ After=network.target postgresql.service
 [Service]
 User=root
 WorkingDirectory=/var/www/zakazlar
-ExecStart=/var/www/zakazlar/.venv/bin/python manage.py sync_sheets --watch --interval 30
+ExecStart=/var/www/zakazlar/venv/bin/python manage.py sync_sheets --watch --interval 30
 Restart=always
 RestartSec=5
 
@@ -179,14 +188,29 @@ sudo systemctl enable --now zakazlar-web zakazlar-bot zakazlar-sync
   tail -f /var/log/nginx/error.log
   ```
 
+### Muammo bo'lganda ishlatiladigan diagnostika buyruqlari:
+```bash
+# Web servis holatini tekshirish
+systemctl status zakazlar-web
+
+# Web servisning oxirgi 50 qator loglarini ko'rish
+journalctl -u zakazlar-web -n 50
+
+# Nginx sintaksisini tekshirish
+nginx -t
+
+# Gunicorn lokal interfeysda ishlayotganini tekshirish
+curl -I http://127.0.0.1:8005/panel/
+```
+
 ### Servislarni qayta ishga tushirish (Update yuborilganda):
 ```bash
 cd /var/www/zakazlar
 git pull
-./.venv/bin/pip install -r requirements.txt
-./.venv/bin/python manage.py migrate --noinput
-./.venv/bin/python manage.py createcachetable
-./.venv/bin/python manage.py collectstatic --noinput
+./venv/bin/pip install -r requirements.txt
+./venv/bin/python manage.py migrate --noinput
+./venv/bin/python manage.py createcachetable
+./venv/bin/python manage.py collectstatic --noinput
 systemctl restart zakazlar-web zakazlar-bot zakazlar-sync
 ```
 
