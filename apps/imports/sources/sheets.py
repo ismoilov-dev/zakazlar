@@ -304,18 +304,38 @@ class SheetsSource(BaseSource):
 
         if not val:
             raise ValidationError("Sana maydoni bo'sh bo'lishi mumkin emas.")
-        # Try dd.mm.yyyy format
-        m = re.match(r"^(\d{1,2})\.(\d{1,2})\.(\d{4})$", val.strip())
+
+        clean_val = str(val).strip()
+
+        # Extract date portion if time is attached (e.g. "01.07.2026 14:30:00")
+        if " " in clean_val:
+            clean_val = clean_val.split()[0]
+
+        # 1. Match dd.mm.yyyy or dd.mm.yy or d.m.yyyy or d.m.yy (with dot, slash, or dash)
+        m = re.match(r"^(\d{1,2})[\.\/-](\d{1,2})[\.\/-](\d{2,4})$", clean_val)
         if m:
-            day, month, year = int(m.group(1)), int(m.group(2)), int(m.group(3))
+            day, month, year_str = int(m.group(1)), int(m.group(2)), m.group(3)
+            year = int(year_str)
+            if len(year_str) == 2:
+                year += 2000
             try:
                 d = date(year, month, day)
                 return timezone.make_aware(datetime.combine(d, time.min))
             except ValueError as exc:
                 raise ValidationError(f"Noto'g'ri sana ('{val}'): {exc}") from exc
 
-        # Fallback to ISO parsing (yyyy-mm-dd)
-        parsed = parse_iso_date(val.strip())
+        # 2. Match yyyy-mm-dd or yyyy/mm/dd
+        m = re.match(r"^(\d{4})[\.\/-](\d{1,2})[\.\/-](\d{1,2})$", clean_val)
+        if m:
+            year, month, day = int(m.group(1)), int(m.group(2)), int(m.group(3))
+            try:
+                d = date(year, month, day)
+                return timezone.make_aware(datetime.combine(d, time.min))
+            except ValueError as exc:
+                raise ValidationError(f"Noto'g'ri sana ('{val}'): {exc}") from exc
+
+        # 3. Fallback to ISO parsing
+        parsed = parse_iso_date(clean_val)
         if parsed:
             return timezone.make_aware(datetime.combine(parsed, time.min))
 
