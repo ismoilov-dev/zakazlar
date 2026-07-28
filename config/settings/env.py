@@ -16,6 +16,11 @@ def load_environment() -> None:
     load_dotenv(ENV_FILE, override=False)
 
 
+def has_env(name: str) -> bool:
+    """Check if environment variable is set."""
+    return os.getenv(name) is not None
+
+
 def get_bool(name: str, *, default: bool = False) -> bool:
     """Read a boolean environment variable with explicit accepted values."""
     value = os.getenv(name)

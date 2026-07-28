@@ -35,8 +35,8 @@ class HTTPSSettingsTestCase(TestCase):
         self.assertTrue(prod.CSRF_COOKIE_SECURE)
         self.assertEqual(prod.SECURE_PROXY_SSL_HEADER, ("HTTP_X_FORWARDED_PROTO", "https"))
 
-    def test_https_default_is_true(self):
-        prod = self._import_prod_settings(None)
-        self.assertTrue(prod.SECURE_SSL_REDIRECT)
-        self.assertTrue(prod.SESSION_COOKIE_SECURE)
-        self.assertTrue(prod.CSRF_COOKIE_SECURE)
+    def test_https_unset_raises_runtime_error(self):
+        with self.assertRaises(RuntimeError) as ctx:
+            self._import_prod_settings(None)
+        self.assertIn("DJANGO_USE_HTTPS", str(ctx.exception))
+

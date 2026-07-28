@@ -12,9 +12,17 @@ if not SECRET_KEY or SECRET_KEY.startswith(("django-insecure-", "replace-with-")
     message = "DJANGO_SECRET_KEY must be set to a secure value in production."
     raise RuntimeError(message)
 
-from .env import get_bool
+from .env import get_bool, has_env
 
-use_https = get_bool("DJANGO_USE_HTTPS", default=True)
+if not has_env("DJANGO_USE_HTTPS"):
+    message = (
+        "DJANGO_USE_HTTPS environment variable must be set in production. "
+        "Set DJANGO_USE_HTTPS=true if domain and SSL certificate are configured, "
+        "or DJANGO_USE_HTTPS=false if accessing via IP over HTTP."
+    )
+    raise RuntimeError(message)
+
+use_https = get_bool("DJANGO_USE_HTTPS")
 
 SESSION_COOKIE_SECURE = use_https
 CSRF_COOKIE_SECURE = use_https
