@@ -4,8 +4,11 @@ from __future__ import annotations
 
 from decimal import Decimal
 import json
+import logging
 import os
 import re
+
+logger = logging.getLogger(__name__)
 
 from django.core.exceptions import ValidationError
 from django.utils.dateparse import parse_date as parse_iso_date
@@ -256,16 +259,24 @@ class SheetsSource(BaseSource):
         return val
 
     @staticmethod
-    def _parse_money(val: str) -> Decimal:
-        if not val:
+    def _parse_money(val: object, sheet_name: str = "Sheet", row_idx: int | str = "") -> Decimal:
+        if val is None:
             return Decimal("0.00")
-        clean = val.replace(" ", "").replace(",", "").replace("$", "").replace("so'm", "").replace("som", "").strip()
+        s = str(val).strip()
+        if not s:
+            return Decimal("0.00")
+        clean = s.replace(" ", "").replace("\xa0", "").replace("$", "").replace("so'm", "").replace("som", "").strip()
         if not clean:
             return Decimal("0.00")
+        if "." not in clean and clean.count(",") == 1:
+            clean = clean.replace(",", ".")
+        else:
+            clean = clean.replace(",", "")
         try:
             return Decimal(clean)
-        except Exception as exc:
-            raise ValidationError(f"Noto'g'ri pul summasi formati ('{val}').") from exc
+        except Exception:
+            logger.warning("Noto'g'ri pul summasi formati ('%s') varog': '%s', qator: %s", s, sheet_name, row_idx)
+            return Decimal("0.00")
 
     @staticmethod
     def _parse_date(val: str):

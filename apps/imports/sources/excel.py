@@ -5,8 +5,11 @@ from __future__ import annotations
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from io import BytesIO
+import logging
 
 from openpyxl import load_workbook
+
+logger = logging.getLogger(__name__)
 
 from apps.common.services.exceptions import ValidationError
 from apps.imports.dto import OrderDTO, PayrollDTO, normalize_employee_id, normalize_order_id
@@ -122,13 +125,26 @@ class ExcelSource(BaseSource):
         return result
 
     @staticmethod
-    def _money(value: object) -> Decimal:
-        if value is None or str(value).strip().startswith("#") or not str(value).strip():
+    def _money(value: object, sheet_name: str = "Sheet", row_idx: int | str = "") -> Decimal:
+        if value is None:
             return Decimal("0.00")
-        clean_val = str(value).replace(" ", "").replace(",", "").replace("\xa0", "")
+        s = str(value).strip()
+        if not s:
+            return Decimal("0.00")
+        if s.startswith("#"):
+            logger.warning("Excel formula xatosi ('%s') varog': '%s', qator: %s", s, sheet_name, row_idx)
+            return Decimal("0.00")
+        clean_val = s.replace(" ", "").replace("\xa0", "").replace("$", "").replace("so'm", "").replace("som", "").strip()
+        if not clean_val:
+            return Decimal("0.00")
+        if "." not in clean_val and clean_val.count(",") == 1:
+            clean_val = clean_val.replace(",", ".")
+        else:
+            clean_val = clean_val.replace(",", "")
         try:
             return Decimal(clean_val).quantize(Decimal("0.01"))
         except (InvalidOperation, TypeError, ValueError):
+            logger.warning("Noto'g'ri pul summasi formati ('%s') varog': '%s', qator: %s", s, sheet_name, row_idx)
             return Decimal("0.00")
 
     @staticmethod
