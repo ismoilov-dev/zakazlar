@@ -4,8 +4,15 @@ set -e
 echo "=== Running Database Migrations ==="
 python manage.py migrate --noinput
 
+echo "=== Creating Cache Table ==="
+python manage.py createcachetable || true
+
 echo "=== Collecting Static Files ==="
-python manage.py collectstatic --noinput
+if ! python manage.py collectstatic --noinput; then
+    echo "[ERROR] collectstatic bajarishda xatolik yuz berdi! Admin panel statik fayllari yig'ilmadi." >&2
+    exit 1
+fi
+
 
 echo "=== Starting Telegram Bot ==="
 python manage.py run_bot &
