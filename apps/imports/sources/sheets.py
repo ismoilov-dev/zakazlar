@@ -265,47 +265,6 @@ class SheetsSource(BaseSource):
             if not grp_code:
                 grp_code = "A"
 
-            if not ord_raw.strip():
-                dropped_invalid_id += 1
-                reason = "Zakaz raqami (№) bo'sh"
-                first_6 = [str(c).strip() for c in row[:6]]
-                dropped_rows.append({"row_idx": row_idx, "reason": reason, "raw_cells": first_6, "row_data": row})
-                logger.warning("List1 %s-qator tashlandi: %s | Birinchi 6 katak: %s", row_idx, reason, first_6)
-                continue
-
-            try:
-                clean_ord = normalize_order_id(ord_raw)
-                ord_id = f"{emp_id}_{clean_ord}"
-            except PARSE_ERRORS as exc:
-                dropped_invalid_id += 1
-                reason = f"Zakaz raqami (№) formati noto'g'ri: {exc}"
-                first_6 = [str(c).strip() for c in row[:6]]
-                dropped_rows.append({"row_idx": row_idx, "reason": reason, "raw_cells": first_6, "row_data": row})
-                logger.warning("List1 %s-qator tashlandi: %s | Birinchi 6 katak: %s", row_idx, reason, first_6)
-                continue
-
-            try:
-                stat_val = self._parse_status(stat_raw)
-            except PARSE_ERRORS as exc:
-                dropped_invalid_id += 1
-                reason = f"Status xatosi: {exc}"
-                first_6 = [str(c).strip() for c in row[:6]]
-                dropped_rows.append({"row_idx": row_idx, "reason": reason, "raw_cells": first_6, "row_data": row})
-                logger.warning("List1 %s-qator tashlandi: %s | Birinchi 6 katak: %s", row_idx, reason, first_6)
-                continue
-
-            try:
-                src_val = self._normalize_source(self._get_cell(row, source_idx) if source_idx is not None else "")
-            except PARSE_ERRORS as exc:
-                dropped_invalid_id += 1
-                reason = f"Manba xatosi: {exc}"
-                first_6 = [str(c).strip() for c in row[:6]]
-                dropped_rows.append({"row_idx": row_idx, "reason": reason, "raw_cells": first_6, "row_data": row})
-                logger.warning("List1 %s-qator tashlandi: %s | Birinchi 6 katak: %s", row_idx, reason, first_6)
-                continue
-
-            amount = self._parse_money(amount_str, sheet_name="List1", row_idx=row_idx)
-
             date_raw = self._get_cell(row, date_idx) if date_idx is not None else ""
             try:
                 ordered_at = self._parse_date(date_raw)
@@ -320,6 +279,25 @@ class SheetsSource(BaseSource):
             if ordered_at.date() > timezone.localtime().date():
                 dropped_invalid_id += 1
                 reason = f"Kelajakdagi sana rad etildi: {date_raw}"
+                first_6 = [str(c).strip() for c in row[:6]]
+                dropped_rows.append({"row_idx": row_idx, "reason": reason, "raw_cells": first_6, "row_data": row})
+                logger.warning("List1 %s-qator tashlandi: %s | Birinchi 6 katak: %s", row_idx, reason, first_6)
+                continue
+
+            if not ord_raw.strip():
+                dropped_invalid_id += 1
+                reason = "Zakaz raqami (№) bo'sh"
+                first_6 = [str(c).strip() for c in row[:6]]
+                dropped_rows.append({"row_idx": row_idx, "reason": reason, "raw_cells": first_6, "row_data": row})
+                logger.warning("List1 %s-qator tashlandi: %s | Birinchi 6 katak: %s", row_idx, reason, first_6)
+                continue
+
+            try:
+                clean_ord = normalize_order_id(ord_raw)
+                ord_id = f"{ordered_at:%Y%m}_{emp_id}_{clean_ord}"
+            except PARSE_ERRORS as exc:
+                dropped_invalid_id += 1
+                reason = f"Zakaz raqami (№) formati noto'g'ri: {exc}"
                 first_6 = [str(c).strip() for c in row[:6]]
                 dropped_rows.append({"row_idx": row_idx, "reason": reason, "raw_cells": first_6, "row_data": row})
                 logger.warning("List1 %s-qator tashlandi: %s | Birinchi 6 katak: %s", row_idx, reason, first_6)

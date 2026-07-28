@@ -18,7 +18,7 @@ class StableOrderIdTest(TestCase):
 
         orders = source._parse_orders(mock_worksheet)
         self.assertEqual(len(orders), 1)
-        self.assertEqual(orders[0].order_id, "0191_1001")
+        self.assertEqual(orders[0].order_id, "202607_0191_1001")
 
     def test_empty_order_number_drops_row(self):
         """Row with empty order number № is dropped into dropped_rows."""
