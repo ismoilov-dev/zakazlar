@@ -160,19 +160,57 @@ class SheetsSource(BaseSource):
         # Source columns candidates
         source_idx = self._find_single_column_index(headings, candidates=["Столбец 2", "Контакт", "Источник"], name="manba", required=False)
 
+        self.last_header_row_idx = header_row_idx
+        self.last_headings = headings
+        self.last_column_indexes = {
+            "ID": id_idx,
+            "№": ord_idx,
+            "Ответственный": name_idx,
+            "Сумма": amount_idx,
+            "Дата Заказа": date_idx,
+            "статус": status_idx,
+            "guruh": group_idx,
+            "manba": source_idx,
+        }
+
+        logger.info(
+            "List1 sarlavha qatori indeksi: %s, ID ustuni indeksi: %s, Headings: %s",
+            header_row_idx,
+            id_idx,
+            headings,
+        )
+
         orders: list[OrderDTO] = []
+        dropped_rows: list[dict[str, object]] = []
+
+        total_raw_rows = len(raw_rows[header_row_idx + 1:])
+        empty_rows_skipped = 0
+        dropped_empty_id = 0
+        dropped_invalid_id = 0
+        parsed_rows_count = 0
+
         for row_idx, row in enumerate(raw_rows[header_row_idx + 1:], start=header_row_idx + 2):
             if not any(str(cell).strip() for cell in row):
+                empty_rows_skipped += 1
                 continue  # Skip fully empty rows
 
             id_val = self._get_cell(row, id_idx)
             if not id_val:
+                dropped_empty_id += 1
+                reason = "ID katakchasi bo'sh"
+                first_6 = [str(c).strip() for c in row[:6]]
+                dropped_rows.append({"row_idx": row_idx, "reason": reason, "raw_cells": first_6, "row_data": row})
+                logger.warning("List1 %s-qator tashlandi: %s | Birinchi 6 katak: %s", row_idx, reason, first_6)
                 continue
 
             try:
                 emp_id = normalize_employee_id(id_val)
             except ValidationError as exc:
-                logger.warning("List1 varog'i, %s-qator ID xatosi: %s", row_idx, exc)
+                dropped_invalid_id += 1
+                reason = f"ID formati noto'g'ri: {exc}"
+                first_6 = [str(c).strip() for c in row[:6]]
+                dropped_rows.append({"row_idx": row_idx, "reason": reason, "raw_cells": first_6, "row_data": row})
+                logger.warning("List1 %s-qator tashlandi: %s | Birinchi 6 katak: %s", row_idx, reason, first_6)
                 continue
 
             emp_name = self._get_cell(row, name_idx).strip() if name_idx is not None else "Noma'lum"
@@ -219,6 +257,25 @@ class SheetsSource(BaseSource):
                     ordered_at=ordered_at,
                 )
             )
+            parsed_rows_count += 1
+
+        self.last_dropped_rows = dropped_rows
+        self.last_parse_summary = {
+            "total_raw_rows": total_raw_rows,
+            "empty_rows_skipped": empty_rows_skipped,
+            "dropped_empty_id": dropped_empty_id,
+            "dropped_invalid_id": dropped_invalid_id,
+            "parsed_rows_count": parsed_rows_count,
+        }
+
+        logger.info(
+            "List1 parse yakunlandi: jami %s qator, bo'sh: %s, bo'sh ID: %s, xato ID: %s, muvaffaqiyatli: %s",
+            total_raw_rows,
+            empty_rows_skipped,
+            dropped_empty_id,
+            dropped_invalid_id,
+            parsed_rows_count,
+        )
 
         return orders
 
