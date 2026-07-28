@@ -21,14 +21,14 @@ SCOPES = [
 ]
 
 STATUS_MAP = {
-    "успешно": "Muvaffaqiyatli",
-    "muvaffaqiyatli": "Muvaffaqiyatli",
-    "отказ": "Bekor qilingan",
-    "bekor qilingan": "Bekor qilingan",
-    "в процесс": "Jarayonda",
-    "v protsess": "Jarayonda",
-    "jarayonda": "Jarayonda",
-    "у курьера": "Jarayonda",
+    "успешно": "successful",
+    "muvaffaqiyatli": "successful",
+    "отказ": "cancelled",
+    "bekor qilingan": "cancelled",
+    "в процесс": "pending",
+    "v protsess": "pending",
+    "jarayonda": "pending",
+    "у курьера": "pending",
 }
 
 
