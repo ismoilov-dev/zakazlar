@@ -171,9 +171,10 @@ class SheetsSource(BaseSource):
 
             ord_raw = self._get_cell(row, columns["№"])
             try:
-                ord_id = normalize_order_id(ord_raw) if ord_raw else f"ROW-{row_idx}"
+                clean_ord = normalize_order_id(ord_raw) if ord_raw else f"ROW-{row_idx}"
+                ord_id = f"{emp_id}_{clean_ord}_{row_idx}"
             except ValidationError:
-                ord_id = f"ROW-{row_idx}"
+                ord_id = f"{emp_id}_ROW_{row_idx}"
 
             stat_raw = self._get_cell(row, columns["статус"])
             try:
