@@ -75,8 +75,13 @@ class StatisticsService:
     def employee_dashboard_for_employee(self, employee_id: str) -> EmployeeDashboard:
         try:
             employee = self.employees.get_active_by_employee_id(employee_id)
-        except Employee.DoesNotExist as exc:
-            raise NotFoundError("Xodim topilmadi.") from exc
+        except Employee.DoesNotExist:
+            try:
+                from apps.imports.services.sheets_sync import SheetsSyncService
+                SheetsSyncService().sync_if_needed(force=True)
+                employee = self.employees.get_active_by_employee_id(employee_id)
+            except Exception as exc:
+                raise NotFoundError("Xodim topilmadi.") from exc
         return self._employee_dashboard(employee)
 
     def group_dashboard_for_telegram(self, telegram_id: int) -> GroupDashboard:

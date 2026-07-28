@@ -25,13 +25,26 @@ SCOPES = [
 
 STATUS_MAP = {
     "успешно": "successful",
+    "успешна": "successful",
     "muvaffaqiyatli": "successful",
+    "доставлен": "successful",
+    "доставлено": "successful",
+    "оплачено": "successful",
+    "bajarildi": "successful",
     "отказ": "cancelled",
     "bekor qilingan": "cancelled",
+    "otkaz": "cancelled",
+    "bekor": "cancelled",
+    "отмена": "cancelled",
+    "возврат": "cancelled",
     "в процесс": "pending",
     "v protsess": "pending",
+    "v process": "pending",
     "jarayonda": "pending",
     "у курьера": "pending",
+    "курьер": "pending",
+    "kuryerda": "pending",
+    "ожидание": "pending",
 }
 
 
@@ -153,7 +166,7 @@ class SheetsSource(BaseSource):
                 ord_id = normalize_order_id(self._get_cell(row, columns["№"]))
                 stat_val = self._parse_status(self._get_cell(row, columns["статус"]))
                 src_val = self._normalize_source(self._get_cell(row, source_idx) if source_idx is not None else "")
-                amount = self._parse_money(self._get_cell(row, columns["Сумма"]))
+                amount = self._parse_money(self._get_cell(row, columns["Сумма"]), sheet_name="List1", row_idx=row_idx)
                 ordered_at = self._parse_date(self._get_cell(row, columns["Дата Заказа"]))
 
                 orders.append(
@@ -169,7 +182,8 @@ class SheetsSource(BaseSource):
                     )
                 )
             except ValidationError as exc:
-                raise ValidationError(f"List1 varog'i, {row_idx}-qator: {exc}") from exc
+                logger.warning("List1 varog'i, %s-qator o'tkazib yuborildi: %s", row_idx, exc)
+                continue
 
         return orders
 

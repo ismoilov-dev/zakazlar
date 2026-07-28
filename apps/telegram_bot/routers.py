@@ -94,7 +94,15 @@ async def bind_and_show_employee_stats(message: Message) -> None:
             username=message.from_user.username or "",
         )
     except DomainError:
-        pass  # If already bound or non-fatal, proceed to show stats
+        try:
+            await sync_to_async(SheetsSyncService().sync_if_needed)(force=True)
+            await sync_to_async(TelegramBindingService().bind)(
+                employee_id=user_id,
+                telegram_id=message.from_user.id,
+                username=message.from_user.username or "",
+            )
+        except DomainError:
+            pass  # If already bound or non-fatal, proceed to show stats
 
     try:
         dashboard = await sync_to_async(StatisticsService().employee_dashboard_for_employee)(user_id)
