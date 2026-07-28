@@ -111,8 +111,15 @@ class ExcelSource(BaseSource):
 
     @staticmethod
     def _columns(headings: tuple[object, ...], required: set[str]) -> dict[str, int]:
-        found = {str(value): index for index, value in enumerate(headings) if value is not None}
-        missing = required - set(found)
+        req_clean_map = {req.strip(): req for req in required}
+        found: dict[str, int] = {}
+        for index, value in enumerate(headings):
+            if value is not None:
+                val_clean = str(value).strip()
+                if val_clean in req_clean_map and req_clean_map[val_clean] not in found:
+                    found[req_clean_map[val_clean]] = index
+
+        missing = required - set(found.keys())
         if missing:
             raise ValidationError(f"Majburiy ustunlar topilmadi: {', '.join(sorted(missing))}")
         return found
