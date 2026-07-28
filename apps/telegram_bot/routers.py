@@ -88,15 +88,18 @@ async def bind_and_show_employee_stats(message: Message) -> None:
         await message.answer(f"ID ko'rinishida xatolik: {exc}")
         return
 
-    # Perform real-time sync with 5 second timeout so handler never hangs
+async def _trigger_sync_fast() -> tuple[str, bool]:
+    """Sync Google Sheets with 1.2s timeout, falling back to background task if network is slow."""
     is_stale = False
     try:
         await asyncio.wait_for(
             sync_to_async(SheetsSyncService().sync_if_needed)(force=True),
-            timeout=5.0,
+            timeout=1.2,
         )
     except Exception as exc:
-        logger.warning("Real-time sync failed or timed out: %s", exc)
+        logger.warning("Real-time sync slow or timed out (running in background): %s", exc)
+        # Run sync in background so user receives instant Telegram response
+        asyncio.create_task(sync_to_async(SheetsSyncService().sync_if_needed)(force=True))
         is_stale = True
 
     last_successful = await sync_to_async(SyncLog.get_last_successful)()
@@ -104,6 +107,26 @@ async def bind_and_show_employee_stats(message: Message) -> None:
         ts_str = timezone.localtime(last_successful.finished_at).strftime("%d.%m.%Y %H:%M:%S")
     else:
         ts_str = timezone.localtime().strftime("%d.%m.%Y %H:%M:%S")
+
+    return ts_str, is_stale
+
+
+@router.message(F.text.regexp(r"^\d{1,32}$"))
+async def bind_and_show_employee_stats(message: Message) -> None:
+    """Bind the sender Telegram identity and return full employee calculations instantly."""
+    if message.from_user is None or message.text is None:
+        return
+
+    try:
+        user_id = normalize_employee_id(message.text)
+    except DomainError as exc:
+        await message.answer(str(exc))
+        return
+    except Exception as exc:
+        await message.answer(f"ID ko'rinishida xatolik: {exc}")
+        return
+
+    ts_str, is_stale = await _trigger_sync_fast()
 
     try:
         await sync_to_async(TelegramBindingService().bind)(
@@ -124,25 +147,11 @@ async def bind_and_show_employee_stats(message: Message) -> None:
 
 @router.message(Command("stats"))
 async def employee_stats(message: Message) -> None:
-    """Return requested or bound employee's dashboard with real-time sync."""
+    """Return requested or bound employee's dashboard instantly."""
     if message.from_user is None:
         return
 
-    is_stale = False
-    try:
-        await asyncio.wait_for(
-            sync_to_async(SheetsSyncService().sync_if_needed)(force=True),
-            timeout=5.0,
-        )
-    except Exception as exc:
-        logger.warning("Real-time sync failed or timed out: %s", exc)
-        is_stale = True
-
-    last_successful = await sync_to_async(SyncLog.get_last_successful)()
-    if last_successful and last_successful.finished_at:
-        ts_str = timezone.localtime(last_successful.finished_at).strftime("%d.%m.%Y %H:%M:%S")
-    else:
-        ts_str = timezone.localtime().strftime("%d.%m.%Y %H:%M:%S")
+    ts_str, is_stale = await _trigger_sync_fast()
 
     parts = (message.text or "").split()
 
