@@ -47,9 +47,96 @@ Ushbu script avtomatik ravishda:
 4. Database migratsiyalarini bajaradi va statik fayllarni yig'adi.
 5. Systemd Web (`zakazlar-web.service`) va Bot (`zakazlar-bot.service`) servislarini hamda Nginx'ni sozlab ishga tushiradi.
 
-### 5-qadam: Admin foydalanuvchisini yaratish
+### 5-qadam: Admin panelga birinchi marta kirish tartibi
+1. `.env` faylida IP va HTTP sozlamalarini o'rnating:
+   ```env
+   DJANGO_USE_HTTPS=false
+   DJANGO_ALLOWED_HOSTS=169.58.72.177,localhost,127.0.0.1
+   DJANGO_CSRF_TRUSTED_ORIGINS=http://169.58.72.177
+   SHEETS_WEBHOOK_SECRET=your_secret_here
+   ```
+2. Migratsiya, kesh jadvali va statik fayllarni yig'ing:
+   ```bash
+   /var/www/zakazlar/.venv/bin/python manage.py migrate --noinput
+   /var/www/zakazlar/.venv/bin/python manage.py createcachetable
+   /var/www/zakazlar/.venv/bin/python manage.py collectstatic --noinput
+   ```
+3. Superuser yaratish:
+   ```bash
+   /var/www/zakazlar/.venv/bin/python manage.py createsuperuser
+   ```
+4. Servislarni qayta ishga tushiring va brauzerda oching:
+   `http://169.58.72.177/panel/`
+
+---
+
+## ⚠️ JIDDIY XAVFSIZLIK OGOHLANTIRISHI (HTTP vs HTTPS)
+
+> **DIQQAT:** `DJANGO_USE_HTTPS=false` holatida Admin panel HTTP orqali ishlaydi va parollar ochiq matnda uzatiladi. Bu faqat domen olingunga qadar **vaqtinchalik yechim** hisoblanadi.
+> 
+> Domen yo'naltirilib, SSL (Let's Encrypt) sertifikati o'rnatilgach, `.env` faylida **`DJANGO_USE_HTTPS=true`** qilinishi SHART!
+
+---
+
+## ⚙️ Systemd Servislari Konfiguratsiyasi
+
+Serverda Web, Telegram Bot va Google Sheets Sinxronizatsiya daemon xizmatlari alohida Systemd unit'lari sifatida ishlaydi.
+
+### 1. Web Servis (`/etc/systemd/system/zakazlar-web.service`)
+```ini
+[Unit]
+Description=Zakazlar Django Web Application
+After=network.target postgresql.service
+
+[Service]
+User=root
+WorkingDirectory=/var/www/zakazlar
+ExecStart=/var/www/zakazlar/.venv/bin/gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 2 --timeout 120
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+### 2. Telegram Bot Servis (`/etc/systemd/system/zakazlar-bot.service`)
+```ini
+[Unit]
+Description=Zakazlar Telegram Bot Worker
+After=network.target postgresql.service
+
+[Service]
+User=root
+WorkingDirectory=/var/www/zakazlar
+ExecStart=/var/www/zakazlar/.venv/bin/python manage.py run_bot
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+### 3. Fon Sinxronizatsiya Daemon (`/etc/systemd/system/zakazlar-sync.service`)
+```ini
+[Unit]
+Description=Zakazlar Live Google Sheets Sync Daemon
+After=network.target postgresql.service
+
+[Service]
+User=root
+WorkingDirectory=/var/www/zakazlar
+ExecStart=/var/www/zakazlar/.venv/bin/python manage.py sync_sheets --watch --interval 30
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Servislarni faollashtirish va ishga tushirish:
 ```bash
-/var/www/zakazlar/.venv/bin/python manage.py createsuperuser
+sudo systemctl daemon-reload
+sudo systemctl enable --now zakazlar-web zakazlar-bot zakazlar-sync
 ```
 
 ---
@@ -65,6 +152,10 @@ Ushbu script avtomatik ravishda:
   ```bash
   systemctl status zakazlar-bot
   ```
+- **Live Sync Daemon:**
+  ```bash
+  systemctl status zakazlar-sync
+  ```
 - **Nginx Web Server:**
   ```bash
   systemctl status nginx
@@ -79,6 +170,10 @@ Ushbu script avtomatik ravishda:
   ```bash
   journalctl -u zakazlar-web -f
   ```
+- **Sync loglarini ko'rish:**
+  ```bash
+  journalctl -u zakazlar-sync -f
+  ```
 - **Nginx xatolarini ko'rish:**
   ```bash
   tail -f /var/log/nginx/error.log
@@ -90,9 +185,44 @@ cd /var/www/zakazlar
 git pull
 ./.venv/bin/pip install -r requirements.txt
 ./.venv/bin/python manage.py migrate --noinput
+./.venv/bin/python manage.py createcachetable
 ./.venv/bin/python manage.py collectstatic --noinput
-systemctl restart zakazlar-web zakazlar-bot
+systemctl restart zakazlar-web zakazlar-bot zakazlar-sync
 ```
+
+---
+
+## 🔗 Google Apps Script Webhook Sozlash
+
+Google Sheets o'zgarganda Django backendiga darhol `POST` signal yuborish uchun Google Sheet'dagi Apps Script (Extensions -> Apps Script) bo'limiga ushbu skriptni joylashtiring:
+
+```javascript
+function onSheetChange(e) {
+  var url = "http://169.58.72.177/api/v1/imports/sheet-changed/";
+  var secret = "YOUR_SHEETS_WEBHOOK_SECRET"; // .env dagi SHEETS_WEBHOOK_SECRET bilan bir xil bo'lsin
+  
+  var options = {
+    "method": "post",
+    "headers": {
+      "X-Webhook-Secret": secret
+    },
+    "muteHttpExceptions": true
+  };
+  
+  try {
+    UrlFetchApp.fetch(url, options);
+  } catch (err) {
+    Logger.log("Webhook error: " + err);
+  }
+}
+```
+
+Trigger o'rnatish:
+1. Apps Script interfeysida chap menyudagi ⏰ **Triggers** bo'limiga o'ting.
+2. **Add Trigger** tugmasini bosing.
+3. Choose function: `onSheetChange`.
+4. Select event type: **On change**.
+5. Saqlang va Google hisobingizga ruxsat bering.
 
 ---
 
@@ -106,8 +236,9 @@ sudo apt install -y certbot python3-certbot-nginx
 sudo certbot --nginx -d yourdomain.com
 ```
 
-Certbot avtomatik ravishda Nginx konfiguratsiyasiga HTTPS sozlamalarini va avtomatik yangilanishni qo'shib beradi.
+Certbot avtomatik ravishda Nginx konfiguratsiyasiga HTTPS sozlamalarini va avtomatik yangilanishni qo'shib beradi. Sertifikat o'rnatilgach `.env` da `DJANGO_USE_HTTPS=true` ga o'zgartiring va servislarni qayta ishga tushiring!
 
 ---
 
 Barcha sozlamalar yakunlandi. Loyiha Nginx va Systemd yordamida Contabo VPS'da maksimal darajada tez va barqaror ishlaydi!
+
