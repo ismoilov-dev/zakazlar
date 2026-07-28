@@ -16,43 +16,46 @@ class SheetsSyncService:
     """Orchestrates Google Sheets live synchronization with cache and freshness checks."""
 
     CACHE_KEY = "sheets_sync_recent_lock"
-    CACHE_TTL_SECONDS = 45
+    CACHE_TTL_SECONDS = 60
 
     def __init__(self) -> None:
         self.importer = DataImporter()
 
     def sync_if_needed(self, force: bool = False) -> SyncLog:
         """Check Drive modifiedTime & cache lock. Perform atomic DB snapshot update if fresh data exists."""
-        # 1. Thundering herd rate-limit cache check (unless forced)
+        last_successful = SyncLog.get_last_successful()
+
+        # 1. Immediate cache lock check to prevent concurrent thundering herd network calls
         if not force and cache.get(self.CACHE_KEY):
-            last_successful = SyncLog.get_last_successful()
             if last_successful:
                 return last_successful
 
-        source = SheetsSource()
-        sheet_id = source.sheet_id
-
-        # 2. Query Google Drive API for spreadsheet modifiedTime
-        current_modified_time = ""
-        try:
-            drive_meta = source.client.http_client.get_file_drive_metadata(sheet_id)
-            current_modified_time = str(drive_meta.get("modifiedTime", ""))
-        except Exception:
-            current_modified_time = ""
-
-        # 3. Check if spreadsheet was modified since last successful sync
-        last_log = SyncLog.get_last_successful()
-        if not force and current_modified_time and last_log and last_log.sheet_modified_at == current_modified_time:
+        # Set lock immediately to prevent other concurrent requests from calling Google API simultaneously
+        if not force:
             cache.set(self.CACHE_KEY, True, timeout=self.CACHE_TTL_SECONDS)
-            return last_log
-
-        # 4. Perform atomic sync
-        sync_log = SyncLog.objects.create(
-            status=SyncStatus.PENDING,
-            sheet_modified_at=current_modified_time,
-        )
 
         try:
+            source = SheetsSource()
+            sheet_id = source.sheet_id
+
+            # 2. Query Google Drive API for spreadsheet modifiedTime
+            current_modified_time = ""
+            try:
+                drive_meta = source.client.http_client.get_file_drive_metadata(sheet_id)
+                current_modified_time = str(drive_meta.get("modifiedTime", ""))
+            except Exception:
+                current_modified_time = ""
+
+            # 3. Check if spreadsheet was modified since last successful sync
+            if not force and current_modified_time and last_successful and last_successful.sheet_modified_at == current_modified_time:
+                return last_successful
+
+            # 4. Perform atomic sync
+            sync_log = SyncLog.objects.create(
+                status=SyncStatus.PENDING,
+                sheet_modified_at=current_modified_time,
+            )
+
             orders, payroll = source.read()
 
             with transaction.atomic():
@@ -64,12 +67,10 @@ class SheetsSyncService:
                 sync_log.updated_sales = result.updated_sales
                 sync_log.save(update_fields=["status", "finished_at", "row_count", "created_sales", "updated_sales"])
 
-            cache.set(self.CACHE_KEY, True, timeout=self.CACHE_TTL_SECONDS)
             return sync_log
 
         except Exception as exc:
-            sync_log.status = SyncStatus.FAILED
-            sync_log.finished_at = timezone.now()
-            sync_log.error_text = str(exc)
-            sync_log.save(update_fields=["status", "finished_at", "error_text"])
+            # If error occurs and we have a previous successful log, fall back to it gracefully
+            if last_successful:
+                return last_successful
             raise ValidationError(f"Google Sheets sync muvaffaqiyatsiz tugadi: {exc}") from exc
