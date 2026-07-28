@@ -55,7 +55,7 @@ class DataImporter:
                     full_name=row.employee_name,
                     group=group,
                     monthly_salary=row.monthly_salary,
-                    summary_data=row.summary_data,
+                    summary_data=row.summary_data or {},
                 )
 
             # Pre-load all employees into a map to eliminate N+1 queries
