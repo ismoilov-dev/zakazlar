@@ -97,15 +97,15 @@ class SheetsSource(BaseSource):
 
         orders = self._parse_orders(worksheets["list1"])
 
-        # Check all candidate payroll worksheets: 'xodimlar maoshi', 'ish haqi', 'list2'
+        # Check all candidate payroll worksheets: 'list2' prioritized first, then 'xodimlar maoshi', 'ish haqi'
         payroll_candidates: list[gspread.Worksheet] = []
-        for name in ["xodimlar maoshi", "ish haqi", "list2"]:
+        for name in ["list2", "xodimlar maoshi", "ish haqi"]:
             ws = worksheets.get(name)
             if ws and ws not in payroll_candidates:
                 payroll_candidates.append(ws)
 
         if not payroll_candidates:
-            raise ValidationError("Google Sheet'da 'Xodimlar maoshi', 'Ish haqi' yoki 'List2' varog'i topilmadi.")
+            raise ValidationError("Google Sheet'da 'List2', 'Xodimlar maoshi' yoki 'Ish haqi' varog'i topilmadi.")
 
         payroll_by_id: dict[str, PayrollDTO] = {}
         successful_parses = 0
@@ -113,7 +113,8 @@ class SheetsSource(BaseSource):
             try:
                 parsed = self._parse_payroll(ws)
                 for dto in parsed:
-                    if dto.employee_id not in payroll_by_id:
+                    existing = payroll_by_id.get(dto.employee_id)
+                    if existing is None or (dto.summary_data and not existing.summary_data):
                         payroll_by_id[dto.employee_id] = dto
                 successful_parses += 1
             except Exception as exc:
