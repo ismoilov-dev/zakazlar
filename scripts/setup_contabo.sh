@@ -5,7 +5,9 @@ echo "=================================================="
 echo "  Contabo VPS Deployment Setup (Nginx + Systemd)  "
 echo "=================================================="
 
-PROJECT_DIR="/var/www/zakazlar"
+# Dynamically determine project root directory
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # Check if running as root
 if [ "$EUID" -ne 0 ]; then
@@ -45,34 +47,116 @@ sudo -u postgres psql -c "CREATE DATABASE $DB_NAME OWNER $DB_USER;"
 sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE $DB_NAME TO $DB_USER;"
 
 # 4. Setup Python Virtual Environment
-echo "[4/6] Python Virtual Environment (.venv) yaratilmoqda va kutubxonalar o'rnatilmoqda..."
+echo "[4/6] Python Virtual Environment (venv) yaratilmoqda va kutubxonalar o'rnatilmoqda..."
 cd "$PROJECT_DIR"
-if [ ! -d ".venv" ]; then
-    python3 -m venv .venv
+VENV_DIR="$PROJECT_DIR/venv"
+if [ ! -d "$VENV_DIR" ] && [ -d "$PROJECT_DIR/.venv" ]; then
+    VENV_DIR="$PROJECT_DIR/.venv"
+elif [ ! -d "$VENV_DIR" ]; then
+    python3 -m venv "$VENV_DIR"
 fi
-./.venv/bin/pip install --upgrade pip
-./.venv/bin/pip install -r requirements.txt
+
+PYTHON_BIN="$VENV_DIR/bin/python"
+PIP_BIN="$VENV_DIR/bin/pip"
+GUNICORN_BIN="$VENV_DIR/bin/gunicorn"
+
+"$PIP_BIN" install --upgrade pip
+"$PIP_BIN" install -r requirements.txt
 
 # 5. Database Migration & Collectstatic
 echo "[5/6] Database migratsiyalari o'tkazilmoqda va statik fayllar yig'ilmoqda..."
-python manage.py migrate --noinput
-python manage.py createcachetable
-python manage.py collectstatic --noinput
+"$PYTHON_BIN" manage.py migrate --noinput
+"$PYTHON_BIN" manage.py createcachetable || true
+"$PYTHON_BIN" manage.py collectstatic --noinput
 
 # 6. Configure Nginx and Systemd Services
 echo "[6/6] Nginx va Systemd servislari sozlanmoqda..."
 
-# Systemd Web service
-cp deploy/systemd/zakazlar-web.service /etc/systemd/system/
-# Systemd Bot service
-cp deploy/systemd/zakazlar-bot.service /etc/systemd/system/
-# Systemd Sync service
-if [ -f "deploy/systemd/zakazlar-sync.service" ]; then
-    cp deploy/systemd/zakazlar-sync.service /etc/systemd/system/
-fi
+# Generate Systemd Web service
+cat <<EOF > /etc/systemd/system/zakazlar-web.service
+[Unit]
+Description=Zakazlar Django Gunicorn Web Service
+After=network.target postgresql.service
 
-# Nginx config
-cp deploy/nginx.conf /etc/nginx/sites-available/zakazlar
+[Service]
+User=root
+WorkingDirectory=$PROJECT_DIR
+EnvironmentFile=$PROJECT_DIR/.env
+ExecStart=$GUNICORN_BIN config.wsgi:application --bind 127.0.0.1:8000 --workers 2 --timeout 120
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Generate Systemd Bot service
+cat <<EOF > /etc/systemd/system/zakazlar-bot.service
+[Unit]
+Description=Zakazlar Telegram Bot Worker
+After=network.target postgresql.service
+
+[Service]
+User=root
+WorkingDirectory=$PROJECT_DIR
+EnvironmentFile=$PROJECT_DIR/.env
+ExecStart=$PYTHON_BIN manage.py run_bot
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Generate Systemd Sync service
+cat <<EOF > /etc/systemd/system/zakazlar-sync.service
+[Unit]
+Description=Zakazlar Live Google Sheets Sync Daemon
+After=network.target postgresql.service
+
+[Service]
+User=root
+WorkingDirectory=$PROJECT_DIR
+EnvironmentFile=$PROJECT_DIR/.env
+ExecStart=$PYTHON_BIN manage.py sync_sheets --watch --interval 30
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Generate Nginx config
+cat <<EOF > /etc/nginx/sites-available/zakazlar
+server {
+    listen 80;
+    server_name _;
+
+    client_max_body_size 50M;
+
+    location /static/ {
+        alias $PROJECT_DIR/staticfiles/;
+        expires 30d;
+        add_header Cache-Control "public, no-transform";
+    }
+
+    location /media/ {
+        alias $PROJECT_DIR/media/;
+        expires 30d;
+        add_header Cache-Control "public, no-transform";
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_redirect off;
+    }
+}
+EOF
+
 ln -sf /etc/nginx/sites-available/zakazlar /etc/nginx/sites-enabled/
 rm -f /etc/nginx/sites-enabled/default
 
@@ -81,9 +165,8 @@ nginx -t
 
 # Enable & Restart Services
 systemctl daemon-reload
-systemctl enable zakazlar-web zakazlar-bot zakazlar-sync nginx || systemctl enable zakazlar-web zakazlar-bot nginx
-systemctl restart zakazlar-web zakazlar-bot zakazlar-sync nginx || systemctl restart zakazlar-web zakazlar-bot nginx
-
+systemctl enable zakazlar-web zakazlar-bot zakazlar-sync nginx
+systemctl restart zakazlar-web zakazlar-bot zakazlar-sync nginx
 
 echo "=================================================="
 echo "  Tabriklaymiz! Loyiha Nginx va Systemd orqali     "
@@ -91,10 +174,11 @@ echo "  muvaffaqiyatli ishga tushirildi!               "
 echo "=================================================="
 echo ""
 echo "Django Admin superuser yaratish uchun buyruq:"
-echo "  /var/www/zakazlar/.venv/bin/python manage.py createsuperuser"
+echo "  $PYTHON_BIN manage.py createsuperuser"
 echo ""
 echo "Servislar holatini ko'rish uchun buyruqlar:"
 echo "  systemctl status zakazlar-web"
 echo "  systemctl status zakazlar-bot"
+echo "  systemctl status zakazlar-sync"
 echo "  systemctl status nginx"
 echo "=================================================="
