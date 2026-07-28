@@ -25,6 +25,7 @@ class EmployeeDashboard:
     cancelled_orders: int
     pending_orders: int
     total_sales: Decimal
+    successful_sales: Decimal
     perv_sales: Decimal
     baza_sales: Decimal
     otkaz_sales: Decimal
@@ -114,6 +115,8 @@ class StatisticsService:
             earned_salary = Decimal(str(s.get("earned_salary", employee.monthly_salary)))
             successful_orders = int(s.get("successful_orders", totals["successful_orders"]))
             
+            successful_sales = perv_sales + baza_sales
+
             conversion_rate = float(s.get("conversion_rate", 0.0))
             real_conversion_rate = float(s.get("real_conversion_rate", 0.0))
 
@@ -126,6 +129,7 @@ class StatisticsService:
                 cancelled_orders=int(totals["cancelled_orders"]),
                 pending_orders=int(totals["pending_orders"]),
                 total_sales=total_sales,
+                successful_sales=successful_sales,
                 perv_sales=perv_sales,
                 baza_sales=baza_sales,
                 otkaz_sales=otkaz_sales,
@@ -146,7 +150,8 @@ class StatisticsService:
         total_sales = Decimal(str(totals["total_sales"]))
         earned_salary = employee.monthly_salary
 
-        successful_sales_sum = perv_sales + baza_sales
+        successful_sales = perv_sales + baza_sales
+        successful_sales_sum = successful_sales
         conversion_rate = float(successful_sales_sum / total_sales) if total_sales > 0 else 0.0
         denom = total_sales - v_proc_sales
         real_conversion_rate = float(successful_sales_sum / denom) if denom > 0 else 0.0
@@ -160,6 +165,7 @@ class StatisticsService:
             cancelled_orders=int(totals["cancelled_orders"]),
             pending_orders=int(totals["pending_orders"]),
             total_sales=total_sales,
+            successful_sales=successful_sales,
             perv_sales=perv_sales,
             baza_sales=baza_sales,
             otkaz_sales=otkaz_sales,
