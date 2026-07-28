@@ -19,7 +19,9 @@ class Sale(TimeStampedModel):
 
     external_order_id = models.CharField(max_length=128, unique=True)
     employee = models.ForeignKey("employees.Employee", on_delete=models.PROTECT, related_name="sales")
-    import_job = models.ForeignKey("imports.ImportJob", on_delete=models.CASCADE, related_name="sales")
+    import_job = models.ForeignKey(
+        "imports.ImportJob", on_delete=models.SET_NULL, null=True, blank=True, related_name="sales"
+    )
     status = models.CharField(max_length=16, choices=SaleStatus.choices)
     source = models.CharField(max_length=64, blank=True, default="")
     sale_amount = models.DecimalField(max_digits=16, decimal_places=2, validators=[MinValueValidator(Decimal("0"))])
