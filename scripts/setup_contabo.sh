@@ -82,7 +82,7 @@ After=network.target postgresql.service
 User=root
 WorkingDirectory=$PROJECT_DIR
 EnvironmentFile=$PROJECT_DIR/.env
-ExecStart=$GUNICORN_BIN config.wsgi:application --bind 127.0.0.1:8000 --workers 2 --timeout 120
+ExecStart=$GUNICORN_BIN config.wsgi:application --bind 127.0.0.1:8005 --workers 2 --timeout 120
 Restart=always
 RestartSec=3
 
@@ -129,7 +129,8 @@ EOF
 # Generate Nginx config
 cat <<EOF > /etc/nginx/sites-available/zakazlar
 server {
-    listen 80;
+    listen 80 default_server;
+    listen [::]:80 default_server;
     server_name _;
 
     client_max_body_size 50M;
@@ -147,7 +148,8 @@ server {
     }
 
     location / {
-        proxy_pass http://127.0.0.1:8000;
+        proxy_pass http://127.0.0.1:8005;
+
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
