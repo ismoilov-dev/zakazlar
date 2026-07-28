@@ -16,7 +16,7 @@ class SheetsSyncService:
     """Orchestrates Google Sheets live synchronization with cache and freshness checks."""
 
     CACHE_KEY = "sheets_sync_recent_lock"
-    CACHE_TTL_SECONDS = 60
+    CACHE_TTL_SECONDS = 10
 
     def __init__(self) -> None:
         self.importer = DataImporter()

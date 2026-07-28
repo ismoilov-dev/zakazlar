@@ -32,8 +32,8 @@ async def ensure_fresh_data_and_get_timestamp() -> tuple[str, bool]:
     log = await sync_to_async(SyncLog.get_last_successful)()
     now = timezone.now()
 
-    # Trigger background sync if last sync was > 45 seconds ago or never
-    if not log or not log.finished_at or (now - log.finished_at).total_seconds() > 45:
+    # Trigger background sync if last sync was > 10 seconds ago or never
+    if not log or not log.finished_at or (now - log.finished_at).total_seconds() > 10:
         asyncio.create_task(asyncio.to_thread(_run_background_sync))
 
     is_stale = False
