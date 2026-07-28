@@ -294,9 +294,13 @@ class SheetsSource(BaseSource):
             date_raw = self._get_cell(row, date_idx) if date_idx is not None else ""
             try:
                 ordered_at = self._parse_date(date_raw)
-            except PARSE_ERRORS:
-                from django.utils import timezone
-                ordered_at = timezone.now()
+            except PARSE_ERRORS as exc:
+                dropped_invalid_id += 1
+                reason = f"Sana formati noto'g'ri: {exc}"
+                first_6 = [str(c).strip() for c in row[:6]]
+                dropped_rows.append({"row_idx": row_idx, "reason": reason, "raw_cells": first_6, "row_data": row})
+                logger.warning("List1 %s-qator tashlandi: %s | Birinchi 6 katak: %s", row_idx, reason, first_6)
+                continue
 
             orders.append(
                 OrderDTO(
