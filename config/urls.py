@@ -13,7 +13,9 @@ from django.urls import include, path
 urlpatterns = [
     path("panel/", admin.site.urls),
     path("api/v1/statistics/", include("apps.statistics.api.urls")),
+    path("api/v1/imports/", include("apps.imports.api.urls")),
 ]
+
 
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
