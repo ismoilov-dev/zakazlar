@@ -134,26 +134,37 @@ class SheetsSource(BaseSource):
         if not raw_rows:
             raise ValidationError("List1 varog'i bo'sh.")
 
-        headings = raw_rows[0]
+        # Dynamically locate header row in first 5 rows
+        header_row_idx = 0
+        for i, r in enumerate(raw_rows[:5]):
+            row_str_cells = [str(c).strip() for c in r]
+            if any(cell in ["ID", "Tabel raqami", "№"] for cell in row_str_cells):
+                header_row_idx = i
+                break
 
-        # Locate columns strictly by HEADER NAME (never by positional index)
-        required_headers = {"№", "ID", "Ответственный", "Сумма", "Дата Заказа", "статус"}
-        columns = self._find_column_indexes(headings, required_headers, sheet_name="List1")
+        headings = raw_rows[header_row_idx]
+
+        id_idx = self._find_single_column_index(headings, candidates=["ID", "Tabel raqami", "User ID", "Id", "id"], name="ID")
+        ord_idx = self._find_single_column_index(headings, candidates=["№", "Zakaz №", "Order ID", "Номер", "No", "Nomer"], name="№", required=False)
+        name_idx = self._find_single_column_index(headings, candidates=["Ответственный", "Xodim", "Menejer", "Operator", "ФИО", "FISH", "XODIMLAR ISMLARI", "Xodim ismi"], name="Ответственный", required=False)
+        amount_idx = self._find_single_column_index(headings, candidates=["Сумма", "Summa", "Narxi", "Qiymati", "Summasi", "Obshiy summa"], name="Сумма", required=False)
+        date_idx = self._find_single_column_index(headings, candidates=["Дата Заказа", "Дата", "Sana", "Zakaz sanasi", "Sana/vaqt"], name="Дата Заказа", required=False)
+        status_idx = self._find_single_column_index(headings, candidates=["статус", "Статус", "Status", "Holat", "Holati"], name="статус", required=False)
 
         # Find group index: check exact " " (single space), or candidates "Guruhi", "Bo'lim "
         group_idx = next((i for i, h in enumerate(headings) if h == " "), None)
         if group_idx is None:
-            group_idx = self._find_single_column_index(headings, candidates=["Guruhi", "Bo'lim ", "Guruh"], name="guruh")
+            group_idx = self._find_single_column_index(headings, candidates=["Guruhi", "Bo'lim ", "Guruh"], name="guruh", required=False)
 
         # Source columns candidates
         source_idx = self._find_single_column_index(headings, candidates=["Столбец 2", "Контакт", "Источник"], name="manba", required=False)
 
         orders: list[OrderDTO] = []
-        for row_idx, row in enumerate(raw_rows[1:], start=2):
+        for row_idx, row in enumerate(raw_rows[header_row_idx + 1:], start=header_row_idx + 2):
             if not any(str(cell).strip() for cell in row):
                 continue  # Skip fully empty rows
 
-            id_val = self._get_cell(row, columns["ID"])
+            id_val = self._get_cell(row, id_idx)
             if not id_val:
                 continue
 
@@ -163,29 +174,32 @@ class SheetsSource(BaseSource):
                 logger.warning("List1 varog'i, %s-qator ID xatosi: %s", row_idx, exc)
                 continue
 
-            emp_name = self._get_cell(row, columns["Ответственный"]).strip() or "Noma'lum"
-            
-            grp_code = (self._get_cell(row, group_idx) or "A").strip().upper()
+            emp_name = self._get_cell(row, name_idx).strip() if name_idx is not None else "Noma'lum"
+            if not emp_name:
+                emp_name = "Noma'lum"
+
+            grp_code = (self._get_cell(row, group_idx) or "A").strip().upper() if group_idx is not None else "A"
             if not grp_code:
                 grp_code = "A"
 
-            ord_raw = self._get_cell(row, columns["№"])
+            ord_raw = self._get_cell(row, ord_idx) if ord_idx is not None else ""
             try:
                 clean_ord = normalize_order_id(ord_raw) if ord_raw else f"ROW-{row_idx}"
                 ord_id = f"{emp_id}_{clean_ord}_{row_idx}"
             except ValidationError:
                 ord_id = f"{emp_id}_ROW_{row_idx}"
 
-            stat_raw = self._get_cell(row, columns["статус"])
+            stat_raw = self._get_cell(row, status_idx) if status_idx is not None else ""
             try:
                 stat_val = self._parse_status(stat_raw)
             except ValidationError:
                 stat_val = "successful"
 
             src_val = self._normalize_source(self._get_cell(row, source_idx) if source_idx is not None else "")
-            amount = self._parse_money(self._get_cell(row, columns["Сумма"]), sheet_name="List1", row_idx=row_idx)
+            amount_str = self._get_cell(row, amount_idx) if amount_idx is not None else ""
+            amount = self._parse_money(amount_str, sheet_name="List1", row_idx=row_idx)
 
-            date_raw = self._get_cell(row, columns["Дата Заказа"])
+            date_raw = self._get_cell(row, date_idx) if date_idx is not None else ""
             try:
                 ordered_at = self._parse_date(date_raw)
             except ValidationError:
