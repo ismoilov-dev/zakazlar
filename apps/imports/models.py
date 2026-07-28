@@ -1,5 +1,7 @@
 """Workbook import audit models."""
 
+from __future__ import annotations
+
 from django.conf import settings
 from django.db import models
 
@@ -39,3 +41,35 @@ class ImportJob(TimeStampedModel):
 
     def __str__(self) -> str:
         return f"Import #{self.pk} ({self.status})"
+
+
+class SyncStatus(models.TextChoices):
+    PENDING = "pending", "Pending"
+    SUCCESS = "success", "Success"
+    SKIPPED = "skipped", "Skipped"
+    FAILED = "failed", "Failed"
+
+
+class SyncLog(TimeStampedModel):
+    """Audit log for automated Google Sheets live synchronizations."""
+
+    started_at = models.DateTimeField(auto_now_add=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+    row_count = models.PositiveIntegerField(default=0)
+    created_sales = models.PositiveIntegerField(default=0)
+    updated_sales = models.PositiveIntegerField(default=0)
+    status = models.CharField(max_length=16, choices=SyncStatus.choices, default=SyncStatus.PENDING)
+    error_text = models.TextField(blank=True, default="")
+    sheet_modified_at = models.CharField(max_length=64, blank=True, default="")
+
+    class Meta:
+        db_table = "sync_logs"
+        ordering = ("-started_at",)
+
+    def __str__(self) -> str:
+        return f"SyncLog #{self.pk} ({self.status} at {self.started_at})"
+
+    @classmethod
+    def get_last_successful(cls) -> SyncLog | None:
+        return cls.objects.filter(status=SyncStatus.SUCCESS).first()
+
