@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import asyncio
+import logging
+
 from aiogram import F, Router
 from aiogram.filters import Command, CommandStart
 from aiogram.types import Message
 from asgiref.sync import sync_to_async
 from django.utils import timezone
+
+logger = logging.getLogger(__name__)
 
 from apps.accounts.services.binding import TelegramBindingService
 from apps.common.services.exceptions import DomainError

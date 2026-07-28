@@ -6,9 +6,12 @@ This is the ONLY code that touches the database during imports.
 from __future__ import annotations
 
 from decimal import Decimal
+import logging
 from typing import NamedTuple
 
 from django.db import transaction
+
+logger = logging.getLogger(__name__)
 
 from apps.employees.models import Employee
 from apps.employees.repositories.employee import EmployeeRepository
