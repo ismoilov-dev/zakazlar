@@ -96,7 +96,8 @@ async def bind_and_show_employee_stats(message: Message) -> None:
         await message.answer(str(exc))
         return
     except Exception as exc:
-        await message.answer(f"ID ko'rinishida xatolik: {exc}")
+        logger.exception("ID normalization error: %s", exc)
+        await message.answer("ID formatida xatolik mavjud. Iltimos tekshirib qayta yuboring.")
         return
 
     ts_str, is_stale = await ensure_fresh_data_and_get_timestamp()
@@ -159,3 +160,6 @@ async def group_stats(message: Message) -> None:
         await message.answer(text)
     except DomainError as exc:
         await message.answer(str(exc) + format_footer(ts_str, is_stale))
+    except Exception as exc:
+        logger.exception("Group stats error: %s", exc)
+        await message.answer("Guruh ma'lumotlarini yuklashda xatolik yuz berdi." + format_footer(ts_str, is_stale))
