@@ -16,9 +16,9 @@ class DroppedRowsAndDiagnosticsTest(TestCase):
     def test_forward_fill_empty_id_with_order_details(self):
         """Empty ID cell followed by a row with order details is forward-filled using last seen ID."""
         raw_data = [
-            ["№", "ID", "Ответственный", "Сумма", "Дата Заказа", "статус"],
-            ["1", "0191", "Amir Karimov", "100,000", "28.07.2026", "успешно"],
-            ["2", "", "Amir Karimov", "200,000", "28.07.2026", "успешно"],  # Empty ID, but has details
+            ["№", "ID", "Ответственный", "Сумма", "Дата Заказа", "статус", "Источник"],
+            ["1", "0191", "Amir Karimov", "100,000", "28.07.2026", "успешно", "Baza"],
+            ["2", "", "Amir Karimov", "200,000", "28.07.2026", "успешно", "Baza"],
         ]
 
         source = SheetsSource.__new__(SheetsSource)
@@ -33,9 +33,9 @@ class DroppedRowsAndDiagnosticsTest(TestCase):
     def test_completely_empty_row_is_skipped(self):
         """Fully empty rows are skipped without raising errors or tracking as dropped non-empty rows."""
         raw_data = [
-            ["№", "ID", "Ответственный", "Сумма", "Дата Заказа", "статус"],
-            ["1", "0191", "Amir Karimov", "100,000", "28.07.2026", "успешно"],
-            ["", "", "", "", "", ""],  # Fully empty row
+            ["№", "ID", "Ответственный", "Сумма", "Дата Заказа", "статус", "Источник"],
+            ["1", "0191", "Amir Karimov", "100,000", "28.07.2026", "успешно", "Baza"],
+            ["", "", "", "", "", "", ""],  # Fully empty row
         ]
 
         source = SheetsSource.__new__(SheetsSource)
@@ -49,9 +49,9 @@ class DroppedRowsAndDiagnosticsTest(TestCase):
     def test_ten_data_rows_yield_exactly_ten_order_dtos(self):
         """A sheet with 10 data rows yields exactly 10 OrderDTO objects."""
         raw_data = [
-            ["№", "ID", "Ответственный", "Сумма", "Дата Заказа", "статус"]
+            ["№", "ID", "Ответственный", "Сумма", "Дата Заказа", "статус", "Источник"]
         ] + [
-            [str(i), "0191", "Amir Karimov", f"{i * 100000}", "28.07.2026", "успешно"]
+            [str(i), "0191", "Amir Karimov", f"{i * 100000}", "28.07.2026", "успешно", "Baza"]
             for i in range(1, 11)
         ]
 

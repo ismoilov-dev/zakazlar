@@ -8,9 +8,9 @@ class ForwardFillNameValidationTest(TestCase):
     def test_forward_fill_fails_when_name_does_not_match(self):
         """Forward-fill is rejected and row is dropped if current row name differs from last seen name."""
         raw_data = [
-            ["№", "ID", "Ответственный", "Сумма", "Дата Заказа", "статус"],
-            ["1", "0191", "Amir Karimov", "100,000", "28.07.2026", "успешно"],
-            ["2", "", "Feruza Boymo'minova", "200,000", "28.07.2026", "успешно"],  # Different name
+            ["№", "ID", "Ответственный", "Сумма", "Дата Заказа", "статус", "Источник"],
+            ["1", "0191", "Amir Karimov", "100,000", "28.07.2026", "успешно", "Baza"],
+            ["2", "", "Feruza Boymo'minova", "200,000", "28.07.2026", "успешно", "Baza"],  # Different name
         ]
 
         source = SheetsSource.__new__(SheetsSource)
@@ -25,9 +25,9 @@ class ForwardFillNameValidationTest(TestCase):
     def test_forward_fill_succeeds_when_name_matches(self):
         """Forward-fill succeeds when current row employee name matches last seen employee name."""
         raw_data = [
-            ["№", "ID", "Ответственный", "Сумма", "Дата Заказа", "статус"],
-            ["1", "0191", "Amir Karimov", "100,000", "28.07.2026", "успешно"],
-            ["2", "", "Amir Karimov", "200,000", "28.07.2026", "успешно"],  # Same name
+            ["№", "ID", "Ответственный", "Сумма", "Дата Заказа", "статус", "Источник"],
+            ["1", "0191", "Amir Karimov", "100,000", "28.07.2026", "успешно", "Baza"],
+            ["2", "", "Amir Karimov", "200,000", "28.07.2026", "успешно", "Baza"],  # Same name
         ]
 
         source = SheetsSource.__new__(SheetsSource)

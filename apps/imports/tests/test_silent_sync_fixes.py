@@ -10,9 +10,9 @@ class SilentSyncFixesTest(TestCase):
     def test_invalid_decimal_id_does_not_crash_whole_sheet(self):
         """Row with invalid decimal ID '191,0' is logged and skipped, while valid rows are parsed."""
         raw_data = [
-            ["№", "ID", "Ответственный", "Сумма", "Дата Заказа", "статус"],
-            ["1", "191,0", "Amir Karimov", "100,000", "28.07.2026", "успешно"],  # Invalid ID
-            ["2", "0191", "Amir Karimov", "200,000", "28.07.2026", "успешно"],  # Valid ID
+            ["№", "ID", "Ответственный", "Сумма", "Дата Заказа", "статус", "Источник"],
+            ["1", "191,0", "Amir Karimov", "100,000", "28.07.2026", "успешно", "Baza"],  # Invalid ID
+            ["2", "0191", "Amir Karimov", "200,000", "28.07.2026", "успешно", "Baza"],  # Valid ID
         ]
 
         source = SheetsSource.__new__(SheetsSource)
@@ -27,9 +27,9 @@ class SilentSyncFixesTest(TestCase):
     def test_formula_error_id_does_not_crash_whole_sheet(self):
         """Row with formula error ID '#N/A' is logged and skipped, while valid rows are parsed."""
         raw_data = [
-            ["№", "ID", "Ответственный", "Сумма", "Дата Заказа", "статус"],
-            ["1", "#N/A", "Amir Karimov", "100,000", "28.07.2026", "успешно"],  # Formula error ID
-            ["2", "0191", "Amir Karimov", "200,000", "28.07.2026", "успешно"],  # Valid ID
+            ["№", "ID", "Ответственный", "Сумма", "Дата Заказа", "статус", "Источник"],
+            ["1", "#N/A", "Amir Karimov", "100,000", "28.07.2026", "успешно", "Baza"],  # Formula error ID
+            ["2", "0191", "Amir Karimov", "200,000", "28.07.2026", "успешно", "Baza"],  # Valid ID
         ]
 
         source = SheetsSource.__new__(SheetsSource)
@@ -43,9 +43,9 @@ class SilentSyncFixesTest(TestCase):
     def test_ten_data_rows_yield_exactly_ten_orders(self):
         """A sheet with 10 valid data rows yields exactly 10 OrderDTO objects."""
         raw_data = [
-            ["№", "ID", "Ответственный", "Сумма", "Дата Заказа", "статус"]
+            ["№", "ID", "Ответственный", "Сумма", "Дата Заказа", "статус", "Источник"]
         ] + [
-            [str(i), "0191", "Amir Karimov", f"{i * 100000}", "28.07.2026", "успешно"]
+            [str(i), "0191", "Amir Karimov", f"{i * 100000}", "28.07.2026", "успешно", "Baza"]
             for i in range(1, 11)
         ]
 
@@ -59,10 +59,10 @@ class SilentSyncFixesTest(TestCase):
     def test_forward_fill_ten_row_block_with_id_only_in_first_row(self):
         """A 10-row block with ID only in the first row parses via forward-fill to 10 OrderDTO objects."""
         raw_data = [
-            ["№", "ID", "Ответственный", "Сумма", "Дата Заказа", "статус"],
-            ["1", "0191", "Amir Karimov", "100,000", "28.07.2026", "успешно"],
+            ["№", "ID", "Ответственный", "Сумма", "Дата Заказа", "статус", "Источник"],
+            ["1", "0191", "Amir Karimov", "100,000", "28.07.2026", "успешно", "Baza"],
         ] + [
-            [str(i), "", "Amir Karimov", f"{i * 100000}", "28.07.2026", "успешно"]
+            [str(i), "", "Amir Karimov", f"{i * 100000}", "28.07.2026", "успешно", "Baza"]
             for i in range(2, 11)
         ]
 
@@ -83,7 +83,7 @@ class SilentSyncFixesTest(TestCase):
     def test_unknown_status_drops_row_and_does_not_default_to_successful(self):
         """Unknown status string 'Новый' causes row to be dropped with warning, not defaulted to 'successful'."""
         raw_data = [
-            ["№", "ID", "Ответственный", "Сумма", "Дата Заказа", "статус"],
+            ["№", "ID", "Ответственный", "Сумма", "Дата Заказа", "статус", "Источник"],
             ["1", "0191", "Amir Karimov", "100,000", "28.07.2026", "Новый"],  # Unknown status
         ]
 

@@ -8,8 +8,8 @@ class StableOrderIdTest(TestCase):
     def test_order_id_is_stable_without_row_index(self):
         """Order ID is emp_id_clean_ord and remains identical regardless of row index."""
         raw_data = [
-            ["№", "ID", "Ответственный", "Сумма", "Дата Заказа", "статус"],
-            ["1001", "0191", "Amir Karimov", "100,000", "28.07.2026", "успешно"],
+            ["№", "ID", "Ответственный", "Сумма", "Дата Заказа", "статус", "Источник"],
+            ["1001", "0191", "Amir Karimov", "100,000", "28.07.2026", "успешно", "Baza"],
         ]
 
         source = SheetsSource.__new__(SheetsSource)
@@ -23,8 +23,8 @@ class StableOrderIdTest(TestCase):
     def test_empty_order_number_drops_row(self):
         """Row with empty order number № is dropped into dropped_rows."""
         raw_data = [
-            ["№", "ID", "Ответственный", "Сумма", "Дата Заказа", "статус"],
-            ["", "0191", "Amir Karimov", "100,000", "28.07.2026", "успешно"],
+            ["№", "ID", "Ответственный", "Сумма", "Дата Заказа", "статус", "Источник"],
+            ["", "0191", "Amir Karimov", "100,000", "28.07.2026", "успешно", "Baza"],
         ]
 
         source = SheetsSource.__new__(SheetsSource)

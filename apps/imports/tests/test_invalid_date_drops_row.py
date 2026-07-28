@@ -8,8 +8,8 @@ class InvalidDateDropsRowTest(TestCase):
     def test_unparseable_date_drops_row_with_warning(self):
         """Unparseable order date string causes row to be dropped into dropped_rows."""
         raw_data = [
-            ["№", "ID", "Ответственный", "Сумма", "Дата Заказа", "статус"],
-            ["1001", "0191", "Amir Karimov", "100,000", "INVALID_DATE", "успешно"],
+            ["№", "ID", "Ответственный", "Сумма", "Дата Заказа", "статус", "Источник"],
+            ["1001", "0191", "Amir Karimov", "100,000", "INVALID_DATE", "успешно", "Baza"],
         ]
 
         source = SheetsSource.__new__(SheetsSource)

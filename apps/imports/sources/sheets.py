@@ -168,8 +168,9 @@ class SheetsSource(BaseSource):
         if group_idx is None:
             group_idx = self._find_single_column_index(headings, candidates=["Guruhi", "Bo'lim ", "Guruh"], name="guruh", required=False)
 
-        # Source columns candidates
         source_idx = self._find_single_column_index(headings, candidates=["Столбец 2", "Контакт", "Источник"], name="manba", required=False)
+        if source_idx is None:
+            logger.warning("List1 varog'ida manba ustuni ('Источник' / 'Столбец 2' / 'Контакт') topilmadi.")
 
         self.last_header_row_idx = header_row_idx
         self.last_headings = headings
@@ -288,7 +289,16 @@ class SheetsSource(BaseSource):
                 logger.warning("List1 %s-qator tashlandi: %s | Birinchi 6 katak: %s", row_idx, reason, first_6)
                 continue
 
-            src_val = self._normalize_source(self._get_cell(row, source_idx) if source_idx is not None else "")
+            try:
+                src_val = self._normalize_source(self._get_cell(row, source_idx) if source_idx is not None else "")
+            except PARSE_ERRORS as exc:
+                dropped_invalid_id += 1
+                reason = f"Manba xatosi: {exc}"
+                first_6 = [str(c).strip() for c in row[:6]]
+                dropped_rows.append({"row_idx": row_idx, "reason": reason, "raw_cells": first_6, "row_data": row})
+                logger.warning("List1 %s-qator tashlandi: %s | Birinchi 6 katak: %s", row_idx, reason, first_6)
+                continue
+
             amount = self._parse_money(amount_str, sheet_name="List1", row_idx=row_idx)
 
             date_raw = self._get_cell(row, date_idx) if date_idx is not None else ""
@@ -555,9 +565,11 @@ class SheetsSource(BaseSource):
 
     @staticmethod
     def _normalize_source(val: str) -> str:
+        if not val or not val.strip():
+            raise ValidationError("Manba (Source) maydoni bo'sh bo'lishi mumkin emas.")
         raw = val.strip().lower()
         if "первичный" in raw or "pervich" in raw:
             return "Pervichka"
         if "база" in raw or "baza" in raw:
             return "Baza"
-        return "Pervichka"
+        raise ValidationError(f"Noma'lum manba: '{val}'")
