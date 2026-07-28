@@ -285,6 +285,9 @@ class SheetsSource(BaseSource):
 
     @staticmethod
     def _parse_date(val: str):
+        from datetime import date, datetime, time
+        from django.utils import timezone
+
         if not val:
             raise ValidationError("Sana maydoni bo'sh bo'lishi mumkin emas.")
         # Try dd.mm.yyyy format
@@ -292,15 +295,15 @@ class SheetsSource(BaseSource):
         if m:
             day, month, year = int(m.group(1)), int(m.group(2)), int(m.group(3))
             try:
-                from datetime import date
-                return date(year, month, day)
+                d = date(year, month, day)
+                return timezone.make_aware(datetime.combine(d, time.min))
             except ValueError as exc:
                 raise ValidationError(f"Noto'g'ri sana ('{val}'): {exc}") from exc
 
         # Fallback to ISO parsing (yyyy-mm-dd)
         parsed = parse_iso_date(val.strip())
         if parsed:
-            return parsed
+            return timezone.make_aware(datetime.combine(parsed, time.min))
 
         raise ValidationError(f"Noto'g'ri sana formati ('{val}'). Kutilmoqda: dd.mm.yyyy")
 
