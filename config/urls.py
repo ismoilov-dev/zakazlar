@@ -11,7 +11,9 @@ from django.conf.urls.static import static
 from django.urls import include, path
 
 urlpatterns = [
+    path("admin/", admin.site.urls),
     path("admin/panel/", admin.site.urls),
+    path("panel/", admin.site.urls),
     path("api/v1/statistics/", include("apps.statistics.api.urls")),
 ]
 
