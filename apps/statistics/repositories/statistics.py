@@ -14,12 +14,22 @@ class StatisticsRepository:
     """Calculate aggregates in PostgreSQL instead of loading sale rows."""
 
     def _get_current_month_qs(self, target_date=None):
+        calendar_now = timezone.localtime()
         if target_date is None:
             latest_sale = Sale.objects.order_by("-ordered_at").first()
             if latest_sale and latest_sale.ordered_at:
-                now = timezone.localtime(latest_sale.ordered_at)
+                latest_dt = timezone.localtime(latest_sale.ordered_at)
+                months_diff = (latest_dt.year - calendar_now.year) * 12 + (latest_dt.month - calendar_now.month)
+                if months_diff > 1:
+                    logger.warning(
+                        "Bazadagi eng oxirgi zakaz sanasi (%s) kalendar oyidan 1 oydan ortiq kelajakda. Kalendar oyiga qaytildi.",
+                        latest_dt.strftime("%d.%m.%Y"),
+                    )
+                    now = calendar_now
+                else:
+                    now = latest_dt
             else:
-                now = timezone.localtime()
+                now = calendar_now
         else:
             now = timezone.localtime(target_date)
 
@@ -29,10 +39,14 @@ class StatisticsRepository:
         )
 
     def get_active_month_str(self) -> str:
+        calendar_now = timezone.localtime()
         first_sale = Sale.objects.order_by("-ordered_at").first()
         if first_sale and first_sale.ordered_at:
-            return timezone.localtime(first_sale.ordered_at).strftime("%m.%Y")
-        return timezone.localtime().strftime("%m.%Y")
+            latest_dt = timezone.localtime(first_sale.ordered_at)
+            months_diff = (latest_dt.year - calendar_now.year) * 12 + (latest_dt.month - calendar_now.month)
+            if months_diff <= 1:
+                return latest_dt.strftime("%m.%Y")
+        return calendar_now.strftime("%m.%Y")
 
     def employee_totals(self, employee_id: int, target_date=None) -> dict[str, object]:
         return self._aggregate(self._get_current_month_qs(target_date).filter(employee_id=employee_id))

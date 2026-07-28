@@ -14,6 +14,7 @@ from django.core.exceptions import ValidationError
 from apps.common.services.exceptions import ValidationError as DomainValidationError
 
 PARSE_ERRORS = (ValidationError, DomainValidationError)
+from django.utils import timezone
 from django.utils.dateparse import parse_date as parse_iso_date
 import gspread
 from google.oauth2.service_account import Credentials
@@ -307,6 +308,14 @@ class SheetsSource(BaseSource):
             except PARSE_ERRORS as exc:
                 dropped_invalid_id += 1
                 reason = f"Sana formati noto'g'ri: {exc}"
+                first_6 = [str(c).strip() for c in row[:6]]
+                dropped_rows.append({"row_idx": row_idx, "reason": reason, "raw_cells": first_6, "row_data": row})
+                logger.warning("List1 %s-qator tashlandi: %s | Birinchi 6 katak: %s", row_idx, reason, first_6)
+                continue
+
+            if ordered_at.date() > timezone.localtime().date():
+                dropped_invalid_id += 1
+                reason = f"Kelajakdagi sana rad etildi: {date_raw}"
                 first_6 = [str(c).strip() for c in row[:6]]
                 dropped_rows.append({"row_idx": row_idx, "reason": reason, "raw_cells": first_6, "row_data": row})
                 logger.warning("List1 %s-qator tashlandi: %s | Birinchi 6 katak: %s", row_idx, reason, first_6)
