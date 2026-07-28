@@ -200,6 +200,7 @@ class SheetsSource(BaseSource):
         dropped_invalid_id = 0
         parsed_rows_count = 0
         last_seen_emp_id: str | None = None
+        last_seen_emp_name: str | None = None
 
         for row_idx, row in enumerate(raw_rows[header_row_idx + 1:], start=header_row_idx + 2):
             if not any(str(cell).strip() for cell in row):
@@ -207,6 +208,7 @@ class SheetsSource(BaseSource):
                 continue  # Skip fully empty rows
 
             id_val = self._get_cell(row, id_idx)
+            raw_emp_name = self._get_cell(row, name_idx).strip() if name_idx is not None else ""
             ord_raw = self._get_cell(row, ord_idx) if ord_idx is not None else ""
             amount_str = self._get_cell(row, amount_idx) if amount_idx is not None else ""
             stat_raw = self._get_cell(row, status_idx) if status_idx is not None else ""
@@ -217,6 +219,8 @@ class SheetsSource(BaseSource):
                 try:
                     emp_id = normalize_employee_id(id_val)
                     last_seen_emp_id = emp_id
+                    if raw_emp_name:
+                        last_seen_emp_name = raw_emp_name
                 except PARSE_ERRORS as exc:
                     dropped_invalid_id += 1
                     reason = f"ID formati noto'g'ri: {exc}"
@@ -225,12 +229,23 @@ class SheetsSource(BaseSource):
                     logger.warning("List1 %s-qator tashlandi: %s | Birinchi 6 katak: %s", row_idx, reason, first_6)
                     continue
             else:
-                if has_meaningful_content and SHEETS_FORWARD_FILL_EMPLOYEE_ID and last_seen_emp_id:
+                names_match = (
+                    name_idx is not None
+                    and last_seen_emp_name is not None
+                    and bool(raw_emp_name)
+                    and raw_emp_name.lower() == last_seen_emp_name.lower()
+                )
+                if has_meaningful_content and SHEETS_FORWARD_FILL_EMPLOYEE_ID and last_seen_emp_id and names_match:
                     emp_id = last_seen_emp_id
-                    logger.info("List1 %s-qator bo'sh ID forward-fill qilindi: %s", row_idx, emp_id)
+                    logger.info(
+                        "List1 %s-qator bo'sh ID forward-fill qilindi: %s (ism: %s)",
+                        row_idx,
+                        emp_id,
+                        last_seen_emp_name,
+                    )
                 else:
                     dropped_empty_id += 1
-                    reason = "ID katakchasi bo'sh"
+                    reason = "ID katakchasi bo'sh yoki ism mos kelmadi"
                     first_6 = [str(c).strip() for c in row[:6]]
                     dropped_rows.append({"row_idx": row_idx, "reason": reason, "raw_cells": first_6, "row_data": row})
                     logger.warning("List1 %s-qator tashlandi: %s | Birinchi 6 katak: %s", row_idx, reason, first_6)
