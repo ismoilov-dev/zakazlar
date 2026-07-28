@@ -1,0 +1,15 @@
+[Unit]
+Description=Zakazlar Live Google Sheets Sync Daemon
+After=network.target postgresql.service
+
+[Service]
+User=root
+Group=www-data
+WorkingDirectory=/var/www/zakazlar
+EnvironmentFile=/var/www/zakazlar/.env
+ExecStart=/var/www/zakazlar/venv/bin/python manage.py sync_sheets --watch --interval 30
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

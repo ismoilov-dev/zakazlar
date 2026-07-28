@@ -55,8 +55,9 @@ fi
 
 # 5. Database Migration & Collectstatic
 echo "[5/6] Database migratsiyalari o'tkazilmoqda va statik fayllar yig'ilmoqda..."
-./.venv/bin/python manage.py migrate --noinput
-./.venv/bin/python manage.py collectstatic --noinput
+python manage.py migrate --noinput
+python manage.py createcachetable
+python manage.py collectstatic --noinput
 
 # 6. Configure Nginx and Systemd Services
 echo "[6/6] Nginx va Systemd servislari sozlanmoqda..."
@@ -65,6 +66,10 @@ echo "[6/6] Nginx va Systemd servislari sozlanmoqda..."
 cp deploy/systemd/zakazlar-web.service /etc/systemd/system/
 # Systemd Bot service
 cp deploy/systemd/zakazlar-bot.service /etc/systemd/system/
+# Systemd Sync service
+if [ -f "deploy/systemd/zakazlar-sync.service" ]; then
+    cp deploy/systemd/zakazlar-sync.service /etc/systemd/system/
+fi
 
 # Nginx config
 cp deploy/nginx.conf /etc/nginx/sites-available/zakazlar
@@ -76,8 +81,9 @@ nginx -t
 
 # Enable & Restart Services
 systemctl daemon-reload
-systemctl enable zakazlar-web zakazlar-bot nginx
-systemctl restart zakazlar-web zakazlar-bot nginx
+systemctl enable zakazlar-web zakazlar-bot zakazlar-sync nginx || systemctl enable zakazlar-web zakazlar-bot nginx
+systemctl restart zakazlar-web zakazlar-bot zakazlar-sync nginx || systemctl restart zakazlar-web zakazlar-bot nginx
+
 
 echo "=================================================="
 echo "  Tabriklaymiz! Loyiha Nginx va Systemd orqali     "
