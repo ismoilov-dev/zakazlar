@@ -71,8 +71,16 @@ class DataImporter:
                     group_cache[clean_code] = self.groups.get_or_create(code=clean_code)
                 return group_cache[clean_code]
 
-            # Wipe stale Sale records to ensure DB is an exact 1:1 snapshot of active Google Sheet
-            Sale.objects.all().delete()
+            # Delete only stale Sale records for the affected month(s) in the current import batch
+            if orders:
+                imported_order_ids = {row.order_id for row in orders if row.order_id}
+                year_months = {(row.ordered_at.year, row.ordered_at.month) for row in orders if row.ordered_at}
+                if year_months:
+                    from django.db.models import Q
+                    month_filter = Q()
+                    for yr, mth in year_months:
+                        month_filter |= Q(ordered_at__year=yr, ordered_at__month=mth)
+                    Sale.objects.filter(month_filter).exclude(external_order_id__in=imported_order_ids).delete()
 
             # 2. Upsert sales & employees
             sales_to_upsert: list[Sale] = []
