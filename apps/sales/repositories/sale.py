@@ -1,10 +1,11 @@
-"""ORM repository for imported sales."""
-
+import logging
 from collections.abc import Iterable
 
 from django.db import transaction
 
 from apps.sales.models import Sale
+
+logger = logging.getLogger(__name__)
 
 
 class SaleRepository:
@@ -12,7 +13,24 @@ class SaleRepository:
 
     @transaction.atomic
     def bulk_upsert(self, sales: Iterable[Sale]) -> tuple[int, int]:
-        items = list(sales)
+        deduped_map: dict[str, Sale] = {}
+        duplicate_ids: set[str] = set()
+
+        for sale in sales:
+            if sale.external_order_id in deduped_map:
+                duplicate_ids.add(sale.external_order_id)
+            deduped_map[sale.external_order_id] = sale
+
+        if duplicate_ids:
+            logger.warning(
+                "Duplicate external_order_ids found during bulk_upsert: %s",
+                sorted(list(duplicate_ids)),
+            )
+
+        items = list(deduped_map.values())
+        if not items:
+            return 0, 0
+
         external_ids = [sale.external_order_id for sale in items]
         existing_ids = set(
             Sale.objects.filter(external_order_id__in=external_ids).values_list("external_order_id", flat=True)
