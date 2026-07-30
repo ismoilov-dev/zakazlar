@@ -76,32 +76,27 @@ class SheetsSyncService:
             orders, payroll = source.read()
 
             skipped_rows = len(getattr(source, "last_dropped_rows", []))
+            total_rows = len(orders) + skipped_rows
+
+            from apps.imports.sources.sheets import MAX_SKIPPED_ROWS_RATIO_THRESHOLD
+
+            if total_rows > 0 and (skipped_rows / total_rows) > MAX_SKIPPED_ROWS_RATIO_THRESHOLD:
+                raise ValidationError(
+                    f"Tashlangan qatorlar ulushi ({skipped_rows}/{total_rows}) ruxsat etilgan {MAX_SKIPPED_ROWS_RATIO_THRESHOLD * 100:.1f}% me'yordan oshdi."
+                )
 
             with transaction.atomic():
                 result = self.importer.import_dto_lists(orders=orders, payroll=payroll)
-                total_rows = result.processed_rows + skipped_rows
-                
-                from apps.imports.sources.sheets import MAX_SKIPPED_ROWS_RATIO_THRESHOLD
 
-                if total_rows > 0 and (skipped_rows / total_rows) > MAX_SKIPPED_ROWS_RATIO_THRESHOLD:
-                    sync_log.status = SyncStatus.FAILED
-                    sync_log.finished_at = timezone.now()
-                    sync_log.row_count = result.processed_rows
-                    sync_log.skipped_rows = skipped_rows
-                    sync_log.created_sales = result.created_sales
-                    sync_log.updated_sales = result.updated_sales
-                    sync_log.error_text = f"Tashlangan qatorlar ulushi ({skipped_rows}/{total_rows}) ruxsat etilgan {MAX_SKIPPED_ROWS_RATIO_THRESHOLD * 100:.1f}% me'yordan oshdi."
-                    sync_log.save(update_fields=["status", "finished_at", "row_count", "skipped_rows", "created_sales", "updated_sales", "error_text"])
-                else:
-                    sync_log.status = SyncStatus.SUCCESS
-                    sync_log.finished_at = timezone.now()
-                    sync_log.row_count = result.processed_rows
-                    sync_log.skipped_rows = skipped_rows
-                    sync_log.created_sales = result.created_sales
-                    sync_log.updated_sales = result.updated_sales
-                    if skipped_rows > 0:
-                        sync_log.error_text = f"Tashlangan qatorlar: {skipped_rows} ta."
-                    sync_log.save(update_fields=["status", "finished_at", "row_count", "skipped_rows", "created_sales", "updated_sales", "error_text"])
+            sync_log.status = SyncStatus.SUCCESS
+            sync_log.finished_at = timezone.now()
+            sync_log.row_count = result.processed_rows
+            sync_log.skipped_rows = skipped_rows
+            sync_log.created_sales = result.created_sales
+            sync_log.updated_sales = result.updated_sales
+            if skipped_rows > 0:
+                sync_log.error_text = f"Tashlangan qatorlar: {skipped_rows} ta."
+            sync_log.save(update_fields=["status", "finished_at", "row_count", "skipped_rows", "created_sales", "updated_sales", "error_text"])
 
             return sync_log
 
@@ -122,3 +117,4 @@ class SheetsSyncService:
             if last_successful:
                 return last_successful
             raise ValidationError(f"Google Sheets sync muvaffaqiyatsiz tugadi: {exc}") from exc
+

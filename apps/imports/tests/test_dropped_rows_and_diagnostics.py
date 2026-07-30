@@ -79,7 +79,13 @@ class DroppedRowsAndDiagnosticsTest(TestCase):
 
     @patch("apps.imports.services.sheets_sync.SheetsSource")
     def test_skipped_rows_ratio_exceeding_threshold_marks_sync_failed(self, mock_source_cls):
-        """If skipped rows ratio exceeds 5%, SyncLog status is marked FAILED."""
+        """If skipped rows ratio exceeds 5%, threshold raises error, import is aborted, and SyncLog status is marked FAILED."""
+        from apps.employees.models import Employee
+        from apps.sales.models import Sale
+
+        emp = Employee.objects.create(employee_id="0191", full_name="Test Emp", summary_data={"total_sales": "1000"})
+        initial_sale_count = Sale.objects.count()
+
         mock_source = MagicMock()
         mock_source.sheet_id = "test-sheet-id"
         mock_source.last_dropped_rows = [{"row_idx": i} for i in range(10)]  # 10 dropped rows
@@ -87,10 +93,19 @@ class DroppedRowsAndDiagnosticsTest(TestCase):
         mock_source_cls.return_value = mock_source
 
         sync_service = SheetsSyncService()
-        sync_log = sync_service.sync_if_needed(force=True)
+        with self.assertRaises(PARSE_ERRORS):
+            sync_service.sync_if_needed(force=True)
 
-        self.assertEqual(sync_log.status, SyncStatus.FAILED)
-        self.assertIn("Tashlangan qatorlar ulushi", sync_log.error_text)
+        # Assert data integrity: no sales created/deleted, summary_data untouched
+        self.assertEqual(Sale.objects.count(), initial_sale_count)
+        emp.refresh_from_db()
+        self.assertEqual(emp.summary_data, {"total_sales": "1000"})
+
+        # Assert SyncLog created with status FAILED
+        failed_log = SyncLog.objects.filter(status=SyncStatus.FAILED).order_by("-id").first()
+        self.assertIsNotNone(failed_log)
+        self.assertIn("Tashlangan qatorlar ulushi", failed_log.error_text)
+
 
     def test_softened_normalize_employee_id_handles_non_breaking_spaces_and_formula_errors(self):
         """normalize_employee_id strips non-breaking spaces and rejects formula error strings explicitly."""
