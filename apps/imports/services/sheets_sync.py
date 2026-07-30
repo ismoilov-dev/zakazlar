@@ -5,7 +5,9 @@ from django.core.cache import cache
 from django.db import transaction
 from django.utils import timezone
 
+from datetime import date
 from apps.common.services.exceptions import ValidationError
+from apps.imports.dto import OrderDTO
 from apps.imports.models import SyncLog, SyncStatus
 from apps.imports.services.importer import DataImporter
 from apps.imports.sources.sheets import SheetsSource
@@ -15,7 +17,43 @@ logger = logging.getLogger(__name__)
 SHEETS_RECALC_DELAY_SECONDS = getattr(settings, "SHEETS_RECALC_DELAY_SECONDS", 3)
 
 
+def resolve_sync_period(orders: list[OrderDTO]) -> date:
+    """Derive period from modal month of successfully parsed List1 orders (top month must be >= 60%)."""
+    if not orders:
+        raise ValidationError("Sinxronizatsiya davrini aniqlab bo'lmadi: birorta ham buyurtma o'qilmadi.")
+
+    counts: dict[tuple[int, int], int] = {}
+    for o in orders:
+        if o.ordered_at:
+            key = (o.ordered_at.year, o.ordered_at.month)
+            counts[key] = counts.get(key, 0) + 1
+
+    if not counts:
+        raise ValidationError("Sinxronizatsiya davrini aniqlab bo'lmadi: yaroqli sanaga ega buyurtmalar yo'q.")
+
+    total_valid_orders = sum(counts.values())
+    sorted_months = sorted(counts.items(), key=lambda item: item[1], reverse=True)
+    (top_year, top_month), top_count = sorted_months[0]
+
+    ratio = top_count / total_valid_orders
+    if ratio < 0.60:
+        raise ValidationError(
+            f"Sync to'xtatildi: Buyurtmalarning aksariyat qismi ({top_count}/{total_valid_orders} = {ratio:.1%}) yagona bir oyga tegishli emas (kamida 60% talab qilinadi)."
+        )
+
+    resolved_date = date(top_year, top_month, 1)
+    logger.info(
+        "Sync davri (modal month) aniqlandi: %s (%s/%s buyurtma, %.1f%%)",
+        resolved_date,
+        top_count,
+        total_valid_orders,
+        ratio * 100,
+    )
+    return resolved_date
+
+
 class SheetsSyncService:
+
     """Orchestrates Google Sheets live synchronization with cache and freshness checks."""
 
     CACHE_KEY = "sheets_sync_recent_lock"
@@ -85,6 +123,7 @@ class SheetsSyncService:
                     f"Tashlangan qatorlar ulushi ({skipped_rows}/{total_rows}) ruxsat etilgan {MAX_SKIPPED_ROWS_RATIO_THRESHOLD * 100:.1f}% me'yordan oshdi."
                 )
 
+            period = resolve_sync_period(orders)
             group_summaries = getattr(source, "groups_summary", [])
 
             with transaction.atomic():
@@ -92,7 +131,10 @@ class SheetsSyncService:
                     orders=orders,
                     payroll=payroll,
                     group_summaries=group_summaries,
+                    period=period,
+                    sheet_id=getattr(source, "sheet_id", ""),
                 )
+
 
 
             sync_log.status = SyncStatus.SUCCESS
