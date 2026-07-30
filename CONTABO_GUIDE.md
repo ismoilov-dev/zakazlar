@@ -43,7 +43,7 @@ sudo bash scripts/setup_contabo.sh
 Ushbu script avtomatik ravishda:
 1. System paketlarini yangilaydi hamda Python 3, PostgreSQL, Nginx paketlarini o'rnatadi.
 2. PostgreSQL'da ma'lumotlar bazasi va foydalanuvchini yaratadi.
-3. Python Virtual Environment (`.venv`) va barcha kutubxonalarni o'rnatadi.
+3. Python Virtual Environment (`venv`) va barcha kutubxonalarni o'rnatadi.
 4. Database migratsiyalarini bajaradi va statik fayllarni yig'adi.
 5. Systemd Web (`zakazlar-web.service`) va Bot (`zakazlar-bot.service`) servislarini hamda Nginx'ni sozlab ishga tushiradi.
 
@@ -123,13 +123,14 @@ After=network.target postgresql.service
 [Service]
 User=root
 WorkingDirectory=/var/www/zakazlar
-ExecStart=/var/www/zakazlar/venv/bin/gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 2 --timeout 120
+ExecStart=/var/www/zakazlar/venv/bin/gunicorn config.wsgi:application --bind 127.0.0.1:8005 --workers 2 --timeout 120
 Restart=always
 RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
 ```
+
 
 ### 2. Telegram Bot Servis (`/etc/systemd/system/zakazlar-bot.service`)
 ```ini

@@ -9,8 +9,8 @@ ko'rsatish uchun ichki platforma.
 1. Python 3.13 virtual environment yarating va dependency'larni o'rnating:
 
    ```bash
-   python3.13 -m venv .venv
-   source .venv/bin/activate
+   python3.13 -m venv venv
+   source venv/bin/activate
    pip install -r requirements.txt
    ```
 
@@ -34,7 +34,8 @@ ko'rsatish uchun ichki platforma.
    python manage.py run_bot
    ```
 
-Admin panel: `http://127.0.0.1:8000/admin/`
+Admin panel: `http://127.0.0.1:8000/panel/`
+
 
 ## Excel formati
 

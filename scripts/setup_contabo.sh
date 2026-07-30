@@ -50,11 +50,10 @@ sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE $DB_NAME TO $DB_USER;
 echo "[4/6] Python Virtual Environment (venv) yaratilmoqda va kutubxonalar o'rnatilmoqda..."
 cd "$PROJECT_DIR"
 VENV_DIR="$PROJECT_DIR/venv"
-if [ ! -d "$VENV_DIR" ] && [ -d "$PROJECT_DIR/.venv" ]; then
-    VENV_DIR="$PROJECT_DIR/.venv"
-elif [ ! -d "$VENV_DIR" ]; then
+if [ ! -d "$VENV_DIR" ]; then
     python3 -m venv "$VENV_DIR"
 fi
+
 
 PYTHON_BIN="$VENV_DIR/bin/python"
 PIP_BIN="$VENV_DIR/bin/pip"
