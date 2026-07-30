@@ -9,47 +9,47 @@ from apps.sales.models import Sale, SaleStatus
 from apps.statistics.services.statistics import StatisticsService
 
 
+from apps.common.services.exceptions import ValidationError
+
+
 class StatisticsMonthFilterTest(TestCase):
-    def test_statistics_filtered_by_current_month(self) -> None:
+    def test_missing_summary_data_raises_validation_error(self) -> None:
+        """An employee absent from List2 (empty summary_data) raises explicit ValidationError."""
         group = SalesGroup.objects.create(code="BAZA", name="Baza Group")
-        employee = Employee.objects.create(
+        Employee.objects.create(
             employee_id="0191",
             full_name="Amir Karimov",
             group=group,
             monthly_salary=Decimal("5000000.00"),
+            summary_data={},
         )
 
-        now = timezone.localtime()
-        # Last month date
-        first_of_this_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-        last_month_date = first_of_this_month - timedelta(days=5)
+        with self.assertRaises(ValidationError) as ctx:
+            StatisticsService().employee_dashboard_for_employee("0191")
 
-        # Sale 1: last month
-        Sale.objects.create(
-            external_order_id="ORD-PREV-MONTH",
-            employee=employee,
-            status=SaleStatus.SUCCESSFUL,
-            source="Pervichka",
-            sale_amount=Decimal("1000000.00"),
-            profit_amount=Decimal("0"),
-            ordered_at=last_month_date,
-        )
+        self.assertIn("Ma'lumotlaringiz hali hisoblanmagan", str(ctx.exception))
 
-        # Sale 2: current month
-        Sale.objects.create(
-            external_order_id="ORD-CURR-MONTH",
-            employee=employee,
-            status=SaleStatus.SUCCESSFUL,
-            source="Pervichka",
-            sale_amount=Decimal("500000.00"),
-            profit_amount=Decimal("0"),
-            ordered_at=now,
+    def test_statistics_mapped_from_summary_data(self) -> None:
+        group = SalesGroup.objects.create(code="BAZA", name="Baza Group")
+        Employee.objects.create(
+            employee_id="0191",
+            full_name="Amir Karimov",
+            group=group,
+            monthly_salary=Decimal("5000000.00"),
+            summary_data={
+                "total_sales": "500000.00",
+                "successful_sales": "500000.00",
+                "perv_sales": "500000.00",
+                "baza_sales": "0.00",
+                "otkaz_sales": "0.00",
+                "v_proc_sales": "0.00",
+                "earned_salary": "5000000.00",
+                "successful_orders": 1,
+            },
         )
 
         dashboard = StatisticsService().employee_dashboard_for_employee("0191")
-
-        # Total orders should equal 1 (only current month sale in dataset)
-        self.assertEqual(dashboard.total_orders, 1)
         self.assertEqual(dashboard.total_sales, Decimal("500000.00"))
-        # Earned salary comes directly from Google Sheets monthly_salary
         self.assertEqual(dashboard.earned_salary, Decimal("5000000.00"))
+        self.assertEqual(dashboard.successful_orders, 1)
+
