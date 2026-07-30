@@ -218,13 +218,19 @@ class SheetsSource(BaseSource):
 
         total_raw_rows = len(raw_rows[header_row_idx + 1:])
         empty_rows_skipped = 0
+
         dropped_empty_id = 0
         dropped_invalid_id = 0
         parsed_rows_count = 0
         last_seen_emp_id: str | None = None
         last_seen_emp_name: str | None = None
+        from collections import Counter
+        unrecognized_sources_count = Counter()
+
+
 
         for row_idx, row in enumerate(raw_rows[header_row_idx + 1:], start=header_row_idx + 2):
+
             # Test for an all-empty row first, before any field-level validation
             row_str_values = [str(cell or "").replace("\xa0", "").strip() for cell in row]
             if not any(row_str_values):
@@ -346,17 +352,11 @@ class SheetsSource(BaseSource):
                 continue
 
 
-            try:
-                src_val = self._normalize_source(
-                    self._get_cell(row, source_idx) if source_idx is not None else ""
-                )
-            except PARSE_ERRORS as exc:
-                dropped_invalid_id += 1
-                reason = f"Manba xatosi: {exc}"
-                first_6 = [str(c).strip() for c in row[:6]]
-                dropped_rows.append({"row_idx": row_idx, "reason": reason, "raw_cells": first_6, "row_data": row})
-                logger.warning("List1 %s-qator tashlandi: %s | Birinchi 6 katak: %s", row_idx, reason, first_6)
-                continue
+            src_raw_cell = self._get_cell(row, source_idx) if source_idx is not None else ""
+            src_val, unrecognized_src = self._normalize_source(src_raw_cell)
+            if unrecognized_src:
+                unrecognized_sources_count[unrecognized_src] += 1
+
 
             try:
                 clean_ord = normalize_order_id(ord_raw)
@@ -383,6 +383,9 @@ class SheetsSource(BaseSource):
             )
             parsed_rows_count += 1
 
+        if unrecognized_sources_count:
+            logger.debug("List1 noma'lum manba (source) qiymatlari agregatsiyasi: %s", dict(unrecognized_sources_count))
+
         self.last_dropped_rows = dropped_rows
         self.last_parse_summary = {
             "total_raw_rows": total_raw_rows,
@@ -402,6 +405,7 @@ class SheetsSource(BaseSource):
         )
 
         return orders
+
 
     def _parse_payroll(self, worksheet: gspread.Worksheet) -> list[PayrollDTO]:
         raw_rows = worksheet.get_all_values(combine_merged_cells=True)
@@ -668,12 +672,12 @@ class SheetsSource(BaseSource):
         raise ValidationError(f"Noma'lum status: '{val}'")
 
     @staticmethod
-    def _normalize_source(val: str) -> str:
+    def _normalize_source(val: str) -> tuple[str, str | None]:
         if not val or not val.strip():
-            raise ValidationError("Manba (Source) maydoni bo'sh bo'lishi mumkin emas.")
+            return "UNKNOWN", None
         raw = val.strip().lower()
         if "первичный" in raw or "pervich" in raw:
-            return "Pervichka"
+            return "Pervichka", None
         if "база" in raw or "baza" in raw:
-            return "Baza"
-        raise ValidationError(f"Noma'lum manba: '{val}'")
+            return "Baza", None
+        return "UNKNOWN", val.strip()

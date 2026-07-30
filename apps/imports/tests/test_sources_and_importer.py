@@ -151,5 +151,33 @@ class DataImporterTest(TestCase):
         self.assertEqual(len(source.last_dropped_rows), 0)
         self.assertEqual(source.last_parse_summary["empty_rows_skipped"], 2)
 
+    def test_unrecognized_sources_map_to_unknown_without_dropping(self) -> None:
+        from unittest.mock import MagicMock
+        from apps.imports.sources.sheets import SheetsSource
+
+        source = object.__new__(SheetsSource)
+        source.last_dropped_rows = []
+
+        mock_ws = MagicMock()
+        mock_ws.get_all_values.return_value = [
+            ["ID", "Zakaz №", "Ответственный", "Сумма", "Дата Заказа", "статус", "guruh", "manba"],
+            ["0191", "1001", "Amir", "50000", "2026-07-28 10:00:00", "Успешно", "A", "Dumka"],
+            ["0191", "1002", "Amir", "50000", "2026-07-28 10:00:00", "Успешно", "A", "Otkaz"],
+            ["0191", "1003", "Amir", "50000", "2026-07-28 10:00:00", "Успешно", "A", ""],
+        ]
+
+        orders = source._parse_orders(mock_ws, valid_employee_ids={"0191"})
+        self.assertEqual(len(orders), 3)
+        self.assertEqual(len(source.last_dropped_rows), 0)
+        self.assertTrue(all(o.source == "UNKNOWN" for o in orders))
+
+    def test_normalize_source_mapping(self) -> None:
+        from apps.imports.sources.sheets import SheetsSource
+        self.assertEqual(SheetsSource._normalize_source("Первичный Заказ"), ("Pervichka", None))
+        self.assertEqual(SheetsSource._normalize_source("База"), ("Baza", None))
+        self.assertEqual(SheetsSource._normalize_source("Dumka"), ("UNKNOWN", "Dumka"))
+        self.assertEqual(SheetsSource._normalize_source(""), ("UNKNOWN", None))
+
+
 
 

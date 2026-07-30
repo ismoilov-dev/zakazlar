@@ -14,6 +14,12 @@ class SaleStatus(models.TextChoices):
     PENDING = "pending", "Pending"
 
 
+class SaleSource(models.TextChoices):
+    PERVICHKA = "Pervichka", "Pervichka"
+    BAZA = "Baza", "Baza"
+    UNKNOWN = "UNKNOWN", "Unknown"
+
+
 class Sale(TimeStampedModel):
     """A single source order imported from a company workbook."""
 
@@ -23,7 +29,8 @@ class Sale(TimeStampedModel):
         "imports.ImportJob", on_delete=models.SET_NULL, null=True, blank=True, related_name="sales"
     )
     status = models.CharField(max_length=16, choices=SaleStatus.choices)
-    source = models.CharField(max_length=64, blank=True, default="")
+    source = models.CharField(max_length=64, choices=SaleSource.choices, default=SaleSource.UNKNOWN, blank=True)
+
     sale_amount = models.DecimalField(max_digits=16, decimal_places=2, validators=[MinValueValidator(Decimal("0"))])
     profit_amount = models.DecimalField(max_digits=16, decimal_places=2, default=Decimal("0"))
     ordered_at = models.DateTimeField()
