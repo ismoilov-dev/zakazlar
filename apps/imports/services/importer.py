@@ -88,28 +88,13 @@ class DataImporter:
                         month_filter |= Q(ordered_at__year=yr, ordered_at__month=mth)
                     Sale.objects.filter(month_filter).exclude(external_order_id__in=imported_order_ids).delete()
 
-            # 2. Upsert sales & employees
+            # 2. Upsert sales
             sales_to_upsert: list[Sale] = []
             for row in orders:
-                if row.employee_id in employee_map:
-                    employee = employee_map[row.employee_id]
-                    if row.employee_id not in payroll_employee_ids:
-                        order_group = get_group(row.group_code)
-                        if employee.group_id != order_group.id or employee.full_name != row.employee_name:
-                            employee = self.employees.upsert(
-                                employee_id=row.employee_id,
-                                full_name=row.employee_name,
-                                group=order_group,
-                            )
-                            employee_map[row.employee_id] = employee
-                else:
-                    order_group = get_group(row.group_code)
-                    employee = self.employees.upsert(
-                        employee_id=row.employee_id,
-                        full_name=row.employee_name,
-                        group=order_group,
-                    )
-                    employee_map[row.employee_id] = employee
+                employee = employee_map.get(row.employee_id)
+                if employee is None:
+                    logger.warning("Rejecting order %s: employee ID %s not in payroll roster", row.order_id, row.employee_id)
+                    continue
 
                 sales_to_upsert.append(
                     Sale(
@@ -123,6 +108,7 @@ class DataImporter:
                         ordered_at=row.ordered_at,
                     )
                 )
+
 
             created, updated = self.sales.bulk_upsert(sales_to_upsert)
             return ImportResult(

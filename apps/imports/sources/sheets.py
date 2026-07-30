@@ -102,8 +102,6 @@ class SheetsSource(BaseSource):
         if "list1" not in worksheets:
             raise ValidationError("Google Sheet'da 'List1' varog'i topilmadi.")
 
-        orders = self._parse_orders(worksheets["list1"])
-
         # Check all candidate payroll worksheets: 'list2' prioritized first, then 'xodimlar maoshi', 'ish haqi'
         payroll_candidates: list[gspread.Worksheet] = []
         for name in ["list2", "xodimlar maoshi", "ish haqi"]:
@@ -131,13 +129,17 @@ class SheetsSource(BaseSource):
             raise ValidationError("Birorta ham payroll varog'ini tahlil qilib bo'lmadi.")
 
         payroll = list(payroll_by_id.values())
+        valid_employee_ids = set(payroll_by_id.keys())
+
+        orders = self._parse_orders(worksheets["list1"], valid_employee_ids=valid_employee_ids)
 
         if not orders:
             raise ValidationError("List1 varog'idan birorta ham buyurtma o'qilmadi.")
 
         return orders, payroll
 
-    def _parse_orders(self, worksheet: gspread.Worksheet) -> list[OrderDTO]:
+    def _parse_orders(self, worksheet: gspread.Worksheet, valid_employee_ids: set[str] | None = None) -> list[OrderDTO]:
+
         raw_rows = worksheet.get_all_values(combine_merged_cells=True)
         if not raw_rows:
             raise ValidationError("List1 varog'i bo'sh.")
@@ -256,6 +258,15 @@ class SheetsSource(BaseSource):
                     dropped_rows.append({"row_idx": row_idx, "reason": reason, "raw_cells": first_6, "row_data": row})
                     logger.warning("List1 %s-qator tashlandi: %s | Birinchi 6 katak: %s", row_idx, reason, first_6)
                     continue
+
+            if valid_employee_ids is not None and emp_id not in valid_employee_ids:
+                dropped_invalid_id += 1
+                reason = f"Xodim ID ({emp_id}) List2 varog'ida topilmadi"
+                first_6 = [str(c).strip() for c in row[:6]]
+                dropped_rows.append({"row_idx": row_idx, "reason": reason, "raw_cells": first_6, "row_data": row})
+                logger.warning("List1 %s-qator tashlandi: %s | Birinchi 6 katak: %s", row_idx, reason, first_6)
+                continue
+
 
             emp_name = self._get_cell(row, name_idx).strip() if name_idx is not None else "Noma'lum"
             if not emp_name:
