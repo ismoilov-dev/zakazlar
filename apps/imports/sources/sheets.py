@@ -184,8 +184,9 @@ class SheetsSource(BaseSource):
         if group_idx is None:
             group_idx = self._find_single_column_index(headings, candidates=["Guruhi", "Bo'lim ", "Guruh"], name="guruh", required=False)
 
-        source_candidates = ["Столбец 2", "Контакт", "Источник"]
+        source_candidates = ["Столбец 2", "Контакт", "Источник", "manba", "Manba"]
         source_idx = self._find_single_column_index(headings, candidates=source_candidates, name="manba", required=False)
+
         if source_idx is None:
             logger.error("List1 varog'ida manba ustuni topilmadi. Qidirilgan nomlar: %s | Mavjud sarlavhalar: %s", source_candidates, headings)
             raise ValidationError(
@@ -224,7 +225,9 @@ class SheetsSource(BaseSource):
         last_seen_emp_name: str | None = None
 
         for row_idx, row in enumerate(raw_rows[header_row_idx + 1:], start=header_row_idx + 2):
-            if not any(str(cell).strip() for cell in row):
+            # Test for an all-empty row first, before any field-level validation
+            row_str_values = [str(cell or "").replace("\xa0", "").strip() for cell in row]
+            if not any(row_str_values):
                 empty_rows_skipped += 1
                 continue  # Skip fully empty rows
 
@@ -234,6 +237,12 @@ class SheetsSource(BaseSource):
             amount_str = self._get_cell(row, amount_idx) if amount_idx is not None else ""
             stat_raw = self._get_cell(row, status_idx) if status_idx is not None else ""
             has_meaningful_content = bool(ord_raw.strip() or amount_str.strip() or stat_raw.strip())
+
+            # Secondary check: if all mapped cells are empty, treat as empty row
+            if not id_val and not raw_emp_name and not ord_raw and not amount_str and not stat_raw:
+                empty_rows_skipped += 1
+                continue
+
 
             emp_id: str | None = None
             if id_val:

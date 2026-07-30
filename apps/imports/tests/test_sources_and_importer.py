@@ -127,8 +127,29 @@ class DataImporterTest(TestCase):
         emp = Employee.objects.get(employee_id="0191")
         self.assertEqual(emp.group.code, "BAZA")
 
-        # Salary matches monthly_salary from Google Sheets PayrollDTO
         dashboard = StatisticsService().employee_dashboard_for_employee("0191")
         self.assertEqual(dashboard.earned_salary, Decimal("5000000.00"))
+
+    def test_parse_orders_skips_trailing_empty_rows(self) -> None:
+        from unittest.mock import MagicMock
+        from apps.imports.sources.sheets import SheetsSource
+
+        source = object.__new__(SheetsSource)
+        source.last_dropped_rows = []
+
+        mock_ws = MagicMock()
+        mock_ws.get_all_values.return_value = [
+            ["ID", "Zakaz №", "Ответственный", "Сумма", "Дата Заказа", "статус", "guruh", "manba"],
+            ["0191", "1001", "Amir", "50000", "2026-07-28 10:00:00", "Успешно", "A", "База"],
+            ["", "", "", "", "", "", "", ""],
+            [" \xa0 ", "", "", "", "", "", "", ""],
+        ]
+
+
+        orders = source._parse_orders(mock_ws, valid_employee_ids={"0191"})
+        self.assertEqual(len(orders), 1)
+        self.assertEqual(len(source.last_dropped_rows), 0)
+        self.assertEqual(source.last_parse_summary["empty_rows_skipped"], 2)
+
 
 
