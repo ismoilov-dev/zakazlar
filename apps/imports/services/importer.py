@@ -5,9 +5,11 @@ This is the ONLY code that touches the database during imports.
 
 from __future__ import annotations
 
+from datetime import date
 from decimal import Decimal
 import logging
 from typing import NamedTuple
+
 
 from django.db import transaction
 
@@ -45,21 +47,47 @@ class DataImporter:
         payroll: list[PayrollDTO],
         group_summaries: list[GroupSummaryDTO] | None = None,
         job: ImportJob | None = None,
+        period: date | None = None,
+        sheet_id: str = "",
     ) -> ImportResult:
-        """Persist payroll, groups and orders inside a single atomic transaction."""
+        """Persist payroll, groups, monthly stats and orders inside a single atomic transaction."""
+        from apps.employees.models import EmployeeMonthlyStat
+
         with transaction.atomic():
             payroll_employee_ids = {row.employee_id for row in payroll}
 
-            # 1. Upsert payroll & employees
+            # 1. Upsert payroll & employees & monthly stats
             for row in payroll:
                 group = self.groups.get_or_create(code=row.group_code)
-                self.employees.upsert(
+                emp = self.employees.upsert(
                     employee_id=row.employee_id,
                     full_name=row.employee_name,
                     group=group,
                     monthly_salary=row.monthly_salary,
                     summary_data=row.summary_data or {},
                 )
+
+                if period:
+                    stat, created = EmployeeMonthlyStat.objects.get_or_create(
+                        employee=emp,
+                        period=period,
+                        defaults={
+                            "summary_data": row.summary_data or {},
+                            "source_spreadsheet_id": sheet_id,
+                        },
+                    )
+                    if not created:
+                        if stat.is_closed:
+                            logger.info(
+                                "Xodim %s uchun %s davri yopilgan (is_closed=True), oylik snapshot yangilanishi o'tkazib yuborildi.",
+                                emp.employee_id,
+                                period,
+                            )
+                        else:
+                            stat.summary_data = row.summary_data or {}
+                            stat.source_spreadsheet_id = sheet_id
+                            stat.save(update_fields=["summary_data", "source_spreadsheet_id"])
+
 
             # Upsert group summaries
             if group_summaries:
