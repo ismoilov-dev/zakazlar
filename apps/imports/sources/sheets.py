@@ -539,36 +539,64 @@ class SheetsSource(BaseSource):
         if not raw_rows:
             return []
 
+        # 1. Try vertical format first if 'Guruh foydasi' column exists in header
         header_row_idx = None
         for i, row in enumerate(raw_rows[:15]):
             row_str_cells = [str(c).strip().lower() for c in row]
-            if any(cell in ["guruh", "bo'lim"] for cell in row_str_cells):
+            if "guruh foydasi" in row_str_cells:
                 header_row_idx = i
                 break
 
-        if header_row_idx is None:
+        if header_row_idx is not None:
+            headings = raw_rows[header_row_idx]
+            code_idx = self._find_single_column_index(headings, candidates=["Guruh", "Bo'lim"], name="guruh", required=False)
+            profit_idx = self._find_single_column_index(headings, candidates=["Guruh foydasi"], name="guruh foydasi", required=False)
+            bonus_idx = self._find_single_column_index(headings, candidates=["Rahbar bonusi"], name="rahbar bonusi", required=False)
+
+            if code_idx is not None and profit_idx is not None:
+                groups: list[GroupSummaryDTO] = []
+                for row in raw_rows[header_row_idx + 1:]:
+                    if not any(str(cell).strip() for cell in row):
+                        continue
+                    grp_code = self._get_cell(row, code_idx).upper()
+                    if not grp_code:
+                        continue
+                    profit = self._parse_money(self._get_cell(row, profit_idx))
+                    bonus = self._parse_money(self._get_cell(row, bonus_idx)) if bonus_idx is not None else (profit * Decimal("0.02"))
+                    groups.append(GroupSummaryDTO(group_code=grp_code, group_profit=profit, leader_bonus=bonus))
+                if groups:
+                    return groups
+
+        # 2. Horizontal layout parsing (Row 0 has group codes A, B, C, D, BAZA, last JAMI row has totals)
+        row0 = raw_rows[0]
+        summary_row = None
+        for row in reversed(raw_rows):
+            cell0 = str(row[0] if row else "").strip().upper()
+            if "JAMI" in cell0 or "ИТОГО" in cell0:
+                summary_row = row
+                break
+
+        if not summary_row and len(raw_rows) > 1:
+            summary_row = raw_rows[-1]
+
+        if not summary_row:
             return []
 
-        headings = raw_rows[header_row_idx]
-        code_idx = self._find_single_column_index(headings, candidates=["Guruh", "Bo'lim"], name="guruh", required=False)
-        profit_idx = self._find_single_column_index(headings, candidates=["Guruh foydasi"], name="guruh foydasi", required=False)
-        bonus_idx = self._find_single_column_index(headings, candidates=["Rahbar bonusi"], name="rahbar bonusi", required=False)
-
-        if code_idx is None:
-            return []
-
-        groups: list[GroupSummaryDTO] = []
-        for row in raw_rows[header_row_idx + 1:]:
-            if not any(str(cell).strip() for cell in row):
-                continue
-            grp_code = self._get_cell(row, code_idx).upper()
-            if not grp_code:
-                continue
-            profit = self._parse_money(self._get_cell(row, profit_idx)) if profit_idx is not None else Decimal("0.00")
-            bonus = self._parse_money(self._get_cell(row, bonus_idx)) if bonus_idx is not None else Decimal("0.00")
-            groups.append(GroupSummaryDTO(group_code=grp_code, group_profit=profit, leader_bonus=bonus))
+        groups = []
+        for col_idx, cell_val in enumerate(row0):
+            code = str(cell_val).strip().upper()
+            if code in ["A", "B", "C", "D", "BAZA", "PERVICHKA"]:
+                profit_col = col_idx + 1 if (col_idx + 1 < len(summary_row)) else col_idx
+                profit_val = summary_row[profit_col] if profit_col < len(summary_row) else "0"
+                try:
+                    profit = self._parse_money(profit_val)
+                except Exception:
+                    profit = Decimal("0.00")
+                bonus = (profit * Decimal("0.02")).quantize(Decimal("0.01"))
+                groups.append(GroupSummaryDTO(group_code=code, group_profit=profit, leader_bonus=bonus))
 
         return groups
+
 
 
     @staticmethod
