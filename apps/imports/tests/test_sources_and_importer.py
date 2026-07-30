@@ -99,6 +99,16 @@ class DataImporterTest(TestCase):
                 employee_name="Amir Karimov",
                 group_code="BAZA",
                 monthly_salary=Decimal("5000000.00"),
+                summary_data={
+                    "total_sales": "1000000.00",
+                    "successful_sales": "1000000.00",
+                    "perv_sales": "0.00",
+                    "baza_sales": "1000000.00",
+                    "otkaz_sales": "0.00",
+                    "v_proc_sales": "0.00",
+                    "earned_salary": "5000000.00",
+                    "successful_orders": 1,
+                },
             )
         ]
         orders = [
@@ -120,4 +130,5 @@ class DataImporterTest(TestCase):
         # Salary matches monthly_salary from Google Sheets PayrollDTO
         dashboard = StatisticsService().employee_dashboard_for_employee("0191")
         self.assertEqual(dashboard.earned_salary, Decimal("5000000.00"))
+
 

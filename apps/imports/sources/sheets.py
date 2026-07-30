@@ -313,7 +313,16 @@ class SheetsSource(BaseSource):
                 logger.warning("List1 %s-qator tashlandi: %s | Birinchi 6 katak: %s", row_idx, reason, first_6)
                 continue
 
-            amount = self._parse_money(amount_str, sheet_name="List1", row_idx=row_idx)
+            try:
+                amount = self._parse_money(amount_str, sheet_name="List1", row_idx=row_idx)
+            except PARSE_ERRORS as exc:
+                dropped_invalid_id += 1
+                reason = f"Summa xatosi: {exc}"
+                first_6 = [str(c).strip() for c in row[:6]]
+                dropped_rows.append({"row_idx": row_idx, "reason": reason, "raw_cells": first_6, "row_data": row})
+                logger.warning("List1 %s-qator tashlandi: %s | Birinchi 6 katak: %s", row_idx, reason, first_6)
+                continue
+
 
             try:
                 src_val = self._normalize_source(
@@ -528,9 +537,10 @@ class SheetsSource(BaseSource):
             clean = clean.replace(",", "")
         try:
             return Decimal(clean)
-        except Exception:
+        except Exception as exc:
             logger.warning("Noto'g'ri pul summasi formati ('%s') varog': '%s', qator: %s", s, sheet_name, row_idx)
-            return Decimal("0.00")
+            raise ValidationError(f"Noto'g'ri pul summasi formati ('{s}'): {exc}") from exc
+
 
     @staticmethod
     def _parse_date(val: str):
