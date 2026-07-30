@@ -35,3 +35,37 @@ class Employee(TimeStampedModel):
 
     def __str__(self) -> str:
         return f"{self.employee_id} — {self.full_name}"
+
+
+from django.conf import settings
+
+
+class EmployeeMonthlyStat(TimeStampedModel):
+    """Historical per-month snapshot of an employee's List2 summary data."""
+
+    employee = models.ForeignKey(
+        Employee,
+        on_delete=models.PROTECT,
+        related_name="monthly_stats",
+    )
+    period = models.DateField(help_text="First day of month (YYYY-MM-01)")
+    summary_data = models.JSONField(default=dict, blank=True)
+    source_spreadsheet_id = models.CharField(max_length=128, blank=True)
+    is_closed = models.BooleanField(default=False)
+    closed_at = models.DateTimeField(null=True, blank=True)
+    closed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="closed_monthly_stats",
+    )
+
+    class Meta:
+        db_table = "employee_monthly_stats"
+        unique_together = ("employee", "period")
+        ordering = ("-period",)
+
+    def __str__(self) -> str:
+        return f"{self.employee.employee_id} — {self.period.strftime('%m.%Y')}"
+
