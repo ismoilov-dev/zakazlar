@@ -58,6 +58,12 @@ class DataImporter:
                     summary_data=row.summary_data or {},
                 )
 
+            # Clear stale summary_data and monthly_salary for active employees no longer in List2
+            Employee.objects.filter(is_active=True).exclude(employee_id__in=payroll_employee_ids).update(
+                summary_data={},
+                monthly_salary=Decimal("0.00"),
+            )
+
             # Pre-load all employees into a map to eliminate N+1 queries
             employee_map = {
                 emp.employee_id: emp
