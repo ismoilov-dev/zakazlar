@@ -93,10 +93,12 @@ class DataImporter:
             if group_summaries:
                 for g_dto in group_summaries:
                     group = self.groups.get_or_create(code=g_dto.group_code)
+                    group.group_total_sales = g_dto.group_total_sales
                     group.group_profit = g_dto.group_profit
                     group.leader_bonus = g_dto.leader_bonus
                     group.synced_at = timezone.now()
-                    group.save(update_fields=["group_profit", "leader_bonus", "synced_at"])
+                    group.save(update_fields=["group_total_sales", "group_profit", "leader_bonus", "synced_at"])
+
 
             # Clear stale summary_data and monthly_salary for active employees no longer in List2
             Employee.objects.filter(is_active=True).exclude(employee_id__in=payroll_employee_ids).update(

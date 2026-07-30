@@ -67,6 +67,8 @@ class GroupSummaryDTO:
     group_code: str
     group_profit: Decimal
     leader_bonus: Decimal
+    group_total_sales: Decimal = Decimal("0.00")
+
 
 
 # Backward-compatibility aliases if needed

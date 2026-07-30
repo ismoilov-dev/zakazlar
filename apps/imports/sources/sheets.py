@@ -586,16 +586,29 @@ class SheetsSource(BaseSource):
         for col_idx, cell_val in enumerate(row0):
             code = str(cell_val).strip().upper()
             if code in ["A", "B", "C", "D", "BAZA", "PERVICHKA"]:
+                total_val = summary_row[col_idx] if col_idx < len(summary_row) else "0"
                 profit_col = col_idx + 1 if (col_idx + 1 < len(summary_row)) else col_idx
                 profit_val = summary_row[profit_col] if profit_col < len(summary_row) else "0"
+                try:
+                    total_sales = self._parse_money(total_val)
+                except Exception:
+                    total_sales = Decimal("0.00")
                 try:
                     profit = self._parse_money(profit_val)
                 except Exception:
                     profit = Decimal("0.00")
                 bonus = (profit * Decimal("0.02")).quantize(Decimal("0.01"))
-                groups.append(GroupSummaryDTO(group_code=code, group_profit=profit, leader_bonus=bonus))
+                groups.append(
+                    GroupSummaryDTO(
+                        group_code=code,
+                        group_total_sales=total_sales,
+                        group_profit=profit,
+                        leader_bonus=bonus,
+                    )
+                )
 
         return groups
+
 
 
 

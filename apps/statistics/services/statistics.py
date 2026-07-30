@@ -48,10 +48,12 @@ class GroupDashboard:
     group_code: str
     group_name: str
     successful_orders: int
+    total_sales: Decimal
     total_profit: Decimal
     leader_bonus: Decimal
     leader_personal_profit: Decimal
     month_str: str = ""
+
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
@@ -195,13 +197,14 @@ class StatisticsService:
         )
 
     def _group_dashboard(self, group: SalesGroup, leader: Employee) -> GroupDashboard:
-        if not group.synced_at and group.group_profit == Decimal("0.00") and group.leader_bonus == Decimal("0.00"):
+        if not group.synced_at and group.group_total_sales == Decimal("0.00") and group.group_profit == Decimal("0.00") and group.leader_bonus == Decimal("0.00"):
             raise ValidationError("Guruh ma'lumotlari sozlanmagan. Administratorga murojaat qiling.")
 
         return GroupDashboard(
             group_code=group.code,
             group_name=group.name,
             successful_orders=0,
+            total_sales=group.group_total_sales,
             total_profit=group.group_profit,
             leader_bonus=group.leader_bonus,
             leader_personal_profit=Decimal("0.00"),

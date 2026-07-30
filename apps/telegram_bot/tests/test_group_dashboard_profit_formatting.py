@@ -17,11 +17,13 @@ class GroupDashboardProfitFormattingTest(TestCase):
             group_name="Group Alpha",
             group_code="A",
             successful_orders=0,
+            total_sales=Decimal("50000000.00"),
             total_profit=Decimal("10000000.00"),
             leader_bonus=Decimal("200000.00"),
             leader_personal_profit=Decimal("0.00"),
             month_str="07.2026",
         )
+
 
         text = group_dashboard_text(dashboard)
         self.assertIn("10,000,000 so'm", text)
