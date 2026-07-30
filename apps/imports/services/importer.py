@@ -13,10 +13,12 @@ from django.db import transaction
 
 logger = logging.getLogger(__name__)
 
+from django.utils import timezone
+
 from apps.employees.models import Employee
 from apps.employees.repositories.employee import EmployeeRepository
 from apps.groups.repositories.group import SalesGroupRepository
-from apps.imports.dto import OrderDTO, PayrollDTO
+from apps.imports.dto import GroupSummaryDTO, OrderDTO, PayrollDTO
 from apps.imports.models import ImportJob
 from apps.sales.models import Sale
 from apps.sales.repositories.sale import SaleRepository
@@ -41,9 +43,10 @@ class DataImporter:
         *,
         orders: list[OrderDTO],
         payroll: list[PayrollDTO],
+        group_summaries: list[GroupSummaryDTO] | None = None,
         job: ImportJob | None = None,
     ) -> ImportResult:
-        """Persist payroll and orders inside a single atomic transaction."""
+        """Persist payroll, groups and orders inside a single atomic transaction."""
         with transaction.atomic():
             payroll_employee_ids = {row.employee_id for row in payroll}
 
@@ -58,11 +61,21 @@ class DataImporter:
                     summary_data=row.summary_data or {},
                 )
 
+            # Upsert group summaries
+            if group_summaries:
+                for g_dto in group_summaries:
+                    group = self.groups.get_or_create(code=g_dto.group_code)
+                    group.group_profit = g_dto.group_profit
+                    group.leader_bonus = g_dto.leader_bonus
+                    group.synced_at = timezone.now()
+                    group.save(update_fields=["group_profit", "leader_bonus", "synced_at"])
+
             # Clear stale summary_data and monthly_salary for active employees no longer in List2
             Employee.objects.filter(is_active=True).exclude(employee_id__in=payroll_employee_ids).update(
                 summary_data={},
                 monthly_salary=Decimal("0.00"),
             )
+
 
             # Pre-load all employees into a map to eliminate N+1 queries
             employee_map = {

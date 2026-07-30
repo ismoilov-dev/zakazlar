@@ -62,6 +62,14 @@ class PayrollDTO:
     summary_data: dict[str, object] | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class GroupSummaryDTO:
+    group_code: str
+    group_profit: Decimal
+    leader_bonus: Decimal
+
+
 # Backward-compatibility aliases if needed
 WorkbookRow = OrderDTO
 PayrollRow = PayrollDTO
+

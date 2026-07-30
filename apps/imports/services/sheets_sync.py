@@ -85,8 +85,15 @@ class SheetsSyncService:
                     f"Tashlangan qatorlar ulushi ({skipped_rows}/{total_rows}) ruxsat etilgan {MAX_SKIPPED_ROWS_RATIO_THRESHOLD * 100:.1f}% me'yordan oshdi."
                 )
 
+            group_summaries = getattr(source, "groups_summary", [])
+
             with transaction.atomic():
-                result = self.importer.import_dto_lists(orders=orders, payroll=payroll)
+                result = self.importer.import_dto_lists(
+                    orders=orders,
+                    payroll=payroll,
+                    group_summaries=group_summaries,
+                )
+
 
             sync_log.status = SyncStatus.SUCCESS
             sync_log.finished_at = timezone.now()

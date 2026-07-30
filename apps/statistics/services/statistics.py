@@ -157,15 +157,15 @@ class StatisticsService:
 
 
     def _group_dashboard(self, group: SalesGroup, leader: Employee) -> GroupDashboard:
-        totals = self.statistics.group_totals(group.pk)
-        leader_totals = self.statistics.employee_totals(leader.pk)
-        total_profit = Decimal(totals["total_profit"])
+        if not group.synced_at and group.group_profit == Decimal("0.00") and group.leader_bonus == Decimal("0.00"):
+            raise ValidationError("Guruh ma'lumotlari sozlanmagan. Administratorga murojaat qiling.")
+
         return GroupDashboard(
             group_code=group.code,
             group_name=group.name,
-            successful_orders=int(totals["successful_orders"]),
-            total_profit=total_profit,
-            leader_bonus=total_profit * LEADER_BONUS_RATE,
-            leader_personal_profit=Decimal(leader_totals["total_profit"]),
+            successful_orders=0,
+            total_profit=group.group_profit,
+            leader_bonus=group.leader_bonus,
+            leader_personal_profit=Decimal("0.00"),
             month_str=self.statistics.get_active_month_str(),
         )

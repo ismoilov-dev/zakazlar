@@ -29,21 +29,12 @@ def employee_dashboard_text(dashboard: EmployeeDashboard) -> str:
 def group_dashboard_text(dashboard: GroupDashboard) -> str:
     """Render a group-leader dashboard without performing calculations."""
     month_str = dashboard.month_str or timezone.localtime().strftime("%m.%Y")
-    profit_text = (
-        f"<b>{dashboard.total_profit:,.2f} so'm</b>"
-        if dashboard.total_profit > 0
-        else "Foyda ma'lumotlari mavjud emas"
-    )
-    bonus_text = (
-        f"<b>{dashboard.leader_bonus:,.2f} so'm</b>"
-        if dashboard.total_profit > 0
-        else "Foyda ma'lumotlari mavjud emas"
-    )
+    profit_text = f"<b>{dashboard.total_profit:,.0f} so'm</b>"
+    bonus_text = f"<b>{dashboard.leader_bonus:,.0f} so'm</b>"
+
     return (
         f"👥 <b>Guruh ko'rsatkichlari: {dashboard.group_name} ({dashboard.group_code})</b>\n"
         f"📅 Oy: <b>{month_str}</b>\n\n"
-        f"📦 Muvaffaqiyatli zakazlar: <b>{dashboard.successful_orders} ta</b>\n"
         f"💰 Guruh foydasi: {profit_text}\n"
-        f"💵 Rahbar (2%) bonusi: {bonus_text}\n"
-        f"📈 Shaxsiy savdo foydasi: <b>{dashboard.leader_personal_profit:,.2f} so'm</b>"
+        f"💵 Rahbar bonusi: {bonus_text}"
     )

@@ -19,7 +19,7 @@ from django.utils.dateparse import parse_date as parse_iso_date
 import gspread
 from google.oauth2.service_account import Credentials
 
-from apps.imports.dto import OrderDTO, PayrollDTO, normalize_employee_id, normalize_order_id
+from apps.imports.dto import GroupSummaryDTO, OrderDTO, PayrollDTO, normalize_employee_id, normalize_order_id
 from apps.imports.sources.base import BaseSource
 
 SCOPES = [
@@ -136,7 +136,20 @@ class SheetsSource(BaseSource):
         if not orders:
             raise ValidationError("List1 varog'idan birorta ham buyurtma o'qilmadi.")
 
+        ws_guruhlar = worksheets.get("guruhlar")
+        groups_summary: list[GroupSummaryDTO] = []
+        if ws_guruhlar:
+            try:
+                groups_summary = self._parse_groups(ws_guruhlar)
+            except Exception as exc:
+                logger.warning("Guruhlar varag'ini tahlil qilishda xatolik: %s", exc)
+        else:
+            logger.warning("Google Sheet'da 'Guruhlar' varog'i topilmadi.")
+
+        self.groups_summary = groups_summary
+
         return orders, payroll
+
 
     def _parse_orders(self, worksheet: gspread.Worksheet, valid_employee_ids: set[str] | None = None) -> list[OrderDTO]:
 
@@ -419,6 +432,13 @@ class SheetsSource(BaseSource):
         conv_idx = self._find_single_column_index(headings, candidates=["Konversiya", "Конверсия"], name="conversion", required=False)
         real_conv_idx = self._find_single_column_index(headings, candidates=["Real konversiya", "Реальная конверсия"], name="real_conversion", required=False)
 
+        successful_sales_idx = self._find_single_column_index(
+            headings,
+            candidates=["Uspeshka summasi", "Uspeshka", "Успешка summasi", "Успешка"],
+            name="successful_sales",
+            required=False,
+        )
+
         payroll: list[PayrollDTO] = []
         for row_idx, row in enumerate(raw_rows[header_row_idx + 1:], start=header_row_idx + 2):
             if not any(str(cell).strip() for cell in row):
@@ -438,6 +458,8 @@ class SheetsSource(BaseSource):
                 summary: dict[str, object] = {}
                 if total_sales_idx is not None and self._get_cell(row, total_sales_idx):
                     summary["total_sales"] = str(self._parse_money(self._get_cell(row, total_sales_idx)))
+                if successful_sales_idx is not None and self._get_cell(row, successful_sales_idx):
+                    summary["successful_sales"] = str(self._parse_money(self._get_cell(row, successful_sales_idx)))
                 if perv_sales_idx is not None and self._get_cell(row, perv_sales_idx):
                     summary["perv_sales"] = str(self._parse_money(self._get_cell(row, perv_sales_idx)))
                 if baza_sales_idx is not None and self._get_cell(row, baza_sales_idx):
@@ -480,6 +502,43 @@ class SheetsSource(BaseSource):
                 continue
 
         return payroll
+
+    def _parse_groups(self, worksheet: gspread.Worksheet) -> list[GroupSummaryDTO]:
+        raw_rows = worksheet.get_all_values(combine_merged_cells=True)
+        if not raw_rows:
+            return []
+
+        header_row_idx = None
+        for i, row in enumerate(raw_rows[:15]):
+            row_str_cells = [str(c).strip().lower() for c in row]
+            if any(cell in ["guruh", "bo'lim"] for cell in row_str_cells):
+                header_row_idx = i
+                break
+
+        if header_row_idx is None:
+            return []
+
+        headings = raw_rows[header_row_idx]
+        code_idx = self._find_single_column_index(headings, candidates=["Guruh", "Bo'lim"], name="guruh", required=False)
+        profit_idx = self._find_single_column_index(headings, candidates=["Guruh foydasi"], name="guruh foydasi", required=False)
+        bonus_idx = self._find_single_column_index(headings, candidates=["Rahbar bonusi"], name="rahbar bonusi", required=False)
+
+        if code_idx is None:
+            return []
+
+        groups: list[GroupSummaryDTO] = []
+        for row in raw_rows[header_row_idx + 1:]:
+            if not any(str(cell).strip() for cell in row):
+                continue
+            grp_code = self._get_cell(row, code_idx).upper()
+            if not grp_code:
+                continue
+            profit = self._parse_money(self._get_cell(row, profit_idx)) if profit_idx is not None else Decimal("0.00")
+            bonus = self._parse_money(self._get_cell(row, bonus_idx)) if bonus_idx is not None else Decimal("0.00")
+            groups.append(GroupSummaryDTO(group_code=grp_code, group_profit=profit, leader_bonus=bonus))
+
+        return groups
+
 
     @staticmethod
     def _find_column_indexes(headings: list[str], required: set[str], sheet_name: str) -> dict[str, int]:
