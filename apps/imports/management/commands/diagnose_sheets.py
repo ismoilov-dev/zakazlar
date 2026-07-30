@@ -43,9 +43,9 @@ class Command(BaseCommand):
         self.stdout.write("\n📊 Parse Xulosasi:")
         self.stdout.write(f"   • Jami ma'lumot qatorlari: {summary.get('total_raw_rows', 0)}")
         self.stdout.write(f"   • Bo'sh qatorlar (o'tkazib yuborilgan): {summary.get('empty_rows_skipped', 0)}")
-        self.stdout.write(f"   • Bo'sh ID tufayli tashlangan: {summary.get('dropped_empty_id', 0)}")
-        self.stdout.write(f"   • Xato ID formati tufayli tashlangan: {summary.get('dropped_invalid_id', 0)}")
+        self.stdout.write(f"   • Tashlangan qatorlar (xatolar): {summary.get('dropped_count', len(dropped_rows))}")
         self.stdout.write(f"   • Muvaffaqiyatli parse qilingan: {summary.get('parsed_rows_count', 0)}")
+
 
         if dropped_rows:
             self.stdout.write(self.style.WARNING(f"\n⚠️ Tashlangan Qatorlar Jadvali (Jami: {len(dropped_rows)}):"))

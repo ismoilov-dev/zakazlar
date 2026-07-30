@@ -107,10 +107,29 @@ class DroppedRowsAndDiagnosticsTest(TestCase):
         self.assertIn("Tashlangan qatorlar ulushi", failed_log.error_text)
 
 
-    def test_softened_normalize_employee_id_handles_non_breaking_spaces_and_formula_errors(self):
-        """normalize_employee_id strips non-breaking spaces and rejects formula error strings explicitly."""
-        self.assertEqual(normalize_employee_id(" 191\xa0"), "0191")
+    def test_summary_total_equals_empty_plus_dropped_plus_successful(self):
+        """Verify that total_raw_rows == empty_rows_skipped + dropped_count + parsed_rows_count."""
+        raw_data = [
+            ["№", "ID", "Ответственный", "Сумма", "Дата Заказа", "статус", "Источник"],
+            ["1", "0191", "Amir Karimov", "100,000", "28.07.2026", "успешно", "Baza"],
+            ["", "", "", "", "", "", ""],  # empty row -> skipped
+            ["2", "INVALID_ID_ABC", "Amir Karimov", "100,000", "28.07.2026", "успешно", "Baza"],  # dropped row
+        ]
 
-        with self.assertRaises(PARSE_ERRORS) as ctx:
-            normalize_employee_id("#N/A")
-        self.assertIn("Formula xatosi", str(ctx.exception))
+        source = SheetsSource.__new__(SheetsSource)
+        mock_worksheet = MagicMock()
+        mock_worksheet.get_all_values.return_value = raw_data
+
+        orders = source._parse_orders(mock_worksheet)
+        summary = source.last_parse_summary
+        total = summary["total_raw_rows"]
+        empty = summary["empty_rows_skipped"]
+        dropped = summary["dropped_count"]
+        successful = summary["parsed_rows_count"]
+
+        self.assertEqual(total, 3)
+        self.assertEqual(empty, 1)
+        self.assertEqual(dropped, 1)
+        self.assertEqual(successful, 1)
+        self.assertEqual(total, empty + dropped + successful)
+

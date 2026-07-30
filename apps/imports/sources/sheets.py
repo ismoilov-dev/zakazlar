@@ -386,23 +386,25 @@ class SheetsSource(BaseSource):
         if unrecognized_sources_count:
             logger.debug("List1 noma'lum manba (source) qiymatlari agregatsiyasi: %s", dict(unrecognized_sources_count))
 
+        dropped_count = len(dropped_rows)
         self.last_dropped_rows = dropped_rows
         self.last_parse_summary = {
             "total_raw_rows": total_raw_rows,
             "empty_rows_skipped": empty_rows_skipped,
+            "dropped_count": dropped_count,
             "dropped_empty_id": dropped_empty_id,
             "dropped_invalid_id": dropped_invalid_id,
             "parsed_rows_count": parsed_rows_count,
         }
 
         logger.info(
-            "List1 parse yakunlandi: jami %s qator, bo'sh: %s, bo'sh ID: %s, xato ID: %s, muvaffaqiyatli: %s",
+            "List1 parse yakunlandi: jami %s qator, bo'sh: %s, tashlangan: %s, muvaffaqiyatli: %s",
             total_raw_rows,
             empty_rows_skipped,
-            dropped_empty_id,
-            dropped_invalid_id,
+            dropped_count,
             parsed_rows_count,
         )
+
 
         return orders
 
