@@ -5,8 +5,8 @@ from apps.imports.sources.sheets import SheetsSource
 
 
 class StrictSourceNormalizationTest(TestCase):
-    def test_unknown_source_string_drops_row(self):
-        """Unknown source string 'Instagram' causes row to be dropped with warning."""
+    def test_unknown_source_string_maps_to_unknown(self):
+        """Unknown source string 'Instagram' maps to UNKNOWN choice without dropping row."""
         raw_data = [
             ["№", "ID", "Ответственный", "Сумма", "Дата Заказа", "статус", "Источник"],
             ["1001", "0191", "Amir Karimov", "100,000", "28.07.2026", "успешно", "Instagram"],
@@ -17,8 +17,9 @@ class StrictSourceNormalizationTest(TestCase):
         mock_worksheet.get_all_values.return_value = raw_data
 
         orders = source._parse_orders(mock_worksheet)
-        self.assertEqual(len(orders), 0)
-        self.assertEqual(source.last_parse_summary["dropped_invalid_id"], 1)
+        self.assertEqual(len(orders), 1)
+        self.assertEqual(orders[0].source, "UNKNOWN")
+
 
     def test_valid_source_strings_normalize_correctly(self):
         """Valid source strings 'Первичный' and 'База' normalize correctly."""

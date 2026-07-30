@@ -1,7 +1,9 @@
 """Employee and group reporting use-cases."""
 
 from dataclasses import asdict, dataclass
+from datetime import date
 from decimal import Decimal
+
 
 from apps.accounts.models import TelegramAccount
 from apps.accounts.repositories.telegram_account import TelegramAccountRepository
@@ -100,8 +102,37 @@ class StatisticsService:
         except TelegramAccount.DoesNotExist as exc:
             raise AccessDeniedError("Avval Employee ID orqali profilingizni bog'lang.") from exc
 
-    def _employee_dashboard(self, employee: Employee) -> EmployeeDashboard:
-        s = employee.summary_data
+    def available_periods_for_telegram(self, telegram_id: int) -> list[tuple[date, str]]:
+        employee = self._employee_for_telegram(telegram_id)
+        from apps.employees.models import EmployeeMonthlyStat
+        stats = EmployeeMonthlyStat.objects.filter(employee=employee).order_by("-period")[:6]
+        return [(s.period, s.period.strftime("%m.%Y")) for s in stats]
+
+    def employee_historical_dashboard_for_telegram(self, telegram_id: int, period_date: date) -> tuple[EmployeeDashboard, bool]:
+        employee = self._employee_for_telegram(telegram_id)
+        from apps.employees.models import EmployeeMonthlyStat
+        try:
+            stat = EmployeeMonthlyStat.objects.get(employee=employee, period=period_date)
+        except EmployeeMonthlyStat.DoesNotExist as exc:
+            raise ValidationError("Ushbu oy uchun ma'lumot saqlanmagan.") from exc
+
+        dashboard = self._dashboard_from_summary(
+            employee_id=employee.employee_id,
+            full_name=employee.full_name,
+            group_code=employee.group.code if employee.group else None,
+            s=stat.summary_data,
+            month_str=period_date.strftime("%m.%Y"),
+        )
+        return dashboard, stat.is_closed
+
+    def _dashboard_from_summary(
+        self,
+        employee_id: str,
+        full_name: str,
+        group_code: str | None,
+        s: dict[str, object],
+        month_str: str = "",
+    ) -> EmployeeDashboard:
         if not s:
             raise ValidationError("Ma'lumotlaringiz hali hisoblanmagan. Rahbaringizga murojaat qiling.")
 
@@ -133,9 +164,9 @@ class StatisticsService:
             raise ValidationError("Ma'lumotlaringiz hali hisoblanmagan. Rahbaringizga murojaat qiling.") from exc
 
         return EmployeeDashboard(
-            full_name=employee.full_name,
-            employee_id=employee.employee_id,
-            group_code=employee.group.code if employee.group else None,
+            full_name=full_name,
+            employee_id=employee_id,
+            group_code=group_code,
             total_orders=int(s.get("total_orders", 0)),
             successful_orders=successful_orders,
             cancelled_orders=int(s.get("cancelled_orders", 0)),
@@ -147,14 +178,21 @@ class StatisticsService:
             otkaz_sales=otkaz_sales,
             v_proc_sales=v_proc_sales,
             total_profit=Decimal(str(s.get("total_profit", "0.00"))),
-            monthly_salary=employee.monthly_salary,
+            monthly_salary=Decimal(str(s.get("monthly_salary", "0.00"))),
             earned_salary=earned_salary,
             conversion_rate=conversion_rate,
             real_conversion_rate=real_conversion_rate,
-            sources=self.statistics.employee_sources(employee.pk),
-            month_str=self.statistics.get_active_month_str(),
+            sources={},
+            month_str=month_str or self.statistics.get_active_month_str(),
         )
 
+    def _employee_dashboard(self, employee: Employee) -> EmployeeDashboard:
+        return self._dashboard_from_summary(
+            employee_id=employee.employee_id,
+            full_name=employee.full_name,
+            group_code=employee.group.code if employee.group else None,
+            s=employee.summary_data,
+        )
 
     def _group_dashboard(self, group: SalesGroup, leader: Employee) -> GroupDashboard:
         if not group.synced_at and group.group_profit == Decimal("0.00") and group.leader_bonus == Decimal("0.00"):

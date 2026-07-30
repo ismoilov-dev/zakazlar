@@ -518,6 +518,8 @@ class SheetsSource(BaseSource):
                 )
             except PARSE_ERRORS as exc:
                 logger.warning("Payroll varog'i '%s', %s-qator tahlil xatosi: %s", worksheet.title, row_idx, exc)
+                if not hasattr(self, "last_dropped_payroll_rows"):
+                    self.last_dropped_payroll_rows = []
                 self.last_dropped_payroll_rows.append(
                     {
                         "sheet_title": worksheet.title,
@@ -527,6 +529,7 @@ class SheetsSource(BaseSource):
                     }
                 )
                 continue
+
 
         return payroll
 

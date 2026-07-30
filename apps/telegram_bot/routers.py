@@ -5,11 +5,14 @@ from __future__ import annotations
 import asyncio
 import logging
 
+from datetime import date
 from aiogram import F, Router
 from aiogram.filters import Command, CommandStart
-from aiogram.types import Message
+from aiogram.types import CallbackQuery, Message
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 from asgiref.sync import sync_to_async
 from django.utils import timezone
+
 
 logger = logging.getLogger(__name__)
 
@@ -177,3 +180,68 @@ async def group_stats(message: Message) -> None:
     except Exception as exc:
         logger.exception("Group stats error: %s", exc)
         await message.answer("Guruh ma'lumotlarini yuklashda xatolik yuz berdi." + format_footer(ts_str, is_stale))
+
+
+@router.message(Command("tarix"))
+async def employee_tarix(message: Message) -> None:
+    """List available monthly periods for the bound employee (max 6)."""
+    if message.from_user is None:
+        return
+
+    try:
+        periods = await sync_to_async(StatisticsService().available_periods_for_telegram)(message.from_user.id)
+    except DomainError as exc:
+        await message.answer(str(exc))
+        return
+    except Exception as exc:
+        logger.exception("Tarix error: %s", exc)
+        await message.answer("Ma'lumotlarni yuklashda xatolik yuz berdi.")
+        return
+
+    if not periods:
+        await message.answer("Sizda hali saqlangan oylik ma'lumotlari yo'q.")
+        return
+
+    builder = InlineKeyboardBuilder()
+    for period_date, period_label in periods:
+        builder.button(
+            text=f"📅 {period_label}",
+            callback_data=f"hist_{period_date.isoformat()}",
+        )
+    builder.adjust(2)
+
+    await message.answer("📅 Kerakli oy hisobotini tanlang:", reply_markup=builder.as_markup())
+
+
+@router.callback_query(F.data.startswith("hist_"))
+async def show_historical_stat(callback: CallbackQuery) -> None:
+    """Render historical monthly stat for sender (strictly validated against sender's Telegram ID)."""
+    if callback.from_user is None or callback.data is None:
+        return
+
+    try:
+        iso_str = callback.data.removeprefix("hist_")
+        period_date = date.fromisoformat(iso_str)
+    except Exception:
+        await callback.answer("Noto'g'ri so'rov.", show_alert=True)
+        return
+
+    ts_str, is_stale = await ensure_fresh_data_and_get_timestamp()
+
+    try:
+        dashboard, is_closed = await sync_to_async(
+            StatisticsService().employee_historical_dashboard_for_telegram
+        )(callback.from_user.id, period_date)
+
+        footer = "\n\n🔒 <b>Oy yopilgan</b>" if is_closed else format_footer(ts_str, is_stale)
+        text = employee_dashboard_text(dashboard) + footer
+        if callback.message:
+            await callback.message.answer(text)
+
+        await callback.answer()
+    except DomainError as exc:
+        await callback.answer(str(exc), show_alert=True)
+    except Exception as exc:
+        logger.exception("Tarix callback error: %s", exc)
+        await callback.answer("Ma'lumotni yuklashda xatolik yuz berdi.", show_alert=True)
+

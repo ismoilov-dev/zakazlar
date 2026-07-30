@@ -26,7 +26,8 @@ class SheetsSyncFailureTest(TestCase):
         self.assertIsNotNone(log.finished_at)
         self.assertIn("API connection timeout", log.error_text)
 
-    async def test_is_stale_returns_true_when_failed(self) -> None:
+    @patch("apps.telegram_bot.routers._do_sync")
+    async def test_is_stale_returns_true_when_failed(self, _mock_do_sync) -> None:
         # Create a FAILED log
         await SyncLog.objects.acreate(
             status=SyncStatus.FAILED,
@@ -36,3 +37,4 @@ class SheetsSyncFailureTest(TestCase):
 
         _, is_stale = await ensure_fresh_data_and_get_timestamp()
         self.assertTrue(is_stale)
+
