@@ -171,6 +171,13 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now zakazlar-web zakazlar-bot zakazlar-sync
 ```
 
+### 4. SyncLog loglarini tozalash (Cron)
+SyncLog loglarini avtomatik tozalab turish uchun `crontab -e` orqali har kuni tunda 03:00 da ishlaydigan cron topshirig'ini o'rnating:
+```bash
+0 3 * * * /var/www/zakazlar/venv/bin/python /var/www/zakazlar/manage.py cleanup_sync_logs --days 30
+```
+
+
 ---
 
 ## 🛠️ Boshqaruv va Monitoring Buyruqlari
