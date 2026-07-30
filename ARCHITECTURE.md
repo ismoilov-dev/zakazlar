@@ -122,5 +122,19 @@ Docker Compose
   └─ redis          (keyingi bosqichda yoqiladi)
 ```
 
-Webhook kerak bo'lganda bot polling'dan webhook'ga o'zgarishi mumkin; handler
+Web hook kerak bo'lganda bot polling'dan webhook'ga o'zgarishi mumkin; handler
 va use-case'lar o'zgarmaydi.
+
+## Sinxronizatsiya arxitekturasi va mas'uliyat bo'linishi
+
+Google Sheets sinxronizatsiyasi ikki alohida mexanizm orqali muvofiqlashtiriladi:
+
+1. **Systemd Background Daemon (`zakazlar-sync.service`)**:
+   `python manage.py sync_sheets --watch --interval 30` buyrug'i orqali fonda har 30 soniyada Google Sheets o'zgarishlarini kuzatib boradi.
+
+2. **Bot Per-Request Single-Flight Sync**:
+   Telegram bot foydalanuvchisi so'rov yuborganda `ensure_fresh_data_and_get_timestamp()` yordamida single-flight async task orqali ma'lumot tazaligi tekshiriladi va 3 soniyalik timeout bilan kutiladi. Timed out bo'lgan taqdirda oxirgi saqlangan ma'lumotlar ogohlantirish bilan ko'rsatiladi.
+
+Ikki mexanizm parallel Google API so'rovlarini amalga oshirmasligi uchun:
+- `SheetsSyncService` darajasida 10 soniyalik kesh qulfi (`sheets_sync_recent_lock`) ishlatiladi.
+- Telegram bot jarayoni ichida single-flight task hamda retained `_background_tasks` to'plami concurrent so'rovlarni bitta fon taskida birlashtiradi.

@@ -24,33 +24,46 @@ from apps.telegram_bot.services.formatting import employee_dashboard_text, group
 router = Router(name="sales_bot")
 
 STALE_THRESHOLD_SECONDS = 300
-SYNC_TIMEOUT_SECONDS = 4.0
+SYNC_TIMEOUT_SECONDS = 3.0
 
-
+_background_tasks: set[asyncio.Task] = set()
+_current_sync_task: asyncio.Task | None = None
 _sync_lock = asyncio.Lock()
 
 
+async def _do_sync() -> None:
+    try:
+        await sync_to_async(SheetsSyncService().sync_if_needed)(force=False)
+    except Exception as exc:
+        logger.warning("Single-flight background sync error: %s", exc)
+
+
 async def ensure_fresh_data_and_get_timestamp() -> tuple[str, bool]:
-    """Get DB sync timestamp instantly (0.01s) and trigger single-flight background sync if needed."""
+    """Single-flight background sync; awaits sync with 3s timeout before returning timestamp."""
+    global _current_sync_task
     now = timezone.now()
-    last_attempt = await sync_to_async(lambda: SyncLog.objects.order_by("-started_at").first())()
     last_successful = await sync_to_async(SyncLog.get_last_successful)()
 
-    # Trigger background sync if not currently syncing and last sync is older than 15s
-    if not _sync_lock.locked():
-        if not last_successful or not last_successful.finished_at or (now - last_successful.finished_at).total_seconds() > 15:
+    should_sync = False
+    if not last_successful or not last_successful.finished_at or (now - last_successful.finished_at).total_seconds() > 15:
+        should_sync = True
 
-            async def _bg_sync():
-                async with _sync_lock:
-                    try:
-                        await asyncio.wait_for(
-                            sync_to_async(SheetsSyncService().sync_if_needed)(force=False),
-                            timeout=SYNC_TIMEOUT_SECONDS,
-                        )
-                    except Exception as exc:
-                        logger.warning("Background sync failed or timed out: %s", exc)
+    if should_sync:
+        async with _sync_lock:
+            if _current_sync_task is None or _current_sync_task.done():
+                task = asyncio.create_task(_do_sync())
+                _background_tasks.add(task)
+                task.add_done_callback(_background_tasks.discard)
+                _current_sync_task = task
+            sync_task = _current_sync_task
 
-            asyncio.create_task(_bg_sync())
+        try:
+            await asyncio.wait_for(asyncio.shield(sync_task), timeout=SYNC_TIMEOUT_SECONDS)
+        except asyncio.TimeoutError:
+            logger.warning("Sync timed out after %s seconds; serving existing snapshot", SYNC_TIMEOUT_SECONDS)
+
+    last_attempt = await sync_to_async(lambda: SyncLog.objects.order_by("-started_at").first())()
+    last_successful = await sync_to_async(SyncLog.get_last_successful)()
 
     is_stale = False
     if last_attempt and last_attempt.status == SyncStatus.FAILED:
@@ -58,7 +71,7 @@ async def ensure_fresh_data_and_get_timestamp() -> tuple[str, bool]:
     elif not last_successful:
         is_stale = True
     elif last_successful and last_successful.finished_at:
-        if (now - last_successful.finished_at).total_seconds() > 300:
+        if (now - last_successful.finished_at).total_seconds() > STALE_THRESHOLD_SECONDS:
             is_stale = True
 
     if last_successful and last_successful.finished_at:
@@ -69,6 +82,7 @@ async def ensure_fresh_data_and_get_timestamp() -> tuple[str, bool]:
         formatted_ts = "Hozirgina"
 
     return formatted_ts, is_stale
+
 
 
 def format_footer(ts: str, is_stale: bool) -> str:
