@@ -583,9 +583,11 @@ class SheetsSource(BaseSource):
             return []
 
         groups = []
+        seen_codes: set[str] = set()
         for col_idx, cell_val in enumerate(row0):
             code = str(cell_val).strip().upper()
-            if code in ["A", "B", "C", "D", "BAZA", "PERVICHKA"]:
+            if code in ["A", "B", "C", "D", "BAZA", "PERVICHKA"] and code not in seen_codes:
+                seen_codes.add(code)
                 total_val = summary_row[col_idx] if col_idx < len(summary_row) else "0"
                 profit_col = col_idx + 1 if (col_idx + 1 < len(summary_row)) else col_idx
                 profit_val = summary_row[profit_col] if profit_col < len(summary_row) else "0"
@@ -608,6 +610,7 @@ class SheetsSource(BaseSource):
                 )
 
         return groups
+
 
 
 
