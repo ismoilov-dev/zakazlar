@@ -97,7 +97,10 @@ class SheetsSource(BaseSource):
         except Exception as exc:
             raise ValidationError(f"Google Sheet faylini ochib bo'lmadi (ID: {self.sheet_id}): {exc}") from exc
 
+        self.last_dropped_payroll_rows = []
+
         worksheets = {ws.title.strip().lower(): ws for ws in spreadsheet.worksheets()}
+
 
         if "list1" not in worksheets:
             raise ValidationError("Google Sheet'da 'List1' varog'i topilmadi.")
@@ -433,10 +436,11 @@ class SheetsSource(BaseSource):
         group_idx = self._find_single_column_index(headings, candidates=["Guruhi", "Bo'lim "], name="guruh", required=False)
         salary_idx = self._find_single_column_index(
             headings,
-            candidates=["Ish haqi", "OYLIK MOASH", "OYLIK MAOSH", "Oylik maosh", "Oylik maoshi 12%", "Oylik", "Maosh", "Зарплата", "Оклад"],
+            candidates=["Ish haqi", "Oylik ish haqi", "OYLIK MOASH", "OYLIK MAOSH", "Oylik maosh", "Oylik maoshi 12%", "Oylik", "Maosh", "Зарплата", "Оклад"],
             name="ish haqi",
             required=False,
         )
+
 
         total_sales_idx = self._find_single_column_index(headings, candidates=["Umumiy zakaz summasi", "Общая сумма", "Jami summa"], name="total_sales", required=False)
         perv_sales_idx = self._find_single_column_index(headings, candidates=["Первичный Заказ", "Первичка"], name="perv_sales", required=False)
@@ -514,9 +518,18 @@ class SheetsSource(BaseSource):
                 )
             except PARSE_ERRORS as exc:
                 logger.warning("Payroll varog'i '%s', %s-qator tahlil xatosi: %s", worksheet.title, row_idx, exc)
+                self.last_dropped_payroll_rows.append(
+                    {
+                        "sheet_title": worksheet.title,
+                        "row_idx": row_idx,
+                        "reason": str(exc),
+                        "row_data": row,
+                    }
+                )
                 continue
 
         return payroll
+
 
     def _parse_groups(self, worksheet: gspread.Worksheet) -> list[GroupSummaryDTO]:
         raw_rows = worksheet.get_all_values(combine_merged_cells=True)

@@ -47,6 +47,15 @@ class Command(BaseCommand):
         self.stdout.write(f"   • Muvaffaqiyatli parse qilingan: {summary.get('parsed_rows_count', 0)}")
 
 
+        dropped_payroll_rows = getattr(source, "last_dropped_payroll_rows", [])
+        if dropped_payroll_rows:
+            self.stdout.write(self.style.WARNING(f"\n⚠️ Tashlangan Payroll (List2) Qatorlari (Jami: {len(dropped_payroll_rows)}):"))
+            for item in dropped_payroll_rows:
+                title = item["sheet_title"]
+                r_idx = item["row_idx"]
+                reason = item["reason"]
+                self.stdout.write(f"   Varoq: '{title}' | Qator #{r_idx} | Sabab: {reason}")
+
         if dropped_rows:
             self.stdout.write(self.style.WARNING(f"\n⚠️ Tashlangan Qatorlar Jadvali (Jami: {len(dropped_rows)}):"))
             for item in dropped_rows:
@@ -55,7 +64,8 @@ class Command(BaseCommand):
                 cells = item["raw_cells"]
                 self.stdout.write(f"   Qator #{r_idx} | Sabab: {reason} | Qiymatlar: {cells}")
         else:
-            self.stdout.write(self.style.SUCCESS("\n✅ Birorta ham qator tashlanmadi."))
+            self.stdout.write(self.style.SUCCESS("\n✅ Birorta ham List1 buyurtma qatori tashlanmadi."))
+
 
         if target_emp_id:
             self.stdout.write(self.style.MIGRATE_HEADING(f"\n=== Xodim Diagnostikasi (ID: {target_emp_id}) ==="))

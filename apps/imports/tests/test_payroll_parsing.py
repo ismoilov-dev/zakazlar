@@ -35,3 +35,26 @@ class PayrollParsingTest(TestCase):
 
             self.assertIn("Birorta ham payroll varog'ini tahlil qilib bo'lmadi", str(exc_cm.exception))
             self.assertTrue(any("Xodimlar maoshi" in log for log in cm.output))
+
+    def test_failed_payroll_rows_recorded_in_last_dropped_payroll_rows(self) -> None:
+        source = SheetsSource.__new__(SheetsSource)
+        source.last_dropped_payroll_rows = []
+
+        mock_ws = MagicMock()
+        mock_ws.title = "List2"
+        mock_ws.get_all_values.return_value = [
+            ["Guruh", "Tabel raqami", "FISH", "Oylik ish haqi"],
+            ["A", "0191", "Amir Karimov", "5000000"],
+            ["A", "0192", "Sardor", "faqa"],  # Invalid money string "faqa" -> parse failure
+        ]
+
+
+
+        parsed = source._parse_payroll(mock_ws)
+        self.assertEqual(len(parsed), 1)
+        self.assertEqual(len(source.last_dropped_payroll_rows), 1)
+        dropped_item = source.last_dropped_payroll_rows[0]
+        self.assertEqual(dropped_item["sheet_title"], "List2")
+        self.assertEqual(dropped_item["row_idx"], 3)
+        self.assertIn("Noto'g'ri pul summasi formati", dropped_item["reason"])
+
