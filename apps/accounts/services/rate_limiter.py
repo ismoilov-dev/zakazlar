@@ -9,7 +9,9 @@ from django.core.cache import cache
 logger = logging.getLogger(__name__)
 
 MAX_FAILED_ATTEMPTS = 3
-CACHE_TIMEOUT = 3600  # 1 hour
+CACHE_TIMEOUT = 300  # 5 minutes
+
+
 
 
 def _get_cache_key(telegram_id: int) -> str:
