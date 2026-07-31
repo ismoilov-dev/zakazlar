@@ -1,10 +1,14 @@
-"""Service layer for ROP group statistics and salary calculations."""
-
+import logging
 from decimal import Decimal
 from typing import Any
 
+from django.conf import settings
+
 from apps.employees.models import Employee
 from apps.groups.models import SalesGroup
+
+logger = logging.getLogger(__name__)
+
 
 
 class RopService:
@@ -59,6 +63,36 @@ class RopService:
             "active_count": active_count,
         }
 
+    def calculate_rop_salary(self, group: SalesGroup) -> dict[str, Any]:
+        """Calculate ROP salary in Django as SUM(group sales) * ROP_SALARY_RATE."""
+        totals = self.get_group_sales_totals(group)
+
+        group_total_sales = totals["total_sales"]
+
+        rate = getattr(settings, "ROP_SALARY_RATE", Decimal("0.02"))
+        computed_salary = (group_total_sales * rate).quantize(Decimal("0.01"))
+
+        sheet_bonus = group.leader_bonus if group.leader_bonus is not None else Decimal("0.00")
+        diff = abs(computed_salary - sheet_bonus)
+
+        mismatch = diff > Decimal("1.00")
+        if mismatch:
+            logger.error(
+                "ROP salary mismatch for group %s: computed=%s vs sheet=%s (diff=%s)",
+                group.code,
+                computed_salary,
+                sheet_bonus,
+                diff,
+            )
+
+        return {
+            "group_total_sales": group_total_sales,
+            "rate_pct_str": f"{int(rate * 100)}%",
+            "computed_salary": computed_salary,
+            "sheet_bonus": sheet_bonus,
+            "mismatch": mismatch,
+        }
+
     @staticmethod
     def _parse_decimal(raw: Any) -> Decimal:
         if raw is None or raw == "":
@@ -67,3 +101,4 @@ class RopService:
             return Decimal(str(raw).replace(",", "").strip())
         except Exception:
             return Decimal("0.00")
+

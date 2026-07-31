@@ -46,9 +46,11 @@ from apps.telegram_bot.services.formatting import (
     rop_group_stats_card_text,
     rop_menu_keyboard,
     rop_menu_text,
+    rop_salary_card_text,
     xizmatlar_menu_keyboard,
     xizmatlar_menu_text,
 )
+
 
 
 router = Router(name="sales_bot")
@@ -586,7 +588,12 @@ async def handle_rop_callback(callback: CallbackQuery, state: FSMContext) -> Non
         stats = await sync_to_async(RopService().get_group_stats)(group)
         text = rop_group_stats_card_text(group.code, stats) + footer
         keyboard = rop_card_keyboard()
+    elif action == "rop_card:rop_salary":
+        salary_info = await sync_to_async(RopService().calculate_rop_salary)(group)
+        text = rop_salary_card_text(group.code, salary_info) + footer
+        keyboard = rop_card_keyboard()
     elif action == "rop_card:mop_xizmatlar":
+
         text = xizmatlar_menu_text()
         keyboard = xizmatlar_menu_keyboard()
     else:

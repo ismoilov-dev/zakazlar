@@ -181,3 +181,32 @@ class RopPartATestCase(TestCase):
         self.assertIn("Bo'lim: <b>A</b>", text)
         self.assertIn("Jami savdo:", text)
 
+    @patch("apps.groups.services.rop_service.logger.error")
+    async def test_rop_salary_calculation_and_mismatch_warning(self, mock_log_err):
+        from apps.groups.services.rop_service import RopService
+
+        await Employee.objects.acreate(
+            employee_id="0020",
+            full_name="Seller C",
+            group=self.group,
+            summary_data={"total_sales": "50,000,000"},
+        )
+        self.group.leader_bonus = Decimal("1000000.00")  # Matches 50m * 0.02 exactly
+        await self.group.asave()
+
+        salary_info = await sync_to_async(RopService().calculate_rop_salary)(self.group)
+        self.assertEqual(salary_info["computed_salary"], Decimal("1000000.00"))
+        self.assertFalse(salary_info["mismatch"])
+        mock_log_err.assert_not_called()
+
+        # Set mismatching leader_bonus on group
+        self.group.leader_bonus = Decimal("800000.00")  # Differs by 200,000 (> 1 so'm)
+        await self.group.asave()
+
+
+        salary_info2 = await sync_to_async(RopService().calculate_rop_salary)(self.group)
+        self.assertEqual(salary_info2["computed_salary"], Decimal("1000000.00"))
+        self.assertTrue(salary_info2["mismatch"])
+        mock_log_err.assert_called_once()
+
+
