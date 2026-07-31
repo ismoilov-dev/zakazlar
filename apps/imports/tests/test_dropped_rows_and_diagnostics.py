@@ -1,15 +1,15 @@
-from decimal import Decimal
 from unittest.mock import MagicMock, patch
-from django.test import TestCase
+
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.test import TestCase
+
 from apps.common.services.exceptions import ValidationError as DomainValidationError
 
 PARSE_ERRORS = (DjangoValidationError, DomainValidationError)
 
-from apps.imports.dto import normalize_employee_id
 from apps.imports.models import SyncLog, SyncStatus
-from apps.imports.sources.sheets import SheetsSource
 from apps.imports.services.sheets_sync import SheetsSyncService
+from apps.imports.sources.sheets import SheetsSource
 
 
 class DroppedRowsAndDiagnosticsTest(TestCase):
@@ -120,7 +120,7 @@ class DroppedRowsAndDiagnosticsTest(TestCase):
         mock_worksheet = MagicMock()
         mock_worksheet.get_all_values.return_value = raw_data
 
-        orders = source._parse_orders(mock_worksheet)
+        source._parse_orders(mock_worksheet)
         summary = source.last_parse_summary
         total = summary["total_raw_rows"]
         empty = summary["empty_rows_skipped"]

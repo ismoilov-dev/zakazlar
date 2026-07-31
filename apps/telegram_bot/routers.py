@@ -80,7 +80,7 @@ async def ensure_fresh_data_and_get_timestamp() -> tuple[str, bool]:
 
         try:
             await asyncio.wait_for(asyncio.shield(sync_task), timeout=SYNC_TIMEOUT_SECONDS)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.warning("Sync timed out after %s seconds; serving existing snapshot", SYNC_TIMEOUT_SECONDS)
 
     last_attempt = await sync_to_async(lambda: SyncLog.objects.order_by("-started_at").first())()

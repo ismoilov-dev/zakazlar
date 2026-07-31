@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from typing import Generic, TypeVar
+from typing import TypeVar
 
 from django.db.models import Model
 
 ModelT = TypeVar("ModelT", bound=Model)
 
 
-class DjangoRepository(Generic[ModelT]):
+class DjangoRepository[ModelT: Model]:
     """Expose basic persistence operations without leaking ORM to services."""
 
     model: type[ModelT]

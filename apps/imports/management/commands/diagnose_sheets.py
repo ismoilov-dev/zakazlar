@@ -1,4 +1,5 @@
 from django.core.management.base import BaseCommand
+
 from apps.imports.dto import normalize_employee_id
 from apps.imports.sources.sheets import SheetsSource
 
@@ -28,7 +29,7 @@ class Command(BaseCommand):
         orders, payroll = source.read()
 
         header_idx = getattr(source, "last_header_row_idx", 0)
-        headings = getattr(source, "last_headings", [])
+        getattr(source, "last_headings", [])
         column_map = getattr(source, "last_column_indexes", {})
 
         self.stdout.write(f"\n📌 Sarlavha qatori indeksi: {header_idx}")

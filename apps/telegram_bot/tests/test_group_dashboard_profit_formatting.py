@@ -1,14 +1,12 @@
 from decimal import Decimal
+
 from django.test import TestCase
-
-from apps.statistics.services.statistics import GroupDashboard
-from apps.telegram_bot.services.formatting import group_dashboard_text
-
 
 from apps.common.services.exceptions import ValidationError
 from apps.employees.models import Employee
 from apps.groups.models import SalesGroup
-from apps.statistics.services.statistics import StatisticsService
+from apps.statistics.services.statistics import GroupDashboard, StatisticsService
+from apps.telegram_bot.services.formatting import group_dashboard_text
 
 
 class GroupDashboardProfitFormattingTest(TestCase):

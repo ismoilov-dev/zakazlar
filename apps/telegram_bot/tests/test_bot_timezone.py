@@ -1,13 +1,11 @@
-from datetime import datetime
 import zoneinfo
+from datetime import datetime
+from unittest.mock import patch
+
 from django.test import TestCase
-from django.utils import timezone
 
 from apps.imports.models import SyncLog, SyncStatus
 from apps.telegram_bot.routers import ensure_fresh_data_and_get_timestamp
-
-
-from unittest.mock import patch
 
 
 class BotTimezoneTest(TestCase):

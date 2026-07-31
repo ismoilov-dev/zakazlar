@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from hashlib import sha256
 
 from django.core.files.uploadedfile import UploadedFile
@@ -12,9 +13,6 @@ from apps.imports.models import ImportJob, ImportStatus
 from apps.imports.repositories.import_job import ImportJobRepository
 from apps.imports.services.importer import DataImporter
 from apps.imports.sources.excel import ExcelSource
-
-
-import logging
 
 logger = logging.getLogger(__name__)
 

@@ -1,15 +1,11 @@
 from decimal import Decimal
-from datetime import timedelta
+
 from django.test import TestCase
-from django.utils import timezone
-
-from apps.employees.models import Employee
-from apps.groups.models import SalesGroup
-from apps.sales.models import Sale, SaleStatus
-from apps.statistics.services.statistics import StatisticsService
-
 
 from apps.common.services.exceptions import ValidationError
+from apps.employees.models import Employee
+from apps.groups.models import SalesGroup
+from apps.statistics.services.statistics import StatisticsService
 
 
 class StatisticsMonthFilterTest(TestCase):

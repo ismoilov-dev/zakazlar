@@ -4,7 +4,6 @@ from dataclasses import asdict, dataclass
 from datetime import date
 from decimal import Decimal
 
-
 from apps.accounts.models import TelegramAccount
 from apps.accounts.repositories.telegram_account import TelegramAccountRepository
 from apps.common.services.exceptions import AccessDeniedError, NotFoundError, ValidationError
@@ -13,7 +12,6 @@ from apps.employees.repositories.employee import EmployeeRepository
 from apps.groups.models import SalesGroup
 from apps.groups.repositories.group import SalesGroupRepository
 from apps.statistics.repositories.statistics import StatisticsRepository
-
 
 
 @dataclass(frozen=True, slots=True)

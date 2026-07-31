@@ -2,7 +2,9 @@
 
 import os
 from decimal import Decimal
+
 from django.core.management.base import BaseCommand, CommandError
+
 from apps.imports.sources.excel import ExcelSource
 from apps.sales.models import SaleStatus
 from apps.statistics.services.statistics import StatisticsService

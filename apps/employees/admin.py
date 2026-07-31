@@ -23,8 +23,9 @@ class EmployeeAdmin(admin.ModelAdmin):
     inlines = [TelegramAccountInline]
 
 
-from apps.employees.models import EmployeeMonthlyStat
 from django.utils import timezone
+
+from apps.employees.models import EmployeeMonthlyStat
 
 
 @admin.action(description="Tanlangan oylik statlarni yopish (Close period)")

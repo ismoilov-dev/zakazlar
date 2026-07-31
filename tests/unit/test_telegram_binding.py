@@ -50,6 +50,6 @@ class TelegramBindingTestCase(TestCase):
         self.assertEqual(TelegramAccount.objects.count(), 0)
 
     def test_bind_saves_role(self) -> None:
-        account1 = self.service.bind(employee_id="0001", telegram_id=1001, username="user1", role="ROP")
+        self.service.bind(employee_id="0001", telegram_id=1001, username="user1", role="ROP")
         acct = TelegramAccount.objects.get(telegram_id=1001)
         self.assertEqual(acct.role, "ROP")

@@ -1,6 +1,7 @@
 """Management command to backfill Employee.summary_data into EmployeeMonthlyStat for a period."""
 
 from datetime import date, datetime
+
 from django.core.management.base import BaseCommand
 
 from apps.employees.models import Employee, EmployeeMonthlyStat

@@ -1,8 +1,8 @@
 """ORM repository for workbook imports."""
 
+from django.core.files.uploadedfile import UploadedFile
 from django.db import transaction
 from django.utils import timezone
-from django.core.files.uploadedfile import UploadedFile
 
 from apps.common.repositories.base import DjangoRepository
 from apps.imports.models import ImportJob, ImportStatus

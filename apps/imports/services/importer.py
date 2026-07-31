@@ -5,11 +5,10 @@ This is the ONLY code that touches the database during imports.
 
 from __future__ import annotations
 
+import logging
 from datetime import date
 from decimal import Decimal
-import logging
 from typing import NamedTuple
-
 
 from django.db import transaction
 

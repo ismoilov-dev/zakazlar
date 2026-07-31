@@ -1,10 +1,11 @@
 """Management command to clean up old SyncLog records while preserving the latest successful sync."""
 
 from datetime import timedelta
+
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 
-from apps.imports.models import SyncLog, SyncStatus
+from apps.imports.models import SyncLog
 
 
 class Command(BaseCommand):

@@ -1,8 +1,9 @@
 from decimal import Decimal
+
 from django.test import TestCase
 
 from apps.employees.models import Employee
-from apps.imports.dto import OrderDTO, PayrollDTO
+from apps.imports.dto import PayrollDTO
 from apps.imports.services.importer import DataImporter
 
 

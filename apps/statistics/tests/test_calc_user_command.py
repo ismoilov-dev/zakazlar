@@ -1,12 +1,13 @@
+from decimal import Decimal
 from io import StringIO
 from unittest.mock import mock_open, patch
+
 from django.core.management import call_command
 from django.test import TestCase
+from django.utils import timezone
 
 from apps.imports.dto import OrderDTO, PayrollDTO
 from apps.sales.models import SaleStatus
-from django.utils import timezone
-from decimal import Decimal
 
 
 class CalcUserCommandTest(TestCase):

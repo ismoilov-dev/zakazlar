@@ -1,6 +1,7 @@
 """Management command to close all EmployeeMonthlyStat records for a period (e.g. 2026-06)."""
 
 from datetime import date, datetime
+
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 

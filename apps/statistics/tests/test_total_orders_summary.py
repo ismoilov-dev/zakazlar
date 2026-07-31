@@ -1,16 +1,15 @@
 from decimal import Decimal
+
 from django.test import TestCase
-from django.utils import timezone
 
 from apps.employees.models import Employee
-from apps.sales.models import Sale, SaleStatus
 from apps.statistics.services.statistics import StatisticsService
 
 
 class TotalOrdersSummaryTest(TestCase):
     def test_total_orders_uses_db_count_when_summary_data_is_present(self):
         """Dashboard should preserve summary_data successful_orders (7)."""
-        employee = Employee.objects.create(
+        Employee.objects.create(
             employee_id="0191",
             full_name="Amir Karimov",
             summary_data={

@@ -1,4 +1,5 @@
 from datetime import date, datetime
+
 from django.test import TestCase
 
 from apps.common.services.exceptions import ValidationError

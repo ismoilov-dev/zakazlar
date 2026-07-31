@@ -1,14 +1,15 @@
 """Unit tests for import sources and DataImporter layer."""
 
 from decimal import Decimal
+
 from django.test import TestCase
+from django.utils import timezone
 
 from apps.common.services.exceptions import ValidationError
 from apps.employees.models import Employee
 from apps.imports.dto import OrderDTO, PayrollDTO, normalize_employee_id
 from apps.imports.services.importer import DataImporter
 from apps.sales.models import Sale, SaleStatus
-from django.utils import timezone
 
 
 class NormalizeEmployeeIdTest(TestCase):
@@ -83,7 +84,7 @@ class DataImporterTest(TestCase):
                 ordered_at=now,
             )
         ]
-        result = importer.import_dto_lists(orders=orders, payroll=payroll)
+        importer.import_dto_lists(orders=orders, payroll=payroll)
         self.assertEqual(Employee.objects.count(), 1)
         self.assertEqual(Employee.objects.first().employee_id, "0191")
         self.assertEqual(Sale.objects.count(), 0)
@@ -132,6 +133,7 @@ class DataImporterTest(TestCase):
 
     def test_parse_orders_skips_trailing_empty_rows(self) -> None:
         from unittest.mock import MagicMock
+
         from apps.imports.sources.sheets import SheetsSource
 
         source = object.__new__(SheetsSource)
@@ -153,6 +155,7 @@ class DataImporterTest(TestCase):
 
     def test_unrecognized_sources_map_to_unknown_without_dropping(self) -> None:
         from unittest.mock import MagicMock
+
         from apps.imports.sources.sheets import SheetsSource
 
         source = object.__new__(SheetsSource)

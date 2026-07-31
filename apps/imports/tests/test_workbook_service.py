@@ -1,9 +1,10 @@
 from unittest.mock import patch
+
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import IntegrityError
 from django.test import TestCase
 
-from apps.imports.models import ImportJob, ImportStatus
+from apps.imports.models import ImportStatus
 from apps.imports.services.workbook import WorkbookImportService
 
 

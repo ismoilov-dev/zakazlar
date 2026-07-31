@@ -1,6 +1,7 @@
-from pathlib import Path
-from django.test import TestCase
 import tomllib
+from pathlib import Path
+
+from django.test import TestCase
 
 
 class DependenciesTest(TestCase):

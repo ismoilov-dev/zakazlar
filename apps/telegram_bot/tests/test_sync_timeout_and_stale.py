@@ -1,5 +1,6 @@
 import asyncio
 from unittest.mock import patch
+
 from django.test import TestCase
 
 from apps.telegram_bot.routers import SYNC_TIMEOUT_SECONDS, ensure_fresh_data_and_get_timestamp
@@ -21,7 +22,6 @@ class SyncTimeoutAndStaleTest(TestCase):
     @patch("apps.telegram_bot.routers.SheetsSyncService")
     async def test_concurrent_calls_share_single_flight_sync_task(self, mock_service_cls):
         """Concurrent callers share single-flight sync task."""
-        mock_service = mock_service_cls.return_value
 
         res1, res2 = await asyncio.gather(
             ensure_fresh_data_and_get_timestamp(),

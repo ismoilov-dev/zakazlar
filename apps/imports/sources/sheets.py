@@ -2,24 +2,31 @@
 
 from __future__ import annotations
 
-from decimal import Decimal
 import json
 import logging
 import os
 import re
+from decimal import Decimal
 
 logger = logging.getLogger(__name__)
 
 from django.core.exceptions import ValidationError
+
 from apps.common.services.exceptions import ValidationError as DomainValidationError
 
 PARSE_ERRORS = (ValidationError, DomainValidationError)
+import gspread
 from django.utils import timezone
 from django.utils.dateparse import parse_date as parse_iso_date
-import gspread
 from google.oauth2.service_account import Credentials
 
-from apps.imports.dto import GroupSummaryDTO, OrderDTO, PayrollDTO, normalize_employee_id, normalize_order_id
+from apps.imports.dto import (
+    GroupSummaryDTO,
+    OrderDTO,
+    PayrollDTO,
+    normalize_employee_id,
+    normalize_order_id,
+)
 from apps.imports.sources.base import BaseSource
 
 SCOPES = [
@@ -679,6 +686,7 @@ class SheetsSource(BaseSource):
     @staticmethod
     def _parse_date(val: str):
         from datetime import date, datetime, time
+
         from django.utils import timezone
 
         if not val:

@@ -6,8 +6,8 @@ import json
 import os
 from typing import Any
 
-from django.core.management.base import BaseCommand, CommandError
 import gspread
+from django.core.management.base import BaseCommand, CommandError
 from google.oauth2.service_account import Credentials
 
 SCOPES = [

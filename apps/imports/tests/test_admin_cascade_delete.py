@@ -9,7 +9,7 @@ from apps.imports.models import ImportJob
 class AdminCascadeDeleteTest(TestCase):
     def test_cascade_delete_job_does_not_delete_payroll_employees(self) -> None:
         group = SalesGroup.objects.create(code="BAZA", name="Baza Group")
-        employee = Employee.objects.create(
+        Employee.objects.create(
             employee_id="0191",
             full_name="Amir Karimov",
             group=group,
