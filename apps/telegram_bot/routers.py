@@ -150,16 +150,35 @@ async def start(message: Message, state: FSMContext) -> None:
     )()
 
     if account:
-        text = (
-            f"Siz allaqachon <b>{account.employee.full_name}</b> (<code>{account.employee.employee_id}</code>) "
-            f"sifatida ro'yxatdan o'tgansiz.\n\n"
-            f"Mavjud buyruqlar:\n"
-            f"📊 /stats — Shaxsiy ko'rsatkichlar\n"
-            f"👥 /group_stats — Guruh ko'rsatkichlari (faqat ROP uchun)\n"
-            f"📅 /tarix — Oylik hisobotlar tarixi"
-        )
-        await message.answer(text)
+        await ensure_fresh_data_and_get_timestamp()
+        info_prefix = f"Siz allaqachon <b>{account.employee.full_name}</b> (<code>{account.employee.employee_id}</code>) sifatida ro'yxatdan o'tgansiz.\n\n"
+
+        if account.role == "ROP":
+            is_leader = await sync_to_async(
+                lambda: SalesGroup.objects.filter(leader=account.employee, is_active=True).exists()
+            )()
+            if is_leader:
+                if not is_rop_session_valid(account):
+                    await state.update_data(employee_id=account.employee.employee_id)
+                    await state.set_state(RegistrationStates.enter_password)
+                    await message.answer("Sessiyangiz eskirgan. Qayta kirish uchun parolingizni kiriting:")
+                    return
+
+                groups = await sync_to_async(
+                    lambda: list(SalesGroup.objects.filter(leader=account.employee, is_active=True))
+                )()
+                group = groups[0]
+                text = info_prefix + rop_menu_text(account.employee.full_name, group.code, account.employee.employee_id)
+                reply_markup = rop_menu_keyboard()
+                await message.answer(text, reply_markup=reply_markup)
+                return
+
+        text = info_prefix + xizmatlar_menu_text()
+        reply_markup = xizmatlar_menu_keyboard()
+        await message.answer(text, reply_markup=reply_markup)
         return
+
+
 
     builder = InlineKeyboardBuilder()
     builder.button(text="👔 R.O.P", callback_data="role_ROP")
