@@ -208,3 +208,53 @@ def group_dashboard_text(dashboard: GroupDashboard) -> str:
         f"💰 Guruh foydasi (Muvaffaqiyatli): {profit_text}\n"
         f"💵 Rahbar bonusi (2%): {bonus_text}"
     )
+
+
+def rop_menu_text(full_name: str, group_code: str, employee_id: str) -> str:
+    """Render ROP main menu text."""
+    return (
+        f"👤 <b>{full_name.strip()}</b>\n"
+        f"🏢 Bo'lim: <b>{group_code}</b>\n"
+        f"🆔 ID: <code>{employee_id}</code>\n\n"
+        f"<b>XIZMATLAR</b>"
+    )
+
+
+def rop_menu_keyboard() -> InlineKeyboardMarkup:
+    """Render ROP main menu inline keyboard."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="📊 GURUH SAVDOSI", callback_data="rop_card:group_sales")
+    builder.button(text="📈 GURUH STATS", callback_data="rop_card:group_stats")
+    builder.button(text="💵 ROP OYLIK", callback_data="rop_card:rop_salary")
+    builder.button(text="👤 MOP XIZMATLAR", callback_data="rop_card:mop_xizmatlar")
+    builder.adjust(2, 1, 1)
+    return builder.as_markup()
+
+
+def rop_card_keyboard() -> InlineKeyboardMarkup:
+    """Render back button for ROP cards."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="⬅️ Xizmatlarga qaytish", callback_data="rop_menu")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def rop_group_sales_card_text(group_code: str, totals: dict[str, Decimal]) -> str:
+    """Render GURUH SAVDOSI card text."""
+    return (
+        f"🏢 Bo'lim: <b>{group_code}</b>\n\n"
+        f"📊 Jami savdo: <b>{totals['total_sales']:,.0f} so'm</b>\n"
+        f"✅ Uspeshka: <b>{totals['successful_sales']:,.0f} so'm</b>\n"
+        f"❌ Otkaz: <b>{totals['otkaz_sales']:,.0f} so'm</b>\n"
+        f"⏳ Jarayonda: <b>{totals['v_proc_sales']:,.0f} so'm</b>"
+    )
+
+
+def rop_group_stats_card_text(group_code: str, stats: dict[str, int]) -> str:
+    """Render GURUH STATS card text."""
+    return (
+        f"🏢 Bo'lim: <b>{group_code}</b>\n\n"
+        f"👥 Xodimlar soni: <b>{stats['total_count']} ta</b>\n"
+        f"📦 Jami upakovka: <b>{stats['total_upakovka']} ta</b>\n"
+        f"🟢 Faol xodimlar: <b>{stats['active_count']} ta</b>"
+    )

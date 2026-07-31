@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 from aiogram.exceptions import TelegramBadRequest
 from apps.accounts.models import TelegramAccount
-from apps.accounts.services.binding import TelegramBindingService
+from apps.accounts.services.binding import TelegramBindingService, is_rop_session_valid
 from apps.accounts.services.name_match import names_match
 from apps.accounts.services.rate_limiter import (
     clear_failed_attempts,
@@ -30,6 +30,7 @@ from apps.common.services.exceptions import DomainError
 from apps.employees.models import Employee
 from apps.employees.repositories.employee import EmployeeRepository
 from apps.groups.models import SalesGroup
+from apps.groups.services.rop_service import RopService
 from apps.imports.dto import normalize_employee_id
 from apps.imports.models import SyncLog, SyncStatus
 from apps.imports.services.sheets_sync import SheetsSyncService
@@ -40,9 +41,15 @@ from apps.telegram_bot.services.formatting import (
     format_uzbek_period,
     group_dashboard_text,
     period_selector_keyboard,
+    rop_card_keyboard,
+    rop_group_sales_card_text,
+    rop_group_stats_card_text,
+    rop_menu_keyboard,
+    rop_menu_text,
     xizmatlar_menu_keyboard,
     xizmatlar_menu_text,
 )
+
 
 router = Router(name="sales_bot")
 
@@ -491,9 +498,8 @@ async def rop_logout(message: Message, state: FSMContext) -> None:
 
 
 @router.message(Command("stats"))
-
-async def employee_stats(message: Message) -> None:
-    """Return bound employee's XIZMATLAR menu."""
+async def employee_stats(message: Message, state: FSMContext) -> None:
+    """Return bound employee's menu (ROP or MOP)."""
     if message.from_user is None:
         return
 
@@ -505,9 +511,97 @@ async def employee_stats(message: Message) -> None:
         return
 
     await ensure_fresh_data_and_get_timestamp()
+
+    if account.role == "ROP":
+        is_leader = await sync_to_async(
+            lambda: SalesGroup.objects.filter(leader=account.employee, is_active=True).exists()
+        )()
+        if is_leader:
+            if not is_rop_session_valid(account):
+                await state.update_data(employee_id=account.employee.employee_id)
+                await state.set_state(RegistrationStates.enter_password)
+                await message.answer("Sessiyangiz eskirgan. Qayta kirish uchun parolingizni kiriting:")
+                return
+
+            groups = await sync_to_async(
+                lambda: list(SalesGroup.objects.filter(leader=account.employee, is_active=True))
+            )()
+            group = groups[0]
+            text = rop_menu_text(account.employee.full_name, group.code, account.employee.employee_id)
+            reply_markup = rop_menu_keyboard()
+            await message.answer(text, reply_markup=reply_markup)
+            return
+
     text = xizmatlar_menu_text()
     reply_markup = xizmatlar_menu_keyboard()
     await message.answer(text, reply_markup=reply_markup)
+
+
+@router.callback_query(F.data.startswith("rop_"))
+async def handle_rop_callback(callback: CallbackQuery, state: FSMContext) -> None:
+    """Handle ROP menu & card callbacks with DB-enforced leadership and session validation."""
+    if callback.from_user is None or callback.data is None:
+        return
+
+    telegram_id = callback.from_user.id
+    account = await sync_to_async(
+        lambda: TelegramAccount.objects.select_related("employee").filter(telegram_id=telegram_id).first()
+    )()
+    if not account or not account.employee or account.role != "ROP":
+        await callback.answer("Avval ROP profili orqali tizimga kiring.", show_alert=True)
+        return
+
+    is_leader = await sync_to_async(
+        lambda: SalesGroup.objects.filter(leader=account.employee, is_active=True).exists()
+    )()
+    if not is_leader:
+        await callback.answer("Siz faol guruh rahbari emassiz.", show_alert=True)
+        return
+
+    if not is_rop_session_valid(account):
+        await callback.answer("Sessiyangiz eskirgan. Parolingizni qayta kiriting.", show_alert=True)
+        if callback.message:
+            await state.update_data(employee_id=account.employee.employee_id)
+            await state.set_state(RegistrationStates.enter_password)
+            await callback.message.answer("Parolingizni kiriting:")
+        return
+
+    groups = await sync_to_async(
+        lambda: list(SalesGroup.objects.filter(leader=account.employee, is_active=True))
+    )()
+    group = groups[0]
+
+    action = callback.data
+    ts_str, is_stale = await ensure_fresh_data_and_get_timestamp()
+    footer = format_footer(ts_str, is_stale)
+
+    if action == "rop_menu":
+        text = rop_menu_text(account.employee.full_name, group.code, account.employee.employee_id)
+        keyboard = rop_menu_keyboard()
+    elif action == "rop_card:group_sales":
+        totals = await sync_to_async(RopService().get_group_sales_totals)(group)
+        text = rop_group_sales_card_text(group.code, totals) + footer
+        keyboard = rop_card_keyboard()
+    elif action == "rop_card:group_stats":
+        stats = await sync_to_async(RopService().get_group_stats)(group)
+        text = rop_group_stats_card_text(group.code, stats) + footer
+        keyboard = rop_card_keyboard()
+    elif action == "rop_card:mop_xizmatlar":
+        text = xizmatlar_menu_text()
+        keyboard = xizmatlar_menu_keyboard()
+    else:
+        text = rop_menu_text(account.employee.full_name, group.code, account.employee.employee_id)
+        keyboard = rop_menu_keyboard()
+
+    if callback.message:
+        try:
+            await callback.message.edit_text(text, reply_markup=keyboard)
+        except TelegramBadRequest as exc:
+            if "message is not modified" not in str(exc).lower():
+                logger.warning("Failed to edit ROP message: %s", exc)
+
+    await callback.answer()
+
 
 
 @router.message(Command("group_stats"))

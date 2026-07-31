@@ -1,7 +1,11 @@
 from datetime import timedelta
+from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
 
+
+from asgiref.sync import sync_to_async
 from django.contrib.admin.sites import AdminSite
+
 from django.test import TestCase
 from django.utils import timezone
 
@@ -128,3 +132,52 @@ class RopPartATestCase(TestCase):
         await account.arefresh_from_db()
         self.assertIsNone(account.rop_authenticated_at)
         message.answer.assert_called_once_with("Tizimdan chiqdingiz. Qayta kirish uchun parolingizni kiriting.")
+
+    async def test_rop_service_group_sales_totals_and_stats(self):
+        emp1 = await Employee.objects.acreate(
+            employee_id="0010",
+            full_name="Seller A",
+            group=self.group,
+            summary_data={"total_sales": "10,000,000", "successful_sales": "6,000,000", "otkaz_sales": "3,000,000", "v_proc_sales": "1,000,000", "successful_orders": "10"},
+        )
+        emp2 = await Employee.objects.acreate(
+            employee_id="0011",
+            full_name="Seller B",
+            group=self.group,
+            summary_data={"total_sales": "20,000,000", "successful_sales": "14,000,000", "otkaz_sales": "5,000,000", "v_proc_sales": "1,000,000", "successful_orders": "25"},
+        )
+
+        from apps.groups.services.rop_service import RopService
+        totals = await sync_to_async(RopService().get_group_sales_totals)(self.group)
+        self.assertEqual(totals["total_sales"], Decimal("30000000.00"))
+        self.assertEqual(totals["successful_sales"], Decimal("20000000.00"))
+
+        stats = await sync_to_async(RopService().get_group_stats)(self.group)
+        self.assertEqual(stats["total_upakovka"], 35)
+        self.assertEqual(stats["active_count"], 2)
+
+    @patch("apps.telegram_bot.routers.ensure_fresh_data_and_get_timestamp", return_value=("31.07.2026 14:00:00", False))
+    async def test_rop_callback_card_navigation(self, _mock_ts):
+        account = await TelegramAccount.objects.acreate(
+            employee=self.leader,
+            telegram_id=555,
+            role="ROP",
+            rop_authenticated_at=timezone.now(),
+        )
+
+        from apps.telegram_bot.routers import handle_rop_callback
+
+        callback = MagicMock()
+        callback.from_user.id = 555
+        callback.data = "rop_card:group_sales"
+        callback.message.edit_text = AsyncMock()
+        callback.answer = AsyncMock()
+
+        state = AsyncMock()
+        await handle_rop_callback(callback, state)
+
+        callback.message.edit_text.assert_called_once()
+        text = callback.message.edit_text.call_args[0][0]
+        self.assertIn("Bo'lim: <b>A</b>", text)
+        self.assertIn("Jami savdo:", text)
+
