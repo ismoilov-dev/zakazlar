@@ -278,7 +278,13 @@ async def process_employee_id(message: Message, state: FSMContext) -> None:
 
     if role == "ROP":
         await state.set_state(RegistrationStates.enter_password)
-        await message.answer("Parolingizni kiriting:")
+        has_credential = await sync_to_async(
+            lambda: hasattr(employee, "rop_credential") and employee.rop_credential is not None
+        )()
+        if has_credential:
+            await message.answer("Parolingizni kiriting:")
+        else:
+            await message.answer("🔑 Sizda hali parol o'rnatilmagan.\nKelgusida botga kirish uchun yangi parolingizni kiriting:")
     else:
         await state.set_state(RegistrationStates.enter_name)
         await message.answer("Iltimos, ism va familiyangizni kiriting:")
@@ -286,7 +292,7 @@ async def process_employee_id(message: Message, state: FSMContext) -> None:
 
 @router.message(RegistrationStates.enter_password)
 async def process_password(message: Message, state: FSMContext) -> None:
-    """Validate ROP password, deleting the plaintext password message immediately."""
+    """Validate ROP password or allow self-registration on first login, deleting plaintext password immediately."""
     if message.from_user is None or message.text is None:
         return
 
@@ -339,16 +345,28 @@ async def process_password(message: Message, state: FSMContext) -> None:
     has_credential = await sync_to_async(
         lambda: hasattr(employee, "rop_credential") and employee.rop_credential is not None
     )()
-    if not has_credential:
-        await fail_login("Leader has no password credential set")
-        return
 
-    password_matches = await sync_to_async(
-        lambda: employee.rop_credential.check_password(raw_password)
-    )()
-    if not password_matches:
-        await fail_login("Password mismatch")
-        return
+    if not has_credential:
+        if len(raw_password) < 3:
+            await message.answer("Parol juda qisqa. Kamida 3 ta belgi kiriting:")
+            return
+
+        def _save_new_cred():
+            from apps.employees.models import RopCredential
+            cred, _ = RopCredential.objects.get_or_create(employee=employee)
+            cred.set_password(raw_password)
+            cred.save()
+
+        await sync_to_async(_save_new_cred)()
+        await message.answer("✅ Yangi parolingiz muvaffaqiyatli saqlandi! Kelgusi kirishlarda ushbu paroldan foydalanasiz.")
+    else:
+        password_matches = await sync_to_async(
+            lambda: employee.rop_credential.check_password(raw_password)
+        )()
+        if not password_matches:
+            await fail_login("Password mismatch")
+            return
+
 
     existing_binding = await sync_to_async(
         lambda: TelegramAccount.objects.filter(telegram_id=telegram_id).first()

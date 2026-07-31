@@ -98,8 +98,31 @@ class RopPartATestCase(TestCase):
         message.answer.assert_called_once_with("ID yoki parol noto'g'ri.")
         mock_warn.assert_called_once()
 
+    async def test_process_password_self_registration_on_first_login(self):
+        new_leader = await Employee.objects.acreate(employee_id="0005", full_name="New ROP Leader", group=self.group)
+        group5 = await SalesGroup.objects.acreate(code="E", name="Group E", leader=new_leader)
+
+        state = AsyncMock()
+        state.get_data = AsyncMock(return_value={"employee_id": "0005"})
+
+        message = MagicMock()
+        message.from_user.id = 777
+        message.text = "MyNewPassword123"
+        message.delete = AsyncMock()
+        message.answer = AsyncMock()
+
+        await process_password(message, state)
+
+        cred = await RopCredential.objects.aget(employee=new_leader)
+        self.assertTrue(cred.check_password("MyNewPassword123"))
+        self.assertEqual(message.answer.call_count, 2)
+        message.answer.assert_any_call("✅ Yangi parolingiz muvaffaqiyatli saqlandi! Kelgusi kirishlarda ushbu paroldan foydalanasiz.")
+        message.answer.assert_any_call("Iltimos, ism va familiyangizni kiriting:")
+
+
     @patch("apps.telegram_bot.routers.logger.warning")
     async def test_process_password_non_leader_returns_generic_error(self, mock_warn):
+
         state = AsyncMock()
         state.get_data = AsyncMock(return_value={"employee_id": "0002"})
 
