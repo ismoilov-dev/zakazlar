@@ -14,7 +14,7 @@ class TelegramBindingService:
         self.employees = employees or EmployeeRepository()
         self.accounts = accounts or TelegramAccountRepository()
 
-    def bind(self, *, employee_id: str, telegram_id: int, username: str) -> Employee:
+    def bind(self, *, employee_id: str, telegram_id: int, username: str, role: str = "MOP") -> Employee:
         try:
             employee = self.employees.get_active_by_employee_id(employee_id.strip())
         except Employee.DoesNotExist as exc:
@@ -28,5 +28,5 @@ class TelegramBindingService:
         if existing_employee_binding and existing_employee_binding.telegram_id != telegram_id:
             raise DomainError("Bu Employee ID allaqachon boshqa Telegram profiliga bog'langan. Administratsiyaga murojaat qiling.")
 
-        self.accounts.bind(employee=employee, telegram_id=telegram_id, username=username)
+        self.accounts.bind(employee=employee, telegram_id=telegram_id, username=username, role=role)
         return employee

@@ -16,9 +16,9 @@ class TelegramAccountRepository(DjangoRepository[TelegramAccount]):
         return self.model.objects.select_related("employee", "employee__group").get(telegram_id=telegram_id)
 
     @transaction.atomic
-    def bind(self, *, employee: Employee, telegram_id: int, username: str) -> TelegramAccount:
+    def bind(self, *, employee: Employee, telegram_id: int, username: str, role: str = "MOP") -> TelegramAccount:
         account, _ = self.model.objects.update_or_create(
             telegram_id=telegram_id,
-            defaults={"employee": employee, "username": username},
+            defaults={"employee": employee, "username": username, "role": role},
         )
         return account

@@ -15,6 +15,7 @@ class TelegramAccount(TimeStampedModel):
     )
     telegram_id = models.BigIntegerField(unique=True)
     username = models.CharField(max_length=255, blank=True)
+    role = models.CharField(max_length=10, default="MOP")
     bound_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
