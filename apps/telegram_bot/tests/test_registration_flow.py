@@ -214,3 +214,20 @@ class RegistrationFlowTestCase(TestCase):
         self.assertEqual(acct.role, "ROP")
         args, _ = callback.message.answer.call_args
         self.assertIn("Sizga biror guruh biriktirilmagan", args[0])
+
+    async def test_rebind_after_admin_deletion_succeeds(self) -> None:
+        await sync_to_async(TelegramAccount.objects.create)(
+            employee=self.employee1, telegram_id=55555, username="user55"
+        )
+        await sync_to_async(TelegramAccount.objects.filter(telegram_id=55555).delete)()
+
+        message = AsyncMock()
+        message.from_user.id = 55555
+        state = self._get_fsm_context(55555)
+
+        await start(message, state)
+
+        self.assertEqual(await state.get_state(), RegistrationStates.select_role.state)
+        message.answer.assert_called_once()
+        args, _ = message.answer.call_args
+        self.assertIn("rolingizni tanlang", args[0])
