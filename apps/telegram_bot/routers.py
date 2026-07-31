@@ -369,7 +369,13 @@ async def process_password(message: Message, state: FSMContext) -> None:
         await sync_to_async(existing_binding.save)(update_fields=["rop_authenticated_at"])
         await sync_to_async(clear_failed_attempts)(telegram_id)
         await state.clear()
-        await message.answer("ROP sessiyangiz muvaffaqiyatli yangilandi! (12 soat amal qiladi)")
+        groups = await sync_to_async(
+            lambda: list(SalesGroup.objects.filter(leader=employee, is_active=True))
+        )()
+        group_code = groups[0].code if groups else (employee.group.code if employee.group else "-")
+        text = "🔑 ROP sessiyangiz muvaffaqiyatli yangilandi! (12 soat amal qiladi)\n\n" + rop_menu_text(employee.full_name, group_code, employee.employee_id)
+        reply_markup = rop_menu_keyboard()
+        await message.answer(text, reply_markup=reply_markup)
         return
 
     await state.update_data(sheet_name=employee.full_name)
@@ -504,11 +510,19 @@ async def confirm_yes(callback: CallbackQuery, state: FSMContext) -> None:
             f"Muvaffaqiyatli bog'landi! Xush kelibsiz, <b>{employee.full_name}</b>!\n\n"
             "🔑 ROP sessiyangiz 12 soat davomida amal qiladi.\n\n"
         )
+        groups = await sync_to_async(
+            lambda: list(SalesGroup.objects.filter(leader=employee, is_active=True))
+        )()
+        group_code = groups[0].code if groups else (employee.group.code if employee.group else "-")
+        text = welcome_prefix + rop_menu_text(employee.full_name, group_code, employee.employee_id)
+        keyboard = rop_menu_keyboard()
     else:
         welcome_prefix = f"Muvaffaqiyatli bog'landi! Xush kelibsiz, <b>{employee.full_name}</b>!\n\n"
+        text = welcome_prefix + xizmatlar_menu_text()
+        keyboard = xizmatlar_menu_keyboard()
 
     if callback.message:
-        await callback.message.answer(welcome_prefix + xizmatlar_menu_text(), reply_markup=xizmatlar_menu_keyboard())
+        await callback.message.answer(text, reply_markup=keyboard)
     await callback.answer()
 
 
@@ -800,9 +814,26 @@ async def handle_xizmatlar_callback(callback: CallbackQuery) -> None:
     text = ""
     reply_markup = None
 
+    if action == "xm_menu" and not period_iso and account.role == "ROP" and is_rop_session_valid(account):
+        groups = await sync_to_async(
+            lambda: list(SalesGroup.objects.filter(leader=employee, is_active=True))
+        )()
+        group_code = groups[0].code if groups else (employee.group.code if employee.group else "-")
+        text = rop_menu_text(employee.full_name, group_code, employee.employee_id)
+        reply_markup = rop_menu_keyboard()
+        if callback.message:
+            try:
+                await callback.message.edit_text(text, reply_markup=reply_markup)
+            except TelegramBadRequest as exc:
+                if "message is not modified" not in str(exc).lower():
+                    logger.warning("Failed to edit ROP menu: %s", exc)
+        await callback.answer()
+        return
+
     if action in ("xm_menu", "xm_period"):
         text = xizmatlar_menu_text(period_label)
         reply_markup = xizmatlar_menu_keyboard(period_iso)
+
 
     elif action == "xm_card":
         card_type = parts[1]
