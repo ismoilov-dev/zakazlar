@@ -143,10 +143,13 @@ REST_FRAMEWORK = {
     "PAGE_SIZE": 50,
 }
 
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
+
 from decimal import Decimal
 
 ROP_SESSION_HOURS = 12
 ROP_SALARY_RATE = Decimal("0.02")
+
 
 
 LOGGING = {
