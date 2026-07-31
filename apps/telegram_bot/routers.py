@@ -361,6 +361,11 @@ async def process_password(message: Message, state: FSMContext) -> None:
 
 
 
+    try:
+        await message.delete()
+    except Exception:
+        pass
+
     existing_binding = await sync_to_async(
         lambda: TelegramAccount.objects.filter(telegram_id=telegram_id).first()
     )()
@@ -373,7 +378,7 @@ async def process_password(message: Message, state: FSMContext) -> None:
             lambda: list(SalesGroup.objects.filter(leader=employee, is_active=True))
         )()
         group_code = groups[0].code if groups else (employee.group.code if employee.group else "-")
-        text = "🔑 ROP sessiyangiz muvaffaqiyatli yangilandi! (12 soat amal qiladi)\n\n" + rop_menu_text(employee.full_name, group_code, employee.employee_id)
+        text = "🔑 ROP sessiyangiz tasdiqlandi!\n\n" + rop_menu_text(employee.full_name, group_code, employee.employee_id)
         reply_markup = rop_menu_keyboard()
         await message.answer(text, reply_markup=reply_markup)
         return
@@ -508,18 +513,14 @@ async def confirm_yes(callback: CallbackQuery, state: FSMContext) -> None:
     if role == "ROP":
         welcome_prefix = (
             f"Muvaffaqiyatli bog'landi! Xush kelibsiz, <b>{employee.full_name}</b>!\n\n"
-            "🔑 ROP sessiyangiz 12 soat davomida amal qiladi.\n\n"
+            "👔 ROP paneli tugmasi menyuga qo'shildi. ROP bo'limiga kirish uchun parolingizni kiriting.\n\n"
         )
-        groups = await sync_to_async(
-            lambda: list(SalesGroup.objects.filter(leader=employee, is_active=True))
-        )()
-        group_code = groups[0].code if groups else (employee.group.code if employee.group else "-")
-        text = welcome_prefix + rop_menu_text(employee.full_name, group_code, employee.employee_id)
-        keyboard = rop_menu_keyboard()
+        text = welcome_prefix + xizmatlar_menu_text()
+        keyboard = xizmatlar_menu_keyboard(is_rop=True)
     else:
         welcome_prefix = f"Muvaffaqiyatli bog'landi! Xush kelibsiz, <b>{employee.full_name}</b>!\n\n"
         text = welcome_prefix + xizmatlar_menu_text()
-        keyboard = xizmatlar_menu_keyboard()
+        keyboard = xizmatlar_menu_keyboard(is_rop=False)
 
     if callback.message:
         await callback.message.answer(text, reply_markup=keyboard)
@@ -602,6 +603,15 @@ async def handle_rop_callback(callback: CallbackQuery, state: FSMContext) -> Non
         await callback.answer("Avval ROP profili orqali tizimga kiring.", show_alert=True)
         return
 
+    if callback.data == "rop_prompt_password":
+        await state.update_data(employee_id=account.employee.employee_id)
+        await state.set_state(RegistrationStates.enter_password)
+        if callback.message:
+            await callback.message.answer("🔑 ROP paneliga kirish uchun parolingizni kiriting:")
+        await callback.answer()
+        return
+
+
     is_leader = await sync_to_async(
         lambda: SalesGroup.objects.filter(leader=account.employee, is_active=True).exists()
     )()
@@ -672,10 +682,10 @@ async def handle_rop_callback(callback: CallbackQuery, state: FSMContext) -> Non
         text = rop_salary_card_text(group.code, salary_info) + footer
         keyboard = rop_card_keyboard()
     elif action == "rop_card:mop_xizmatlar":
-
         text = xizmatlar_menu_text()
-        keyboard = xizmatlar_menu_keyboard()
+        keyboard = xizmatlar_menu_keyboard(is_rop=True)
     else:
+
         text = rop_menu_text(account.employee.full_name, group.code, account.employee.employee_id)
         keyboard = rop_menu_keyboard()
 
@@ -754,8 +764,9 @@ async def handle_bare_text_message(message: Message, state: FSMContext) -> None:
 
     await ensure_fresh_data_and_get_timestamp()
     text = xizmatlar_menu_text()
-    reply_markup = xizmatlar_menu_keyboard()
+    reply_markup = xizmatlar_menu_keyboard(is_rop=(account.role == "ROP"))
     await message.answer(text, reply_markup=reply_markup)
+
 
 
 @router.callback_query(F.data.startswith("xm_"))
@@ -832,7 +843,8 @@ async def handle_xizmatlar_callback(callback: CallbackQuery) -> None:
 
     if action in ("xm_menu", "xm_period"):
         text = xizmatlar_menu_text(period_label)
-        reply_markup = xizmatlar_menu_keyboard(period_iso)
+        reply_markup = xizmatlar_menu_keyboard(period_iso, is_rop=(account.role == "ROP"))
+
 
 
     elif action == "xm_card":
