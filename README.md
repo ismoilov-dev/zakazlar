@@ -54,10 +54,10 @@ employee_id | employee_name | group_code | order_id | status | sale_amount | pro
 
 ## Bot buyruqlari
 
-- `/start` — Employee ID yuborish tartibini ko'rsatadi.
-- `0191` — Telegram akkauntini xodimga bog'laydi.
-- `/stats` — faqat o'z statistikasi.
-- `/group_stats` — faqat rahbar bo'lgan guruh statistikasi va 2% bonus.
+- `/start` — Rol tanlash va Employee ID bog'lash jarayonini boshlaydi.
+- `/stats` — Faqat o'z shaxsiy ko'rsatkichlari.
+- `/group_stats` — Faqat rahbar bo'lgan guruh statistikasi (ROP).
+- `/tarix` — Oylik hisobotlar tarixi.
 
 ## REST API
 
@@ -68,6 +68,11 @@ Admin huquqiga ega autentifikatsiyalangan foydalanuvchilar uchun:
 
 Arxitektura va qatlamlar qoidalari [ARCHITECTURE.md](ARCHITECTURE.md) hamda
 [docs/PROJECT_STRUCTURE.md](docs/PROJECT_STRUCTURE.md) fayllarida berilgan.
+
+## Known limitations
+
+- **Unverified Identity Binding**: Employee identity confirmation relies on user-typed name matching against `List2` records. While this prevents simple typos from binding to a colleague's account, it is not strong authentication. Anyone who knows a colleague's ID and full name could potentially bind to that record.
+- **Intended Enhancements**: Phone verification via Telegram `request_contact` or explicit administrator approval is planned as the intended follow-up authentication layer.
 
 ## Contabo VPS ga Deploy Qilish
 
