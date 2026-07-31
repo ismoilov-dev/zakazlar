@@ -500,7 +500,8 @@ async def rop_logout(message: Message, state: FSMContext) -> None:
 
 
 @router.message(Command("stats"))
-async def employee_stats(message: Message, state: FSMContext) -> None:
+async def employee_stats(message: Message, state: FSMContext | None = None) -> None:
+
     """Return bound employee's menu (ROP or MOP)."""
     if message.from_user is None:
         return
@@ -520,10 +521,12 @@ async def employee_stats(message: Message, state: FSMContext) -> None:
         )()
         if is_leader:
             if not is_rop_session_valid(account):
-                await state.update_data(employee_id=account.employee.employee_id)
-                await state.set_state(RegistrationStates.enter_password)
+                if state is not None:
+                    await state.update_data(employee_id=account.employee.employee_id)
+                    await state.set_state(RegistrationStates.enter_password)
                 await message.answer("Sessiyangiz eskirgan. Qayta kirish uchun parolingizni kiriting:")
                 return
+
 
             groups = await sync_to_async(
                 lambda: list(SalesGroup.objects.filter(leader=account.employee, is_active=True))
@@ -569,9 +572,39 @@ async def handle_rop_callback(callback: CallbackQuery, state: FSMContext) -> Non
         return
 
     groups = await sync_to_async(
-        lambda: list(SalesGroup.objects.filter(leader=account.employee, is_active=True))
+        lambda: list(SalesGroup.objects.filter(leader=account.employee, is_active=True).order_by("code"))
     )()
-    group = groups[0]
+
+    if len(groups) > 1 and callback.data.startswith("rop_pick_group:"):
+        group_id_str = callback.data.split(":", 1)[1]
+        selected = next((g for g in groups if str(g.id) == group_id_str), None)
+        if selected:
+            await state.update_data(selected_group_id=selected.id)
+            group = selected
+        else:
+            await callback.answer("Ruxsat berilmagan guruh.", show_alert=True)
+            return
+    elif len(groups) > 1 and not callback.data.startswith("rop_card:"):
+        data = await state.get_data()
+        selected_id = data.get("selected_group_id")
+        selected = next((g for g in groups if g.id == selected_id), None)
+        if selected:
+            group = selected
+        else:
+            builder = InlineKeyboardBuilder()
+            for g in groups:
+                builder.button(text=f"🏢 {g.name} ({g.code})", callback_data=f"rop_pick_group:{g.id}")
+            builder.adjust(1)
+            if callback.message:
+                await callback.message.edit_text("<b>Guruhni tanlang:</b>", reply_markup=builder.as_markup())
+            await callback.answer()
+            return
+    else:
+        data = await state.get_data()
+        selected_id = data.get("selected_group_id")
+        selected = next((g for g in groups if g.id == selected_id), None)
+        group = selected if selected else groups[0]
+
 
     action = callback.data
     ts_str, is_stale = await ensure_fresh_data_and_get_timestamp()

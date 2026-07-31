@@ -209,4 +209,102 @@ class RopPartATestCase(TestCase):
         self.assertTrue(salary_info2["mismatch"])
         mock_log_err.assert_called_once()
 
+    @patch("apps.telegram_bot.routers.ensure_fresh_data_and_get_timestamp", return_value=("31.07.2026 14:00:00", False))
+    async def test_unassigned_leader_loses_access_immediately(self, _mock_ts):
+        account = await TelegramAccount.objects.acreate(
+            employee=self.leader,
+            telegram_id=777,
+            role="ROP",
+            rop_authenticated_at=timezone.now(),
+        )
+
+        # Unassign leadership from employee
+        self.group.leader = None
+        await self.group.asave()
+
+        from apps.telegram_bot.routers import handle_rop_callback
+
+        callback = MagicMock()
+        callback.from_user.id = 777
+        callback.data = "rop_card:group_sales"
+        callback.answer = AsyncMock()
+
+        state = AsyncMock()
+        await handle_rop_callback(callback, state)
+
+        callback.answer.assert_called_once_with("Siz faol guruh rahbari emassiz.", show_alert=True)
+
+    @patch("apps.telegram_bot.routers.ensure_fresh_data_and_get_timestamp", return_value=("31.07.2026 14:00:00", False))
+    async def test_privacy_rop_cannot_access_other_group_data(self, _mock_ts):
+        # Create group B with another leader
+        group_b = await SalesGroup.objects.acreate(code="B", name="Group B")
+        leader_b = await Employee.objects.acreate(employee_id="0099", full_name="Leader B", group=group_b)
+        group_b.leader = leader_b
+        await group_b.asave()
+        await Employee.objects.acreate(employee_id="0098", full_name="Seller B", group=group_b, summary_data={"total_sales": "99,000,000"})
+
+        # self.leader leads Group A (which has no sales yet)
+        account = await TelegramAccount.objects.acreate(
+            employee=self.leader,
+            telegram_id=888,
+            role="ROP",
+            rop_authenticated_at=timezone.now(),
+        )
+
+        from apps.telegram_bot.routers import handle_rop_callback
+
+        callback = MagicMock()
+        callback.from_user.id = 888
+        callback.data = "rop_card:group_sales"  # Payload carries NO group ID!
+        callback.message.edit_text = AsyncMock()
+        callback.answer = AsyncMock()
+
+        state = AsyncMock()
+        await handle_rop_callback(callback, state)
+
+        text = callback.message.edit_text.call_args[0][0]
+        self.assertIn("Bo'lim: <b>A</b>", text)
+        self.assertNotIn("Group B", text)
+        self.assertNotIn("99,000,000", text)
+
+    @patch("apps.telegram_bot.routers.ensure_fresh_data_and_get_timestamp", return_value=("31.07.2026 14:00:00", False))
+    async def test_multi_group_leader_picker(self, _mock_ts):
+        group_c = await SalesGroup.objects.acreate(code="C", name="Group C", leader=self.leader)
+
+        account = await TelegramAccount.objects.acreate(
+            employee=self.leader,
+            telegram_id=666,
+            role="ROP",
+            rop_authenticated_at=timezone.now(),
+        )
+
+        from apps.telegram_bot.routers import handle_rop_callback
+
+        callback = MagicMock()
+        callback.from_user.id = 666
+        callback.data = "rop_menu"
+        callback.message.edit_text = AsyncMock()
+        callback.answer = AsyncMock()
+
+        state = AsyncMock()
+        state.get_data = AsyncMock(return_value={})
+
+        await handle_rop_callback(callback, state)
+
+        # Multi-group leader gets group picker keyboard
+        callback.message.edit_text.assert_called_once()
+        text = callback.message.edit_text.call_args[0][0]
+        self.assertIn("Guruhni tanlang", text)
+
+        # ROP selects group C
+        callback_pick = MagicMock()
+        callback_pick.from_user.id = 666
+        callback_pick.data = f"rop_pick_group:{group_c.id}"
+        callback_pick.message.edit_text = AsyncMock()
+        callback_pick.answer = AsyncMock()
+
+        await handle_rop_callback(callback_pick, state)
+        state.update_data.assert_called_once_with(selected_group_id=group_c.id)
+
+
 
