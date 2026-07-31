@@ -52,9 +52,10 @@ class RopCredentialInline(admin.StackedInline):
     model = RopCredential
     form = RopCredentialAdminForm
     fields = ("raw_password",)
-    extra = 0
+    extra = 1
     max_num = 1
     can_delete = True
+
 
 
 @admin.register(Employee)
