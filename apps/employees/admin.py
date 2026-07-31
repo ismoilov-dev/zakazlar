@@ -11,6 +11,26 @@ from apps.employees.models import Employee, EmployeeMonthlyStat, RopCredential
 from apps.groups.models import SalesGroup
 
 
+class EmployeeAdminForm(forms.ModelForm):
+    rop_password = forms.CharField(
+        label="ROP Paroli (ROP Password)",
+        widget=forms.PasswordInput(render_value=False),
+        required=False,
+        help_text="Faqat ROP rahbarlari uchun. Yangi parol kiriting, saqlanganda shifrlanadi.",
+    )
+
+    class Meta:
+        model = Employee
+        fields = "__all__"
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.instance and self.instance.pk:
+            has_cred = hasattr(self.instance, "rop_credential") and self.instance.rop_credential is not None
+            if has_cred:
+                self.fields["rop_password"].help_text = "🔒 Parol o'rnatilgan. O'zgartirish uchun yangi parol kiriting."
+
+
 class RopCredentialAdminForm(forms.ModelForm):
     raw_password = forms.CharField(
         label="Yangi parol (Plaintext Password)",
@@ -48,24 +68,24 @@ class TelegramAccountInline(admin.TabularInline):
     can_delete = True
 
 
-class RopCredentialInline(admin.StackedInline):
-    model = RopCredential
-    form = RopCredentialAdminForm
-    fields = ("raw_password",)
-    extra = 1
-    max_num = 1
-    can_delete = True
-
-
-
 @admin.register(Employee)
 class EmployeeAdmin(admin.ModelAdmin):
+    form = EmployeeAdminForm
     list_display = ("employee_id", "full_name", "group", "monthly_salary", "is_active", "updated_at")
     list_filter = ("is_active", "group")
     search_fields = ("employee_id", "full_name")
     list_select_related = ("group",)
     ordering = ("employee_id",)
-    inlines = [TelegramAccountInline, RopCredentialInline]
+    inlines = [TelegramAccountInline]
+
+    def save_model(self, request, obj, form, change):
+        super().save_model(request, obj, form, change)
+        rop_password = form.cleaned_data.get("rop_password")
+        if rop_password:
+            cred, _ = RopCredential.objects.get_or_create(employee=obj)
+            cred.set_password(rop_password)
+            cred.save()
+            messages.success(request, f"{obj.full_name} uchun ROP paroli muvaffaqiyatli saqlandi!")
 
 
 @admin.action(description="Tanlangan oylik statlarni yopish (Close period)")
