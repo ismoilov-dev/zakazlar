@@ -13,7 +13,7 @@ from apps.groups.models import SalesGroup
 
 class EmployeeAdminForm(forms.ModelForm):
     rop_password = forms.CharField(
-        label="ROP Paroli (ROP Password)",
+        label="ROP uchun parol (ROP Password)",
         widget=forms.PasswordInput(render_value=False),
         required=False,
         help_text="Faqat ROP rahbarlari uchun. Yangi parol kiriting, saqlanganda shifrlanadi.",
@@ -21,7 +21,15 @@ class EmployeeAdminForm(forms.ModelForm):
 
     class Meta:
         model = Employee
-        fields = "__all__"
+        fields = (
+            "employee_id",
+            "full_name",
+            "monthly_salary",
+            "summary_data",
+            "group",
+            "is_active",
+            "rop_password",
+        )
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -76,6 +84,15 @@ class EmployeeAdmin(admin.ModelAdmin):
     search_fields = ("employee_id", "full_name")
     list_select_related = ("group",)
     ordering = ("employee_id",)
+    fields = (
+        "employee_id",
+        "full_name",
+        "monthly_salary",
+        "summary_data",
+        "group",
+        "is_active",
+        "rop_password",
+    )
     inlines = [TelegramAccountInline]
 
     def save_model(self, request, obj, form, change):
