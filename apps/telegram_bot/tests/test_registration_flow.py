@@ -197,7 +197,8 @@ class RegistrationFlowTestCase(TestCase):
         self.assertEqual(acct.employee_id, self.employee1.id)
         self.assertEqual(acct.role, "ROP")
         args, _ = callback.message.answer.call_args
-        self.assertIn("/group_stats", args[0])
+        self.assertIn("XIZMATLAR", args[0])
+
 
     async def test_confirm_yes_rop_who_leads_none(self) -> None:
         callback = AsyncMock()

@@ -5,7 +5,7 @@ from django.test import TestCase
 
 from apps.accounts.models import TelegramAccount
 from apps.employees.models import Employee, EmployeeMonthlyStat
-from apps.telegram_bot.routers import employee_tarix, show_historical_stat
+from apps.telegram_bot.routers import employee_tarix, handle_xizmatlar_callback
 
 
 class TarixRouterTest(TestCase):
@@ -59,15 +59,15 @@ class TarixRouterTest(TestCase):
     async def test_show_historical_stat_callback_renders_stat(self, _mock_ts):
         callback = MagicMock()
         callback.from_user.id = 12345678
-        callback.data = "hist_2026-06-01"
-        callback.message.answer = AsyncMock()
+        callback.data = "xm_card:earned_salary:2026-06-01"
+        callback.message.edit_text = AsyncMock()
         callback.answer = AsyncMock()
 
-        await show_historical_stat(callback)
-        callback.message.answer.assert_called_once()
-        text = callback.message.answer.call_args[0][0]
+        await handle_xizmatlar_callback(callback)
+        callback.message.edit_text.assert_called_once()
+        text = callback.message.edit_text.call_args[0][0]
         self.assertIn("Amir Karimov", text)
-        self.assertIn("06.2026", text)
+        self.assertIn("Iyun 2026", text)
 
     @patch("apps.telegram_bot.routers.ensure_fresh_data_and_get_timestamp", return_value=("30.07.2026 12:00:00", False))
     async def test_show_historical_stat_closed_period_shows_closed_footer(self, _mock_ts):
@@ -80,13 +80,13 @@ class TarixRouterTest(TestCase):
         await sync_to_async(close_stat)()
 
         callback = MagicMock()
-
         callback.from_user.id = 12345678
-        callback.data = "hist_2026-06-01"
-        callback.message.answer = AsyncMock()
+        callback.data = "xm_card:earned_salary:2026-06-01"
+        callback.message.edit_text = AsyncMock()
         callback.answer = AsyncMock()
 
-        await show_historical_stat(callback)
-        text = callback.message.answer.call_args[0][0]
+        await handle_xizmatlar_callback(callback)
+        text = callback.message.edit_text.call_args[0][0]
         self.assertIn("🔒 <b>Oy yopilgan</b>", text)
+
 
