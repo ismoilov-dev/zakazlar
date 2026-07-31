@@ -271,8 +271,10 @@ async def process_employee_id(message: Message, state: FSMContext) -> None:
         await state.clear()
         return
 
+    data = await state.get_data()
     role = data.get("role", "MOP")
     await state.update_data(employee_id=user_id, sheet_name=employee.full_name)
+
 
     if role == "ROP":
         await state.set_state(RegistrationStates.enter_password)
