@@ -69,3 +69,29 @@ class EmployeeMonthlyStat(TimeStampedModel):
     def __str__(self) -> str:
         return f"{self.employee.employee_id} — {self.period.strftime('%m.%Y')}"
 
+
+class RopCredential(TimeStampedModel):
+    """Password credentials for ROP group leaders."""
+
+    employee = models.OneToOneField(
+        Employee,
+        on_delete=models.CASCADE,
+        related_name="rop_credential",
+    )
+    password = models.CharField(max_length=128, help_text="Hashed ROP password")
+
+    class Meta:
+        db_table = "rop_credentials"
+
+    def __str__(self) -> str:
+        return f"ROP Credential — {self.employee.employee_id}"
+
+    def set_password(self, raw_password: str) -> None:
+        from django.contrib.auth.hashers import make_password
+        self.password = make_password(raw_password)
+
+    def check_password(self, raw_password: str) -> bool:
+        from django.contrib.auth.hashers import check_password
+        return check_password(raw_password, self.password)
+
+

@@ -214,7 +214,8 @@ class RegistrationFlowTestCase(TestCase):
         self.assertEqual(acct.employee_id, self.employee2.id)
         self.assertEqual(acct.role, "ROP")
         args, _ = callback.message.answer.call_args
-        self.assertIn("Sizga biror guruh biriktirilmagan", args[0])
+        self.assertIn("ROP sessiyangiz 12 soat davomida amal qiladi", args[0])
+
 
     async def test_rebind_after_admin_deletion_succeeds(self) -> None:
         await sync_to_async(TelegramAccount.objects.create)(

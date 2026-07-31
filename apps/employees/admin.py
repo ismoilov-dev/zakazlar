@@ -56,3 +56,64 @@ class EmployeeMonthlyStatAdmin(admin.ModelAdmin):
     actions = [close_selected_monthly_stats, reopen_selected_monthly_stats]
     readonly_fields = ("closed_at", "closed_by")
 
+
+import secrets
+from django import forms
+from django.contrib import messages
+from django.core.exceptions import ValidationError
+from apps.employees.models import RopCredential
+from apps.groups.models import SalesGroup
+
+
+class RopCredentialAdminForm(forms.ModelForm):
+    raw_password = forms.CharField(
+        label="Yangi parol (Plaintext Password)",
+        widget=forms.PasswordInput(render_value=False),
+        required=False,
+        help_text="Yangi parol kiriting. Saqlanganda avtomatik hashlanadi.",
+    )
+
+    class Meta:
+        model = RopCredential
+        fields = ("employee", "raw_password")
+
+    def clean_employee(self):
+        employee = self.cleaned_data.get("employee")
+        if employee:
+            is_leader = SalesGroup.objects.filter(leader=employee, is_active=True).exists()
+            if not is_leader:
+                raise ValidationError("Faqat guruh rahbarlari (SalesGroup.leader) uchun parol o'rnatish mumkin.")
+        return employee
+
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        raw_password = self.cleaned_data.get("raw_password")
+        if raw_password:
+            instance.set_password(raw_password)
+        if commit:
+            instance.save()
+        return instance
+
+
+@admin.action(description="Parolni tiklash (Reset Password)")
+def reset_rop_password_action(modeladmin, request, queryset):
+    for cred in queryset:
+        new_password = secrets.token_urlsafe(10)
+        cred.set_password(new_password)
+        cred.save(update_fields=["password", "updated_at"])
+        modeladmin.message_user(
+            request,
+            f"Xodim {cred.employee.full_name} ({cred.employee.employee_id}) uchun yangi parol tiklandi: {new_password}",
+            level=messages.SUCCESS,
+        )
+
+
+@admin.register(RopCredential)
+class RopCredentialAdmin(admin.ModelAdmin):
+    form = RopCredentialAdminForm
+    list_display = ("employee", "updated_at")
+    search_fields = ("employee__employee_id", "employee__full_name")
+    actions = [reset_rop_password_action]
+    exclude = ("password",)
+
+

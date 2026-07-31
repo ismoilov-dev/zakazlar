@@ -30,3 +30,18 @@ class TelegramBindingService:
 
         self.accounts.bind(employee=employee, telegram_id=telegram_id, username=username, role=role)
         return employee
+
+
+from datetime import timedelta
+from django.conf import settings
+from django.utils import timezone
+
+
+def is_rop_session_valid(account: TelegramAccount | None) -> bool:
+    """Check if a ROP's authenticated session is active within ROP_SESSION_HOURS."""
+    if not account or account.role != "ROP" or not account.rop_authenticated_at:
+        return False
+    session_hours = getattr(settings, "ROP_SESSION_HOURS", 12)
+    expiry = account.rop_authenticated_at + timedelta(hours=session_hours)
+    return timezone.now() < expiry
+
