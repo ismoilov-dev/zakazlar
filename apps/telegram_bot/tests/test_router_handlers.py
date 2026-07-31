@@ -1,11 +1,14 @@
 from django.test import TestCase
+
 from apps.telegram_bot.routers import router
 
 
 class RouterHandlersTest(TestCase):
-    def test_single_regexp_handler_for_employee_id(self):
-        """Verify that exactly one message handler is registered for bind_and_show_employee_stats."""
+    def test_registration_handlers_registered(self) -> None:
+        """Verify that FSM message handlers process_employee_id and process_name are registered."""
         message_handlers = router.observers["message"].handlers
-        bind_handlers = [h for h in message_handlers if getattr(h.callback, "__name__", "") == "bind_and_show_employee_stats"]
-        self.assertEqual(len(bind_handlers), 1)
+        handler_names = [getattr(h.callback, "__name__", "") for h in message_handlers]
 
+        self.assertIn("process_employee_id", handler_names)
+        self.assertIn("process_name", handler_names)
+        self.assertIn("start", handler_names)
