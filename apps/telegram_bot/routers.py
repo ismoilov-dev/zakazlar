@@ -17,6 +17,7 @@ from django.utils import timezone
 
 logger = logging.getLogger(__name__)
 
+from aiogram.exceptions import TelegramBadRequest
 from apps.accounts.models import TelegramAccount
 from apps.accounts.services.binding import TelegramBindingService
 from apps.accounts.services.name_match import names_match
@@ -33,9 +34,18 @@ from apps.imports.dto import normalize_employee_id
 from apps.imports.models import SyncLog, SyncStatus
 from apps.imports.services.sheets_sync import SheetsSyncService
 from apps.statistics.services.statistics import StatisticsService
-from apps.telegram_bot.services.formatting import employee_dashboard_text, group_dashboard_text
+from apps.telegram_bot.services.formatting import (
+    card_keyboard,
+    card_text,
+    format_uzbek_period,
+    group_dashboard_text,
+    period_selector_keyboard,
+    xizmatlar_menu_keyboard,
+    xizmatlar_menu_text,
+)
 
 router = Router(name="sales_bot")
+
 
 STALE_THRESHOLD_SECONDS = 300
 SYNC_TIMEOUT_SECONDS = 3.0
@@ -360,53 +370,37 @@ async def confirm_yes(callback: CallbackQuery, state: FSMContext) -> None:
             lambda: SalesGroup.objects.filter(leader=employee, is_active=True).exists()
         )()
 
-    if role == "ROP":
-        if is_group_leader:
-            text = (
-                f"Muvaffaqiyatli bog'landi! Xush kelibsiz, <b>{employee.full_name}</b>!\n\n"
-                "Mavjud buyruqlar:\n"
-                "📊 /stats — Shaxsiy ko'rsatkichlar\n"
-                "👥 /group_stats — Guruh ko'rsatkichlari\n"
-                "📅 /tarix — Oylik hisobotlar tarixi"
-            )
-        else:
-            text = (
-                f"Muvaffaqiyatli bog'landi! Xush kelibsiz, <b>{employee.full_name}</b>!\n\n"
-                "⚠️ Sizga biror guruh biriktirilmagan. Guruh rahbari huquqini olish uchun administratorga murojaat qiling.\n\n"
-                "Mavjud buyruqlar:\n"
-                "📊 /stats — Shaxsiy ko'rsatkichlar\n"
-                "📅 /tarix — Oylik hisobotlar tarixi"
-            )
-    else:
-        text = (
+    if role == "ROP" and not is_group_leader:
+        welcome_prefix = (
             f"Muvaffaqiyatli bog'landi! Xush kelibsiz, <b>{employee.full_name}</b>!\n\n"
-            "Mavjud buyruqlar:\n"
-            "📊 /stats — Shaxsiy ko'rsatkichlar\n"
-            "📅 /tarix — Oylik hisobotlar tarixi"
+            "⚠️ Sizga biror guruh biriktirilmagan. Guruh rahbari huquqini olish uchun administratorga murojaat qiling.\n\n"
         )
+    else:
+        welcome_prefix = f"Muvaffaqiyatli bog'landi! Xush kelibsiz, <b>{employee.full_name}</b>!\n\n"
 
     if callback.message:
-        await callback.message.answer(text)
+        await callback.message.answer(welcome_prefix + xizmatlar_menu_text(), reply_markup=xizmatlar_menu_keyboard())
     await callback.answer()
+
 
 
 @router.message(Command("stats"))
 async def employee_stats(message: Message) -> None:
-    """Return bound employee's dashboard instantly (privacy protected: no ID arguments allowed)."""
+    """Return bound employee's XIZMATLAR menu."""
     if message.from_user is None:
         return
 
-    ts_str, is_stale = await ensure_fresh_data_and_get_timestamp()
+    account = await sync_to_async(
+        lambda: TelegramAccount.objects.select_related("employee").filter(telegram_id=message.from_user.id).first()
+    )()
+    if not account or not account.employee:
+        await message.answer("Avval Employee ID orqali profilingizni bog'lang.")
+        return
 
-    try:
-        dashboard = await sync_to_async(StatisticsService().employee_dashboard_for_telegram)(message.from_user.id)
-        text = employee_dashboard_text(dashboard) + format_footer(ts_str, is_stale)
-        await message.answer(text)
-    except DomainError as exc:
-        await message.answer(str(exc))
-    except Exception as exc:
-        logger.exception("Employee stats error: %s", exc)
-        await message.answer("Ma'lumotlarni yuklashda xatolik yuz berdi." + format_footer(ts_str, is_stale))
+    await ensure_fresh_data_and_get_timestamp()
+    text = xizmatlar_menu_text()
+    reply_markup = xizmatlar_menu_keyboard()
+    await message.answer(text, reply_markup=reply_markup)
 
 
 @router.message(Command("group_stats"))
@@ -445,48 +439,135 @@ async def employee_tarix(message: Message) -> None:
         return
 
     if not periods:
-        await message.answer("Sizda hali saqlangan oylik ma'lumotlari yo'q.")
+        builder = InlineKeyboardBuilder()
+        builder.button(text="⬅️ Xizmatlarga qaytish", callback_data="xm_menu")
+        await message.answer("Sizda hali saqlangan oylik ma'lumotlari yo'q.", reply_markup=builder.as_markup())
         return
 
-    builder = InlineKeyboardBuilder()
-    for period_date, period_label in periods:
-        builder.button(
-            text=f"📅 {period_label}",
-            callback_data=f"hist_{period_date.isoformat()}",
-        )
-    builder.adjust(2)
-
-    await message.answer("📅 Kerakli oy hisobotini tanlang:", reply_markup=builder.as_markup())
+    reply_markup = period_selector_keyboard(periods)
+    await message.answer("<b>📅 Kerakli oy hisobotini tanlang:</b>", reply_markup=reply_markup)
 
 
-@router.callback_query(F.data.startswith("hist_"))
-async def show_historical_stat(callback: CallbackQuery) -> None:
-    """Render historical monthly stat for sender (strictly validated against sender's Telegram ID)."""
+@router.message(F.text & ~F.text.startswith("/"))
+async def handle_bare_text_message(message: Message, state: FSMContext) -> None:
+    """Handle bare text or ID messages for bound users by sending XIZMATLAR menu."""
+    current_state = await state.get_state()
+    if current_state is not None:
+        return
+
+    if message.from_user is None:
+        return
+
+    account = await sync_to_async(
+        lambda: TelegramAccount.objects.select_related("employee").filter(telegram_id=message.from_user.id).first()
+    )()
+    if not account or not account.employee:
+        await message.answer("Avval Employee ID orqali profilingizni bog'lang.")
+        return
+
+    await ensure_fresh_data_and_get_timestamp()
+    text = xizmatlar_menu_text()
+    reply_markup = xizmatlar_menu_keyboard()
+    await message.answer(text, reply_markup=reply_markup)
+
+
+@router.callback_query(F.data.startswith("xm_"))
+async def handle_xizmatlar_callback(callback: CallbackQuery) -> None:
+    """Unified handler for XIZMATLAR menu, focused cards, and historical period navigation."""
     if callback.from_user is None or callback.data is None:
         return
 
-    try:
-        iso_str = callback.data.removeprefix("hist_")
-        period_date = date.fromisoformat(iso_str)
-    except Exception:
-        await callback.answer("Noto'g'ri so'rov.", show_alert=True)
+    telegram_id = callback.from_user.id
+    account = await sync_to_async(
+        lambda: TelegramAccount.objects.select_related("employee", "employee__group").filter(telegram_id=telegram_id).first()
+    )()
+    if not account or not account.employee:
+        await callback.answer("Avval Employee ID orqali profilingizni bog'lang.", show_alert=True)
         return
 
+    employee = account.employee
+    parts = callback.data.split(":")
+    action = parts[0]
+
+    period_iso: str | None = None
+    period_date: date | None = None
+    is_closed = False
+    period_label: str | None = None
+
+    if action == "xm_period" and len(parts) > 1:
+        period_iso = parts[1]
+    elif action in ("xm_menu", "xm_card") and len(parts) > 2:
+        period_iso = parts[2]
+
+    summary_data = employee.summary_data or {}
+    fallback_salary = employee.monthly_salary
+
+    if period_iso:
+        try:
+            period_date = date.fromisoformat(period_iso)
+        except Exception:
+            await callback.answer("Noto'g'ri oy formati.", show_alert=True)
+            return
+
+        from apps.employees.models import EmployeeMonthlyStat
+        stat = await sync_to_async(
+            lambda: EmployeeMonthlyStat.objects.filter(employee=employee, period=period_date).first()
+        )()
+        if not stat:
+            await callback.answer("Ushbu oy uchun ma'lumot topilmadi.", show_alert=True)
+            return
+
+        summary_data = stat.summary_data or {}
+        is_closed = stat.is_closed
+        period_label = format_uzbek_period(period_date)
+
     ts_str, is_stale = await ensure_fresh_data_and_get_timestamp()
+    footer = "\n\n🔒 <b>Oy yopilgan</b>" if is_closed else format_footer(ts_str, is_stale)
 
-    try:
-        dashboard, is_closed = await sync_to_async(
-            StatisticsService().employee_historical_dashboard_for_telegram
-        )(callback.from_user.id, period_date)
+    text = ""
+    reply_markup = None
 
-        footer = "\n\n🔒 <b>Oy yopilgan</b>" if is_closed else format_footer(ts_str, is_stale)
-        text = employee_dashboard_text(dashboard) + footer
-        if callback.message:
-            await callback.message.answer(text)
+    if action in ("xm_menu", "xm_period"):
+        text = xizmatlar_menu_text(period_label)
+        reply_markup = xizmatlar_menu_keyboard(period_iso)
 
-        await callback.answer()
-    except DomainError as exc:
-        await callback.answer(str(exc), show_alert=True)
-    except Exception as exc:
-        logger.exception("Tarix callback error: %s", exc)
-        await callback.answer("Ma'lumotni yuklashda xatolik yuz berdi.", show_alert=True)
+    elif action == "xm_card":
+        card_type = parts[1]
+        group_code = employee.group.code if employee.group else "A"
+        body = card_text(
+            card_type=card_type,
+            full_name=employee.full_name,
+            group_code=group_code,
+            summary_data=summary_data,
+            period_label=period_label,
+            fallback_salary=fallback_salary,
+        )
+        text = body + footer
+        reply_markup = card_keyboard(period_iso)
+
+    elif action == "xm_months":
+        try:
+            periods = await sync_to_async(StatisticsService().available_periods_for_telegram)(telegram_id)
+        except Exception:
+            periods = []
+
+        if not periods:
+            text = "Sizda hali saqlangan oylik ma'lumotlari yo'q."
+            builder = InlineKeyboardBuilder()
+            builder.button(text="⬅️ Xizmatlarga qaytish", callback_data="xm_menu")
+            reply_markup = builder.as_markup()
+        else:
+            text = "<b>📅 Kerakli oy hisobotini tanlang:</b>"
+            reply_markup = period_selector_keyboard(periods)
+
+    if text and callback.message:
+        try:
+            await callback.message.edit_text(text, reply_markup=reply_markup)
+        except TelegramBadRequest as exc:
+            if "message is not modified" in str(exc).lower():
+                pass
+            else:
+                logger.warning("Callback edit error: %s", exc)
+
+    await callback.answer()
+
