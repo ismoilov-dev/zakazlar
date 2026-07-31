@@ -105,8 +105,10 @@ class StatisticsService:
     def available_periods_for_telegram(self, telegram_id: int) -> list[tuple[date, str]]:
         employee = self._employee_for_telegram(telegram_id)
         from apps.employees.models import EmployeeMonthlyStat
+        from apps.telegram_bot.services.formatting import format_uzbek_period
         stats = EmployeeMonthlyStat.objects.filter(employee=employee).order_by("-period")[:6]
-        return [(s.period, s.period.strftime("%m.%Y")) for s in stats]
+        return [(s.period, format_uzbek_period(s.period)) for s in stats]
+
 
     def employee_historical_dashboard_for_telegram(self, telegram_id: int, period_date: date) -> tuple[EmployeeDashboard, bool]:
         employee = self._employee_for_telegram(telegram_id)
