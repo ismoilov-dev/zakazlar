@@ -243,8 +243,9 @@ def rop_menu_keyboard() -> InlineKeyboardMarkup:
     builder.button(text="📊 GURUH SAVDOSI", callback_data="rop_card:group_sales")
     builder.button(text="📈 GURUH STATS", callback_data="rop_card:group_stats")
     builder.button(text="💵 ROP OYLIK", callback_data="rop_card:rop_salary")
+    builder.button(text="💰 MOP OYLIK", callback_data="rop_card:mop_salary")
     builder.button(text="👤 SHAXSIY XIZMATLAR", callback_data="rop_card:mop_xizmatlar")
-    builder.adjust(2, 1, 1)
+    builder.adjust(2, 2, 1)
     return builder.as_markup()
 
 

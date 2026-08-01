@@ -6,6 +6,7 @@ import asyncio
 import logging
 from datetime import date
 
+from django.conf import settings
 from aiogram import F, Router
 from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
@@ -797,6 +798,17 @@ async def handle_rop_callback(callback: CallbackQuery, state: FSMContext) -> Non
     elif action == "rop_card:rop_salary":
         salary_info = await sync_to_async(RopService().calculate_rop_salary)(group)
         text = rop_salary_card_text(group.code, salary_info) + footer
+        keyboard = rop_card_keyboard()
+    elif action == "rop_card:mop_salary":
+        text = (
+            card_text(
+                "earned_salary",
+                account.employee.full_name,
+                group.code,
+                account.employee.summary_data,
+            )
+            + footer
+        )
         keyboard = rop_card_keyboard()
     elif action == "rop_card:mop_xizmatlar":
         text = xizmatlar_menu_text()

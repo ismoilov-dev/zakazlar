@@ -236,6 +236,71 @@ class RopPartATestCase(TestCase):
         self.assertIn("A guruh", text)
         self.assertIn("Jami savdo:", text)
 
+    def test_rop_menu_keyboard_has_mop_salary_button(self):
+        from apps.telegram_bot.services.formatting import rop_menu_keyboard
+        markup = rop_menu_keyboard()
+        buttons = [b for row in markup.inline_keyboard for b in row]
+        mop_btn = next((b for b in buttons if b.callback_data == "rop_card:mop_salary"), None)
+        self.assertIsNotNone(mop_btn)
+        self.assertEqual(mop_btn.text, "💰 MOP OYLIK")
+
+    @patch("apps.telegram_bot.routers.ensure_fresh_data_and_get_timestamp", return_value=("31.07.2026 14:00:00", False))
+    async def test_rop_callback_mop_salary_renders_personal_figure(self, _mock_ts):
+        self.leader.summary_data = {"earned_salary": "5,000,000"}
+        await self.leader.asave()
+
+        await TelegramAccount.objects.acreate(
+            employee=self.leader,
+            telegram_id=556,
+            role="ROP",
+            rop_authenticated_at=timezone.now(),
+        )
+
+        from apps.telegram_bot.routers import handle_rop_callback
+
+        callback = MagicMock()
+        callback.from_user.id = 556
+        callback.data = "rop_card:mop_salary"
+        callback.message.edit_text = AsyncMock()
+        callback.answer = AsyncMock()
+
+        state = AsyncMock()
+        await handle_rop_callback(callback, state)
+
+        callback.message.edit_text.assert_called_once()
+        text = callback.message.edit_text.call_args[0][0]
+        self.assertIn(f"👤 <b>{self.leader.full_name.strip()}</b>", text)
+        self.assertIn("💵 Shaxsiy oylik: <b>5,000,000 so'm</b>", text)
+
+    @patch("apps.telegram_bot.routers.ensure_fresh_data_and_get_timestamp", return_value=("31.07.2026 14:00:00", False))
+    async def test_rop_callback_mop_salary_missing_value_renders_warning(self, _mock_ts):
+        self.leader.summary_data = {}
+        await self.leader.asave()
+
+        await TelegramAccount.objects.acreate(
+            employee=self.leader,
+            telegram_id=557,
+            role="ROP",
+            rop_authenticated_at=timezone.now(),
+        )
+
+        from apps.telegram_bot.routers import handle_rop_callback
+
+        callback = MagicMock()
+        callback.from_user.id = 557
+        callback.data = "rop_card:mop_salary"
+        callback.message.edit_text = AsyncMock()
+        callback.answer = AsyncMock()
+
+        state = AsyncMock()
+        await handle_rop_callback(callback, state)
+
+        callback.message.edit_text.assert_called_once()
+        text = callback.message.edit_text.call_args[0][0]
+        self.assertIn(f"👤 <b>{self.leader.full_name.strip()}</b>", text)
+        self.assertIn("⚠️ Bu ko'rsatkich hisoblanmagan", text)
+
+
     @patch("apps.groups.services.rop_service.logger.error")
     async def test_rop_salary_calculation_and_mismatch_warning(self, mock_log_err):
         from apps.groups.services.rop_service import RopService
