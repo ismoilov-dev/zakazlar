@@ -45,3 +45,8 @@ def is_rop_session_valid(account: TelegramAccount | None) -> bool:
     expiry = account.rop_authenticated_at + timedelta(hours=session_hours)
     return timezone.now() < expiry
 
+
+def require_rop_session(account: TelegramAccount | None) -> bool:
+    """Single guard function to check ROP session validity."""
+    return is_rop_session_valid(account)
+

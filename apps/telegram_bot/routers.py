@@ -19,7 +19,11 @@ logger = logging.getLogger(__name__)
 
 from aiogram.exceptions import TelegramBadRequest
 from apps.accounts.models import TelegramAccount
-from apps.accounts.services.binding import TelegramBindingService, is_rop_session_valid
+from apps.accounts.services.binding import (
+    TelegramBindingService,
+    is_rop_session_valid,
+    require_rop_session,
+)
 from apps.accounts.services.name_match import names_match
 from apps.accounts.services.rate_limiter import (
     clear_failed_attempts,
@@ -158,7 +162,7 @@ async def start(message: Message, state: FSMContext) -> None:
                 lambda: SalesGroup.objects.filter(leader=account.employee, is_active=True).exists()
             )()
             if is_leader:
-                if not is_rop_session_valid(account):
+                if not require_rop_session(account):
                     await state.update_data(employee_id=account.employee.employee_id)
                     await state.set_state(RegistrationStates.enter_password)
                     await message.answer("Sessiyangiz eskirgan. Qayta kirish uchun parolingizni kiriting:")
@@ -577,7 +581,7 @@ async def employee_stats(message: Message, state: FSMContext | None = None) -> N
             lambda: SalesGroup.objects.filter(leader=account.employee, is_active=True).exists()
         )()
         if is_leader:
-            if not is_rop_session_valid(account):
+            if not require_rop_session(account):
                 if state is not None:
                     await state.update_data(employee_id=account.employee.employee_id)
                     await state.set_state(RegistrationStates.enter_password)
@@ -620,12 +624,12 @@ async def handle_rop_callback(callback: CallbackQuery, state: FSMContext) -> Non
         await callback.answer("Siz faol guruh rahbari emassiz.", show_alert=True)
         return
 
-    if not is_rop_session_valid(account):
+    if not require_rop_session(account):
         await callback.answer("Sessiyangiz eskirgan. Parolingizni qayta kiriting.", show_alert=True)
         if callback.message:
             await state.update_data(employee_id=account.employee.employee_id)
             await state.set_state(RegistrationStates.enter_password)
-            await callback.message.answer("Parolingizni kiriting:")
+            await callback.message.answer("Sessiyangiz eskirgan. Qayta kirish uchun parolingizni kiriting:")
         return
 
     groups = await sync_to_async(
@@ -826,7 +830,7 @@ async def handle_xizmatlar_callback(callback: CallbackQuery) -> None:
     text = ""
     reply_markup = None
 
-    if action == "xm_menu" and not period_iso and account.role == "ROP" and is_rop_session_valid(account):
+    if action == "xm_menu" and not period_iso and account.role == "ROP" and require_rop_session(account):
         groups = await sync_to_async(
             lambda: list(SalesGroup.objects.filter(leader=employee, is_active=True))
         )()
