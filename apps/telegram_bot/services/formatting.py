@@ -113,7 +113,7 @@ def card_text(
             lines.append(MISSING_VALUE_TEXT)
 
     elif card_type == "uspeshka":
-        ss = _parse_decimal_val(data.get("successful_sales"))
+        ss = _parse_decimal_val(data.get("successful_sales") or data.get("perv_sales"))
         so_raw = data.get("successful_orders")
         conv_raw = data.get("conversion_rate")
         rconv_raw = data.get("real_conversion_rate")

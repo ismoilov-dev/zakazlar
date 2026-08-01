@@ -488,7 +488,7 @@ class SheetsSource(BaseSource):
 
         successful_sales_idx = self._find_single_column_index(
             headings,
-            candidates=["Uspeshka summasi", "Uspeshka", "Успешка summasi", "Успешка"],
+            candidates=["Uspeshka summasi", "Uspeshka", "Успешка summasi", "Успешка", "Первичный Заказ", "Первичка"],
             name="successful_sales",
             required=False,
         )
