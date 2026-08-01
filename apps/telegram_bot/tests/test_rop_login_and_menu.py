@@ -178,6 +178,25 @@ class RopPartATestCase(TestCase):
         self.assertEqual(stats["total_upakovka"], 35)
         self.assertEqual(stats["active_count"], 2)
 
+    async def test_parse_decimal_unparseable_raises_and_renders_fallback(self):
+        from apps.groups.services.rop_service import RopService
+        from apps.telegram_bot.services.formatting import rop_group_sales_card_text
+
+        with self.assertRaises(ValueError):
+            RopService._parse_decimal("invalid_text")
+
+        await Employee.objects.acreate(
+            employee_id="0012",
+            full_name="Seller Bad Data",
+            group=self.group,
+            summary_data={"total_sales": "invalid_number"},
+        )
+        totals = await sync_to_async(RopService().get_group_sales_totals)(self.group)
+        self.assertIsNone(totals["total_sales"])
+
+        text = rop_group_sales_card_text("A", totals)
+        self.assertIn("⚠️ Bu ko'rsatkich hisoblanmagan. Rahbaringizga murojaat qiling.", text)
+
     @patch("apps.telegram_bot.routers.ensure_fresh_data_and_get_timestamp", return_value=("31.07.2026 14:00:00", False))
     async def test_rop_callback_card_navigation(self, _mock_ts):
         account = await TelegramAccount.objects.acreate(

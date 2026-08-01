@@ -249,35 +249,49 @@ def rop_card_keyboard() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def rop_group_sales_card_text(group_code: str, totals: dict[str, Decimal]) -> str:
+def rop_group_sales_card_text(group_code: str, totals: dict[str, Decimal | None]) -> str:
     """Render GURUH SAVDOSI card text."""
-    return (
-        f"🏢 Bo'lim: <b>{group_code}</b>\n\n"
-        f"📊 Jami savdo: <b>{totals['total_sales']:,.0f} so'm</b>\n"
-        f"✅ Uspeshka: <b>{totals['successful_sales']:,.0f} so'm</b>\n"
-        f"❌ Otkaz: <b>{totals['otkaz_sales']:,.0f} so'm</b>\n"
-        f"⏳ Jarayonda: <b>{totals['v_proc_sales']:,.0f} so'm</b>"
-    )
+    lines = [f"🏢 Bo'lim: <b>{group_code}</b>\n"]
+    for label, key in [
+        ("📊 Jami savdo", "total_sales"),
+        ("✅ Uspeshka", "successful_sales"),
+        ("❌ Otkaz", "otkaz_sales"),
+        ("⏳ Jarayonda", "v_proc_sales"),
+    ]:
+        val = totals.get(key)
+        if val is not None:
+            lines.append(f"{label}: <b>{val:,.0f} so'm</b>")
+        else:
+            lines.append(f"{label}: {MISSING_VALUE_TEXT}")
+    return "\n".join(lines)
 
 
-def rop_group_stats_card_text(group_code: str, stats: dict[str, int]) -> str:
+def rop_group_stats_card_text(group_code: str, stats: dict[str, int | None]) -> str:
     """Render GURUH STATS card text."""
-    return (
-        f"🏢 Bo'lim: <b>{group_code}</b>\n\n"
-        f"👥 Xodimlar soni: <b>{stats['total_count']} ta</b>\n"
-        f"📦 Jami upakovka: <b>{stats['total_upakovka']} ta</b>\n"
-        f"🟢 Faol xodimlar: <b>{stats['active_count']} ta</b>"
-    )
+    lines = [
+        f"🏢 Bo'lim: <b>{group_code}</b>\n",
+        f"👥 Xodimlar soni: <b>{stats['total_count']} ta</b>",
+    ]
+    if stats.get("total_upakovka") is not None:
+        lines.append(f"📦 Jami upakovka: <b>{stats['total_upakovka']} ta</b>")
+    else:
+        lines.append(f"📦 Jami upakovka: {MISSING_VALUE_TEXT}")
+    lines.append(f"🟢 Faol xodimlar: <b>{stats['active_count']} ta</b>")
+    return "\n".join(lines)
 
 
 def rop_salary_card_text(group_code: str, salary_info: dict[str, Any]) -> str:
     """Render ROP OYLIK card text with inputs, calculated salary, and mismatch warning if present."""
-    lines = [
-        f"🏢 Bo'lim: <b>{group_code}</b>\n",
-        f"📊 Guruh jami savdosi: <b>{salary_info['group_total_sales']:,.0f} so'm</b>",
-        f"📐 Foiz: <b>{salary_info['rate_pct_str']}</b>",
-        f"💵 ROP oyligi: <b>{salary_info['computed_salary']:,.0f} so'm</b>",
-    ]
+    lines = [f"🏢 Bo'lim: <b>{group_code}</b>\n"]
+    if salary_info.get("group_total_sales") is not None:
+        lines.append(f"📊 Guruh jami savdosi: <b>{salary_info['group_total_sales']:,.0f} so'm</b>")
+    else:
+        lines.append(f"📊 Guruh jami savdosi: {MISSING_VALUE_TEXT}")
+    lines.append(f"📐 Foiz: <b>{salary_info['rate_pct_str']}</b>")
+    if salary_info.get("computed_salary") is not None:
+        lines.append(f"💵 ROP oyligi: <b>{salary_info['computed_salary']:,.0f} so'm</b>")
+    else:
+        lines.append(f"💵 ROP oyligi: {MISSING_VALUE_TEXT}")
     if salary_info.get("mismatch"):
         lines.append(
             "\n⚠️ Diqqat: bu raqam Google Sheets'dagi qiymatdan farq qilmoqda.\nAdministratorga murojaat qiling."
