@@ -55,9 +55,10 @@ employee_id | employee_name | group_code | order_id | status | sale_amount | pro
 ## Bot buyruqlari
 
 - `/start` — Rol tanlash va Employee ID bog'lash jarayonini boshlaydi.
-- `/stats` — Faqat o'z shaxsiy ko'rsatkichlari.
-- `/group_stats` — Faqat rahbar bo'lgan guruh statistikasi (ROP).
-- `/tarix` — Oylik hisobotlar tarixi.
+- `/stats` — Xizmatlar menyusi.
+- `/shaxsiy` — Shaxsiy xizmatlar menyusi.
+- `/rop` — ROP paneli (guruh rahbari uchun).
+- `/chiqish` — ROP sessiyasidan chiqish.
 
 ## REST API
 

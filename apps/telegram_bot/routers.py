@@ -566,6 +566,66 @@ async def rop_logout(message: Message, state: FSMContext) -> None:
 
     await message.answer("Tizimdan chiqdingiz. Qayta kirish uchun parolingizni kiriting.")
 
+@router.message(Command("shaxsiy"))
+async def shaxsiy_command(message: Message, state: FSMContext | None = None) -> None:
+    """Open personal XIZMATLAR menu."""
+    if message.from_user is None:
+        return
+
+    account = await sync_to_async(
+        lambda: TelegramAccount.objects.select_related("employee").filter(telegram_id=message.from_user.id).first()
+    )()
+    if not account or not account.employee:
+        await message.answer("Avval Employee ID orqali profilingizni bog'lang.")
+        return
+
+    await ensure_fresh_data_and_get_timestamp()
+    is_leader_with_cred = await sync_to_async(
+        lambda: SalesGroup.objects.filter(leader=account.employee, is_active=True).exists()
+        and hasattr(account.employee, "rop_credential")
+        and account.employee.rop_credential is not None
+    )()
+    text = xizmatlar_menu_text()
+    reply_markup = xizmatlar_menu_keyboard(show_rop_switch=is_leader_with_cred)
+    await message.answer(text, reply_markup=reply_markup)
+
+
+@router.message(Command("rop"))
+async def rop_command(message: Message, state: FSMContext) -> None:
+    """Open ROP panel menu (or prompt for password if expired)."""
+    if message.from_user is None:
+        return
+
+    account = await sync_to_async(
+        lambda: TelegramAccount.objects.select_related("employee").filter(telegram_id=message.from_user.id).first()
+    )()
+    if not account or not account.employee:
+        await message.answer("Avval Employee ID orqali profilingizni bog'lang.")
+        return
+
+    is_leader_with_cred = await sync_to_async(
+        lambda: SalesGroup.objects.filter(leader=account.employee, is_active=True).exists()
+        and hasattr(account.employee, "rop_credential")
+        and account.employee.rop_credential is not None
+    )()
+    if not is_leader_with_cred:
+        await message.answer("Siz guruh rahbari emassiz.")
+        return
+
+    if require_rop_session(account):
+        groups = await sync_to_async(
+            lambda: list(SalesGroup.objects.filter(leader=account.employee, is_active=True))
+        )()
+        group = groups[0]
+        text = rop_menu_text(account.employee.full_name, group.code, account.employee.employee_id)
+        reply_markup = rop_menu_keyboard()
+        await message.answer(text, reply_markup=reply_markup)
+        return
+
+    await state.update_data(employee_id=account.employee.employee_id)
+    await state.set_state(RegistrationStates.enter_password)
+    await message.answer("Parolingizni kiriting:")
+
 
 @router.message(Command("stats"))
 async def employee_stats(message: Message, state: FSMContext | None = None) -> None:
