@@ -114,8 +114,22 @@ class RopPartATestCase(TestCase):
 
         await process_employee_id(message, state)
 
-        message.answer.assert_called_once_with("Siz uchun hali ROP paroli o'rnatilmagan. Administrator bilan bog'laning.")
-        state.clear.assert_called_once()
+        message.answer.assert_called_once_with("Iltimos, ism va familiyangizni kiriting:")
+        state.set_state.assert_called_once_with(RegistrationStates.enter_name)
+
+        # Password step denies access for leader without password credential
+        state_pass = AsyncMock()
+        state_pass.get_data = AsyncMock(return_value={"employee_id": "0005"})
+
+        msg_pass = MagicMock()
+        msg_pass.from_user.id = 777
+        msg_pass.text = "SomePass"
+        msg_pass.delete = AsyncMock()
+        msg_pass.answer = AsyncMock()
+
+        await process_password(msg_pass, state_pass)
+        msg_pass.answer.assert_called_once_with("Siz uchun hali ROP paroli o'rnatilmagan. Administrator bilan bog'laning.")
+        state_pass.clear.assert_called_once()
 
 
 

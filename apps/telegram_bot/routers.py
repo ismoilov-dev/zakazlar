@@ -271,25 +271,9 @@ async def process_employee_id(message: Message, state: FSMContext) -> None:
         await state.clear()
         return
 
-    data = await state.get_data()
-    role = data.get("role", "MOP")
     await state.update_data(employee_id=user_id, sheet_name=employee.full_name)
-
-
-    if role == "ROP":
-        has_credential = await sync_to_async(
-            lambda: hasattr(employee, "rop_credential") and employee.rop_credential is not None
-        )()
-        if has_credential:
-            await state.set_state(RegistrationStates.enter_password)
-            await message.answer("Parolingizni kiriting:")
-        else:
-            await message.answer("Siz uchun hali ROP paroli o'rnatilmagan. Administrator bilan bog'laning.")
-            await state.clear()
-            return
-    else:
-        await state.set_state(RegistrationStates.enter_name)
-        await message.answer("Iltimos, ism va familiyangizni kiriting:")
+    await state.set_state(RegistrationStates.enter_name)
+    await message.answer("Iltimos, ism va familiyangizni kiriting:")
 
 
 @router.message(RegistrationStates.enter_password)
@@ -326,10 +310,10 @@ async def process_password(message: Message, state: FSMContext) -> None:
 
     raw_password = message.text.strip()
 
-    async def fail_login(reason: str):
+    async def fail_login(reason: str, custom_msg: str | None = None):
         await sync_to_async(record_failed_attempt)(telegram_id, employee_id, "[FAILED_ROP_PASSWORD]")
         logger.warning("ROP login failed for telegram_id %s, employee_id %s: %s", telegram_id, employee_id, reason)
-        await message.answer("ID yoki parol noto'g'ri.")
+        await message.answer(custom_msg or "ID yoki parol noto'g'ri.")
 
     try:
         employee = await sync_to_async(EmployeeRepository().get_active_by_employee_id)(employee_id)
@@ -349,7 +333,8 @@ async def process_password(message: Message, state: FSMContext) -> None:
     )()
 
     if not has_credential:
-        await fail_login("Leader has no password credential set")
+        await fail_login("Leader has no password credential set", custom_msg="Siz uchun hali ROP paroli o'rnatilmagan. Administrator bilan bog'laning.")
+        await state.clear()
         return
 
     password_matches = await sync_to_async(
@@ -359,12 +344,13 @@ async def process_password(message: Message, state: FSMContext) -> None:
         await fail_login("Password mismatch")
         return
 
-
-
     try:
         await message.delete()
     except Exception:
         pass
+
+    session_hours = getattr(settings, "ROP_SESSION_HOURS", 12)
+    success_text = f"🔑 ROP sessiyangiz tasdiqlandi! (Sessiya {session_hours} soat davomida faol bo'ladi)\n\n"
 
     existing_binding = await sync_to_async(
         lambda: TelegramAccount.objects.filter(telegram_id=telegram_id).first()
@@ -378,14 +364,43 @@ async def process_password(message: Message, state: FSMContext) -> None:
             lambda: list(SalesGroup.objects.filter(leader=employee, is_active=True))
         )()
         group_code = groups[0].code if groups else (employee.group.code if employee.group else "-")
-        text = "🔑 ROP sessiyangiz tasdiqlandi!\n\n" + rop_menu_text(employee.full_name, group_code, employee.employee_id)
+        text = success_text + rop_menu_text(employee.full_name, group_code, employee.employee_id)
         reply_markup = rop_menu_keyboard()
         await message.answer(text, reply_markup=reply_markup)
         return
 
-    await state.update_data(sheet_name=employee.full_name)
-    await state.set_state(RegistrationStates.enter_name)
-    await message.answer("Iltimos, ism va familiyangizni kiriting:")
+    try:
+        employee = await sync_to_async(TelegramBindingService().bind)(
+            employee_id=employee_id,
+            telegram_id=telegram_id,
+            username=message.from_user.username or "",
+            role="ROP",
+        )
+    except DomainError as exc:
+        await message.answer(str(exc))
+        await state.clear()
+        return
+    except Exception as exc:
+        logger.exception("ROP binding error: %s", exc)
+        await message.answer("Bog'lanishda xatolik yuz berdi. Administratsiyaga murojaat qiling.")
+        await state.clear()
+        return
+
+    await sync_to_async(
+        lambda: TelegramAccount.objects.filter(telegram_id=telegram_id).update(rop_authenticated_at=timezone.now())
+    )()
+
+    await sync_to_async(clear_failed_attempts)(telegram_id)
+    await state.clear()
+
+    groups = await sync_to_async(
+        lambda: list(SalesGroup.objects.filter(leader=employee, is_active=True))
+    )()
+    group_code = groups[0].code if groups else (employee.group.code if employee.group else "-")
+    welcome_prefix = f"Muvaffaqiyatli bog'landi! Xush kelibsiz, <b>{employee.full_name}</b>!\n\n"
+    text = welcome_prefix + success_text + rop_menu_text(employee.full_name, group_code, employee.employee_id)
+    reply_markup = rop_menu_keyboard()
+    await message.answer(text, reply_markup=reply_markup)
 
 
 @router.message(RegistrationStates.enter_name)
@@ -481,6 +496,13 @@ async def confirm_yes(callback: CallbackQuery, state: FSMContext) -> None:
         await state.clear()
         return
 
+    if role == "ROP":
+        await state.set_state(RegistrationStates.enter_password)
+        if callback.message:
+            await callback.message.answer("Parolingizni kiriting:")
+        await callback.answer()
+        return
+
     try:
         employee = await sync_to_async(TelegramBindingService().bind)(
             employee_id=employee_id,
@@ -502,25 +524,12 @@ async def confirm_yes(callback: CallbackQuery, state: FSMContext) -> None:
         await callback.answer()
         return
 
-    if role == "ROP":
-        await sync_to_async(
-            lambda: TelegramAccount.objects.filter(telegram_id=telegram_id).update(rop_authenticated_at=timezone.now())
-        )()
-
     await sync_to_async(clear_failed_attempts)(telegram_id)
     await state.clear()
 
-    if role == "ROP":
-        welcome_prefix = (
-            f"Muvaffaqiyatli bog'landi! Xush kelibsiz, <b>{employee.full_name}</b>!\n\n"
-            "👔 ROP paneli tugmasi menyuga qo'shildi. ROP bo'limiga kirish uchun parolingizni kiriting.\n\n"
-        )
-        text = welcome_prefix + xizmatlar_menu_text()
-        keyboard = xizmatlar_menu_keyboard(is_rop=True)
-    else:
-        welcome_prefix = f"Muvaffaqiyatli bog'landi! Xush kelibsiz, <b>{employee.full_name}</b>!\n\n"
-        text = welcome_prefix + xizmatlar_menu_text()
-        keyboard = xizmatlar_menu_keyboard(is_rop=False)
+    welcome_prefix = f"Muvaffaqiyatli bog'landi! Xush kelibsiz, <b>{employee.full_name}</b>!\n\n"
+    text = welcome_prefix + xizmatlar_menu_text()
+    keyboard = xizmatlar_menu_keyboard(is_rop=False)
 
     if callback.message:
         await callback.message.answer(text, reply_markup=keyboard)
@@ -602,15 +611,6 @@ async def handle_rop_callback(callback: CallbackQuery, state: FSMContext) -> Non
     if not account or not account.employee or account.role != "ROP":
         await callback.answer("Avval ROP profili orqali tizimga kiring.", show_alert=True)
         return
-
-    if callback.data == "rop_prompt_password":
-        await state.update_data(employee_id=account.employee.employee_id)
-        await state.set_state(RegistrationStates.enter_password)
-        if callback.message:
-            await callback.message.answer("🔑 ROP paneliga kirish uchun parolingizni kiriting:")
-        await callback.answer()
-        return
-
 
     is_leader = await sync_to_async(
         lambda: SalesGroup.objects.filter(leader=account.employee, is_active=True).exists()

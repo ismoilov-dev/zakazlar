@@ -193,12 +193,9 @@ class RegistrationFlowTestCase(TestCase):
 
         await confirm_yes(callback, state)
 
-        acct = await sync_to_async(TelegramAccount.objects.get)(telegram_id=10010)
-        self.assertEqual(acct.employee_id, self.employee1.id)
-        self.assertEqual(acct.role, "ROP")
-        args, _ = callback.message.answer.call_args
-        self.assertIn("XIZMATLAR", args[0])
-
+        self.assertEqual(await state.get_state(), RegistrationStates.enter_password.state)
+        exists = await sync_to_async(TelegramAccount.objects.filter(telegram_id=10010).exists)()
+        self.assertFalse(exists)
 
     async def test_confirm_yes_rop_who_leads_none(self) -> None:
         callback = AsyncMock()
@@ -210,11 +207,9 @@ class RegistrationFlowTestCase(TestCase):
 
         await confirm_yes(callback, state)
 
-        acct = await sync_to_async(TelegramAccount.objects.get)(telegram_id=10011)
-        self.assertEqual(acct.employee_id, self.employee2.id)
-        self.assertEqual(acct.role, "ROP")
-        args, _ = callback.message.answer.call_args
-        self.assertIn("ROP paneli tugmasi menyuga qo'shildi", args[0])
+        self.assertEqual(await state.get_state(), RegistrationStates.enter_password.state)
+        exists = await sync_to_async(TelegramAccount.objects.filter(telegram_id=10011).exists)()
+        self.assertFalse(exists)
 
 
     async def test_rebind_after_admin_deletion_succeeds(self) -> None:

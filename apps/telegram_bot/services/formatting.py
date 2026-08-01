@@ -46,9 +46,6 @@ def xizmatlar_menu_keyboard(period_iso: str | None = None, is_rop: bool = False)
     builder = InlineKeyboardBuilder()
     suffix = f":{period_iso}" if period_iso else ""
 
-    if is_rop:
-        builder.button(text="👔 R.O.P PANELI (🔑 Parol kiritish)", callback_data="rop_prompt_password")
-
     builder.button(text="💵 JAMI OYLIK", callback_data=f"xm_card:earned_salary{suffix}")
     builder.button(text="📊 JAMI SAVDO", callback_data=f"xm_card:total_sales{suffix}")
     builder.button(text="✅ Uspeshka", callback_data=f"xm_card:uspeshka{suffix}")
@@ -58,15 +55,9 @@ def xizmatlar_menu_keyboard(period_iso: str | None = None, is_rop: bool = False)
 
     if period_iso:
         builder.button(text="⬅️ Oylarni tanlash", callback_data="xm_months")
-        if is_rop:
-            builder.adjust(1, 1, 1, 3, 1, 1)
-        else:
-            builder.adjust(1, 1, 3, 1, 1)
+        builder.adjust(1, 1, 3, 1, 1)
     else:
-        if is_rop:
-            builder.adjust(1, 1, 1, 3, 1)
-        else:
-            builder.adjust(1, 1, 3, 1)
+        builder.adjust(1, 1, 3, 1)
 
     return builder.as_markup()
 
