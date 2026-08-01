@@ -62,13 +62,41 @@ STATUS_MAP = {
 }
 
 
+def resolve_spreadsheet_id(passed_sheet_id: str | None = None) -> tuple[str, str]:
+    """Resolve spreadsheet ID and return (sheet_id, source_description).
+
+    Resolution order:
+    1. Explicitly passed sheet_id (if non-empty)
+    2. Active SpreadsheetPeriod in database (is_active=True)
+    3. Fallback to GOOGLE_SHEET_ID in environment
+    """
+    if passed_sheet_id:
+        clean_id = passed_sheet_id.strip().strip("/")
+        if clean_id:
+            return clean_id, "explicit argument"
+
+    try:
+        from apps.imports.models import SpreadsheetPeriod
+        active_period = SpreadsheetPeriod.objects.filter(is_active=True).first()
+        if active_period and active_period.spreadsheet_id:
+            period_str = active_period.period.strftime("%Y-%m")
+            return active_period.spreadsheet_id.strip().strip("/"), f"DB SpreadsheetPeriod ({period_str})"
+    except Exception as exc:
+        logger.warning("SpreadsheetPeriod o'qishda xatolik: %s", exc)
+
+    env_id = (os.environ.get("GOOGLE_SHEET_ID") or "").strip().strip("/")
+    if env_id:
+        return env_id, "env fallback"
+
+    raise ValidationError("GOOGLE_SHEET_ID muhit o'zgaruvchisi yoki faol SpreadsheetPeriod topilmadi.")
+
+
 class SheetsSource(BaseSource):
     """Fetch live data from Google Sheets."""
 
     def __init__(self, sheet_id: str | None = None, credentials_path: str | None = None) -> None:
-        self.sheet_id = (sheet_id or os.environ.get("GOOGLE_SHEET_ID") or "").strip().strip("/")
-        if not self.sheet_id:
-            raise ValidationError("GOOGLE_SHEET_ID muhit o'zgaruvchisi o'rnatilmagan.")
+        self.sheet_id, source_desc = resolve_spreadsheet_id(sheet_id)
+        logger.info("SheetsSource resolved spreadsheet ID: %s from %s", self.sheet_id, source_desc)
 
         self.file_credentials = credentials_path or os.environ.get(
             "GOOGLE_SERVICE_ACCOUNT_FILE", "credentials/service-account.json"

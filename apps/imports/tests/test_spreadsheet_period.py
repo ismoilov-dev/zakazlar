@@ -23,13 +23,14 @@ class SpreadsheetPeriodTest(TestCase):
             extract_spreadsheet_id("not_a_valid_url_or_id")
 
     def test_single_active_constraint(self):
+        SpreadsheetPeriod.objects.all().delete()
         sp1 = SpreadsheetPeriod.objects.create(
-            period=date(2026, 7, 1),
+            period=date(2025, 1, 1),
             spreadsheet_id="1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upm1",
             is_active=True,
         )
         sp2 = SpreadsheetPeriod.objects.create(
-            period=date(2026, 8, 1),
+            period=date(2025, 2, 1),
             spreadsheet_id="1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upm2",
             is_active=True,
         )
@@ -38,3 +39,15 @@ class SpreadsheetPeriodTest(TestCase):
 
         self.assertFalse(sp1.is_active)
         self.assertTrue(sp2.is_active)
+
+    def test_resolve_spreadsheet_id_from_active_period(self):
+        SpreadsheetPeriod.objects.all().delete()
+        sp = SpreadsheetPeriod.objects.create(
+            period=date(2025, 3, 1),
+            spreadsheet_id="1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upm3",
+            is_active=True,
+        )
+        from apps.imports.sources.sheets import resolve_spreadsheet_id
+        sid, source_desc = resolve_spreadsheet_id()
+        self.assertEqual(sid, sp.spreadsheet_id)
+        self.assertIn("DB SpreadsheetPeriod", source_desc)
