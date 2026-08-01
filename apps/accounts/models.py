@@ -6,7 +6,13 @@ from apps.common.models import TimeStampedModel
 
 
 class TelegramAccount(TimeStampedModel):
-    """One Telegram identity bound to one active employee."""
+    """One Telegram identity bound to one active employee.
+
+    Note on `role`: The `role` column represents a display preference ("which menu
+    to show by default"). It is NEVER used as an authorization gate. Actual ROP
+    capability is derived dynamically from facts in the database (active leader in
+    SalesGroup, presence of RopCredential, and valid ROP session).
+    """
 
     employee = models.ForeignKey(
         "employees.Employee",

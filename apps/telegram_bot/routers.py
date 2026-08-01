@@ -613,12 +613,14 @@ async def handle_rop_callback(callback: CallbackQuery, state: FSMContext) -> Non
     account = await sync_to_async(
         lambda: TelegramAccount.objects.select_related("employee").filter(telegram_id=telegram_id).first()
     )()
-    if not account or not account.employee or account.role != "ROP":
-        await callback.answer("Avval ROP profili orqali tizimga kiring.", show_alert=True)
+    if not account or not account.employee:
+        await callback.answer("Avval profilingizni bog'lang.", show_alert=True)
         return
 
     is_leader = await sync_to_async(
         lambda: SalesGroup.objects.filter(leader=account.employee, is_active=True).exists()
+        and hasattr(account.employee, "rop_credential")
+        and account.employee.rop_credential is not None
     )()
     if not is_leader:
         await callback.answer("Siz faol guruh rahbari emassiz.", show_alert=True)
