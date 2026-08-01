@@ -848,16 +848,25 @@ async def handle_xizmatlar_callback(callback: CallbackQuery) -> None:
     employee = account.employee
     parts = callback.data.split(":")
     action = parts[0]
+    src: str | None = None
+    for part in parts:
+        if part.startswith("src="):
+            src = part.split("=")[1]
+            break
 
     period_iso: str | None = None
     period_date: date | None = None
     is_closed = False
     period_label: str | None = None
 
-    if action == "xm_period" and len(parts) > 1:
-        period_iso = parts[1]
-    elif action in ("xm_menu", "xm_card") and len(parts) > 2:
-        period_iso = parts[2]
+    for part in parts[1:]:
+        if not part.startswith("src="):
+            try:
+                date.fromisoformat(part)
+                period_iso = part
+                break
+            except Exception:
+                pass
 
     summary_data = employee.summary_data or {}
     fallback_salary = employee.monthly_salary
@@ -887,32 +896,41 @@ async def handle_xizmatlar_callback(callback: CallbackQuery) -> None:
     text = ""
     reply_markup = None
 
-    if action == "xm_menu" and not period_iso and account.role == "ROP" and require_rop_session(account):
-        groups = await sync_to_async(
-            lambda: list(SalesGroup.objects.filter(leader=employee, is_active=True))
-        )()
-        group_code = groups[0].code if groups else (employee.group.code if employee.group else "-")
-        text = rop_menu_text(employee.full_name, group_code, employee.employee_id)
-        reply_markup = rop_menu_keyboard()
-        if callback.message:
-            try:
-                await callback.message.edit_text(text, reply_markup=reply_markup)
-            except TelegramBadRequest as exc:
-                if "message is not modified" not in str(exc).lower():
-                    logger.warning("Failed to edit ROP menu: %s", exc)
-        await callback.answer()
-        return
+    is_leader_with_cred = await sync_to_async(
+        lambda: SalesGroup.objects.filter(leader=employee, is_active=True).exists()
+        and hasattr(employee, "rop_credential")
+        and employee.rop_credential is not None
+    )()
+
+    if action == "xm_menu" and not period_iso and src == "rop":
+        if is_leader_with_cred:
+            if require_rop_session(account):
+                groups = await sync_to_async(
+                    lambda: list(SalesGroup.objects.filter(leader=employee, is_active=True))
+                )()
+                group_code = groups[0].code if groups else (employee.group.code if employee.group else "-")
+                text = rop_menu_text(employee.full_name, group_code, employee.employee_id)
+                reply_markup = rop_menu_keyboard()
+                if callback.message:
+                    try:
+                        await callback.message.edit_text(text, reply_markup=reply_markup)
+                    except TelegramBadRequest as exc:
+                        if "message is not modified" not in str(exc).lower():
+                            logger.warning("Failed to edit ROP menu: %s", exc)
+                await callback.answer()
+                return
+
+            if state is not None:
+                await state.update_data(employee_id=employee.employee_id)
+                await state.set_state(RegistrationStates.enter_password)
+            if callback.message:
+                await callback.message.answer("Sessiyangiz eskirgan. Qayta kirish uchun parolingizni kiriting:")
+            await callback.answer()
+            return
 
     if action in ("xm_menu", "xm_period"):
-        is_leader_with_cred = await sync_to_async(
-            lambda: SalesGroup.objects.filter(leader=employee, is_active=True).exists()
-            and hasattr(employee, "rop_credential")
-            and employee.rop_credential is not None
-        )()
         text = xizmatlar_menu_text(period_label)
-        reply_markup = xizmatlar_menu_keyboard(period_iso=period_iso, show_rop_switch=is_leader_with_cred)
-
-
+        reply_markup = xizmatlar_menu_keyboard(period_iso=period_iso, show_rop_switch=is_leader_with_cred, src=src)
 
     elif action == "xm_card":
         card_type = parts[1]
@@ -926,7 +944,7 @@ async def handle_xizmatlar_callback(callback: CallbackQuery) -> None:
             fallback_salary=fallback_salary,
         )
         text = body + footer
-        reply_markup = card_keyboard(period_iso)
+        reply_markup = card_keyboard(period_iso, src=src)
 
     elif action == "xm_months":
         try:
@@ -937,11 +955,12 @@ async def handle_xizmatlar_callback(callback: CallbackQuery) -> None:
         if not periods:
             text = "Sizda hali saqlangan oylik ma'lumotlari yo'q."
             builder = InlineKeyboardBuilder()
-            builder.button(text="⬅️ Xizmatlarga qaytish", callback_data="xm_menu")
+            src_suffix = f":src={src}" if src else ""
+            builder.button(text="⬅️ Xizmatlarga qaytish", callback_data=f"xm_menu{src_suffix}")
             reply_markup = builder.as_markup()
         else:
             text = "<b>📅 Kerakli oy hisobotini tanlang:</b>"
-            reply_markup = period_selector_keyboard(periods)
+            reply_markup = period_selector_keyboard(periods, src=src)
 
     if text and callback.message:
         try:

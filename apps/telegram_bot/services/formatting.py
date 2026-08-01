@@ -181,14 +181,15 @@ def card_text(
     return "\n".join(lines)
 
 
-def card_keyboard(period_iso: str | None = None) -> InlineKeyboardMarkup:
+def card_keyboard(period_iso: str | None = None, src: str | None = None) -> InlineKeyboardMarkup:
     """Render inline keyboard for focused card navigation."""
     builder = InlineKeyboardBuilder()
-    back_target = f"xm_menu:{period_iso}" if period_iso else "xm_menu"
+    src_suffix = f":src={src}" if src else ""
+    back_target = f"xm_menu:{period_iso}{src_suffix}" if period_iso else f"xm_menu{src_suffix}"
     builder.button(text="⬅️ Xizmatlarga qaytish", callback_data=back_target)
 
     if period_iso:
-        builder.button(text="⬅️ Oylarni tanlash", callback_data="xm_months")
+        builder.button(text="⬅️ Oylarni tanlash", callback_data=f"xm_months{src_suffix}")
         builder.adjust(1, 1)
     else:
         builder.adjust(1)
@@ -196,15 +197,16 @@ def card_keyboard(period_iso: str | None = None) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def period_selector_keyboard(periods: list[tuple[date, str]]) -> InlineKeyboardMarkup:
+def period_selector_keyboard(periods: list[tuple[date, str]], src: str | None = None) -> InlineKeyboardMarkup:
     """Render inline keyboard for selecting historical period."""
     builder = InlineKeyboardBuilder()
+    src_suffix = f":src={src}" if src else ""
     for period_date, period_label in periods:
         builder.button(
             text=f"📅 {period_label}",
-            callback_data=f"xm_period:{period_date.isoformat()}",
+            callback_data=f"xm_period:{period_date.isoformat()}{src_suffix}",
         )
-    builder.button(text="⬅️ Xizmatlarga qaytish", callback_data="xm_menu")
+    builder.button(text="⬅️ Xizmatlarga qaytish", callback_data=f"xm_menu{src_suffix}")
     builder.adjust(2)
     return builder.as_markup()
 
