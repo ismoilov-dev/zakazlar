@@ -312,5 +312,54 @@ Kelajakda domen yoki subdomen (masalan `zakazlar.example.com`) biriktirilganda:
 
 ---
 
+## 📅 Har Oylik Google Sheets Workbook Mashg'uloti (Monthly Routine & Emergency Switch)
+
+Har yangi oy boshlanganda (masalan, yangi oyning 1-kunida) yoki kutilmagan favqulodda holatlarda jadval o'zgarganda admin quyidagi tartib bo'yicha harakat qiladi:
+
+### 1-qadam: Google Drive'da yangi oy jadvalini tayyorlash
+1. Google Drive'da o'tgan oy jadvalidan nusxa oling (**Make a copy**).
+2. Yangi jadval nomini joriy oyga moslang (masalan, `Zakazlar 2026-09`).
+3. Yangi jadvalning URL manzilini yoki bare ID sini nusxalab oling (URL formati: `https://docs.google.com/spreadsheets/d/<ID>/edit`).
+
+### 2-qadam: Django Admin panelida yangi `SpreadsheetPeriod` qo'shish
+1. Admin panelga kiring: `http://<IP>:8080/panel/imports/spreadsheetperiod/`
+2. **Add Spreadsheet Period** tugmasini bosing.
+3. Maydonlarni to'ldiring:
+   - **Period**: Yangi oyning 1-kuni (masalan `2026-09-01`).
+   - **Spreadsheet id**: Google Sheets nusxalangan URL manzili yoki bare ID si (tizim URL ichidan ID ni avtomatik ajratib oladi).
+   - **Note**: Izoh (masalan `Sentyabr 2026 yangi oylik jadval`).
+4. **Save** tugmasini bosing.
+
+### 3-qadam: Yangi jadvalni faollashtirish ("Faollashtirish" Action)
+1. Admin changelist jadvalida yangi qo'shilgan `SpreadsheetPeriod` qatorini tanlang (checkbox).
+2. **Action** menyusidan **"Faollashtirish"** amalini tanlang va **Go** tugmasini bosing.
+3. Tizim ushbu jadvalni faollashtirib (`is_active=True`), avvalgi barcha faol jadvallarni nofaol qiladi.
+
+### 4-qadam: Salomatlik va sinxronizatsiya holatini tekshirish (/health/)
+1. Brauzerda health endpoint ga kiring:
+   `http://<IP>:8080/health/`
+2. Qaytarilgan JSON ma'lumotni tekshiring:
+   ```json
+   {
+     "status": "ok",
+     "active_period": "2026-09",
+     "last_sync_timestamp": "2026-09-01T03:00:15+00:00"
+   }
+   ```
+3. `active_period` qiymati yangi oy (`2026-09`) ekanligiga va `last_sync_timestamp` yangilanayotganiga ishonch hosil qiling.
+
+### 🚨 Favqulodda Holatlarda (Emergency Mid-Month Switch)
+Agar oylik jadval tasodifan buzilsa yoki o'chirib yuborilsa:
+1. Google Drive'da yangi zaxira jadval tayyorlang.
+2. Admin panelida o'sha joriy oy `SpreadsheetPeriod` yozuvini tahrirlang yoki yangi URL kiriting.
+3. **"Faollashtirish"** harakatini bajaring.
+4. Agar oylik sanalar mos kelmasa, konsoldan `--allow-period-mismatch` bayrog'i bilan majburiy sinxronizatsiya o'tkazish mumkin:
+   ```bash
+   python manage.py sync_sheets --force --allow-period-mismatch
+   ```
+
+
+---
+
 Barcha sozlamalar yakunlandi. Loyiha Nginx va Systemd yordamida Contabo VPS'da maksimal darajada tez va barqaror ishlaydi!
 
