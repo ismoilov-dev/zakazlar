@@ -1,4 +1,5 @@
 from datetime import date
+from unittest.mock import patch, MagicMock
 from django.core.exceptions import ValidationError
 from django.test import TestCase
 
@@ -51,3 +52,44 @@ class SpreadsheetPeriodTest(TestCase):
         sid, source_desc = resolve_spreadsheet_id()
         self.assertEqual(sid, sp.spreadsheet_id)
         self.assertIn("DB SpreadsheetPeriod", source_desc)
+
+    @patch("apps.imports.services.sheets_sync.SheetsSource")
+    def test_period_mismatch_aborts_sync(self, mock_source_cls):
+        from datetime import datetime, timezone as dt_timezone
+        from decimal import Decimal
+        from unittest.mock import MagicMock
+        from apps.common.services.exceptions import ValidationError
+        from apps.imports.dto import OrderDTO
+        from apps.imports.services.sheets_sync import SheetsSyncService
+
+        SpreadsheetPeriod.objects.all().delete()
+        active_sp = SpreadsheetPeriod.objects.create(
+            period=date(2026, 8, 1),
+            spreadsheet_id="1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upm1",
+            is_active=True,
+        )
+
+        mock_source = MagicMock()
+        mock_source.sheet_id = active_sp.spreadsheet_id
+        mock_source.client.http_client.get_file_drive_metadata.return_value = {"modifiedTime": "2026-08-01T12:00:00Z"}
+
+        orders = [
+            OrderDTO(
+                employee_id="0001",
+                employee_name="Elbek",
+                group_code="A",
+                order_id="202607_0001_1",
+                status="successful",
+                source="Baza",
+                sale_amount=Decimal("100000"),
+                ordered_at=datetime(2026, 7, 15, tzinfo=dt_timezone.utc),
+            )
+        ]
+        mock_source.read.return_value = (orders, [])
+        mock_source_cls.return_value = mock_source
+
+        service = SheetsSyncService()
+        with self.assertRaises(ValidationError) as ctx:
+            service.sync_if_needed(force=True, allow_period_mismatch=False)
+
+        self.assertIn("does not match sheet data modal month", str(ctx.exception))

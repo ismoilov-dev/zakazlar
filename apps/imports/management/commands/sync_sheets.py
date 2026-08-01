@@ -39,6 +39,11 @@ class Command(BaseCommand):
             default=30,
             help="Interval in seconds between sync checks when running in watch mode (default: 30).",
         )
+        parser.add_argument(
+            "--allow-period-mismatch",
+            action="store_true",
+            help="Allow sync to proceed even if active SpreadsheetPeriod does not match sheet data modal month.",
+        )
 
     def _handle_signal(self, signum: int, frame: Any) -> None:
         self.stdout.write(self.style.WARNING(f"\nSignal {signum} qabul qilindi. Jarayon toza to'xtatilmoqda..."))
@@ -48,6 +53,7 @@ class Command(BaseCommand):
         force = options.get("force", False)
         watch = options.get("watch", False)
         interval = options.get("interval", 30)
+        allow_period_mismatch = options.get("allow_period_mismatch", False)
 
         if watch:
             signal.signal(signal.SIGINT, self._handle_signal)
@@ -57,7 +63,7 @@ class Command(BaseCommand):
             service = SheetsSyncService()
             while self.keep_running:
                 try:
-                    self._sync_once(service, force=force)
+                    self._sync_once(service, force=force, allow_period_mismatch=allow_period_mismatch)
                 except Exception as exc:
                     logger.error("Watch rejimida sinxronizatsiya xatoligi: %s", exc)
 
@@ -71,11 +77,11 @@ class Command(BaseCommand):
         else:
             self.stdout.write("Google Sheets sinxronizatsiyasi boshlanmoqda...")
             service = SheetsSyncService()
-            self._sync_once(service, force=force)
+            self._sync_once(service, force=force, allow_period_mismatch=allow_period_mismatch)
 
-    def _sync_once(self, service: SheetsSyncService, force: bool) -> None:
+    def _sync_once(self, service: SheetsSyncService, force: bool, allow_period_mismatch: bool = False) -> None:
         try:
-            sync_log = service.sync_if_needed(force=force)
+            sync_log = service.sync_if_needed(force=force, allow_period_mismatch=allow_period_mismatch)
 
             if sync_log.status == "success":
                 self.stdout.write(

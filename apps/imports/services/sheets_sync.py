@@ -71,7 +71,7 @@ class SheetsSyncService:
         cache.delete(cls.CACHE_KEY)
 
 
-    def sync_if_needed(self, force: bool = False) -> SyncLog:
+    def sync_if_needed(self, force: bool = False, allow_period_mismatch: bool = False) -> SyncLog:
         """Check Drive modifiedTime & cache lock. Perform atomic DB snapshot update if fresh data exists."""
         last_successful = SyncLog.get_last_successful()
 
@@ -125,6 +125,23 @@ class SheetsSyncService:
                 )
 
             period = resolve_sync_period(orders)
+
+            from apps.imports.models import SpreadsheetPeriod
+            active_period = SpreadsheetPeriod.objects.filter(is_active=True).first()
+            if active_period:
+                active_period_str = active_period.period.strftime("%Y-%m")
+                data_modal_month = period.strftime("%Y-%m")
+                if active_period_str != data_modal_month:
+                    err_msg = f"Active SpreadsheetPeriod ({active_period_str}) does not match sheet data modal month ({data_modal_month}). Sync aborted."
+                    if not allow_period_mismatch:
+                        logger.error(err_msg)
+                        raise ValidationError(err_msg)
+                    else:
+                        logger.warning(
+                            "Active SpreadsheetPeriod (%s) does not match sheet data modal month (%s). Proceeding due to allow_period_mismatch flag.",
+                            active_period_str,
+                            data_modal_month,
+                        )
             group_summaries = getattr(source, "groups_summary", [])
 
             with transaction.atomic():
