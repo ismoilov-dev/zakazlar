@@ -157,28 +157,30 @@ async def start(message: Message, state: FSMContext) -> None:
         await ensure_fresh_data_and_get_timestamp()
         info_prefix = f"Siz allaqachon <b>{account.employee.full_name}</b> (<code>{account.employee.employee_id}</code>) sifatida ro'yxatdan o'tgansiz.\n\n"
 
-        if account.role == "ROP":
-            is_leader = await sync_to_async(
-                lambda: SalesGroup.objects.filter(leader=account.employee, is_active=True).exists()
-            )()
-            if is_leader:
-                if not require_rop_session(account):
-                    await state.update_data(employee_id=account.employee.employee_id)
-                    await state.set_state(RegistrationStates.enter_password)
-                    await message.answer("Sessiyangiz eskirgan. Qayta kirish uchun parolingizni kiriting:")
-                    return
+        is_leader_with_cred = await sync_to_async(
+            lambda: SalesGroup.objects.filter(leader=account.employee, is_active=True).exists()
+            and hasattr(account.employee, "rop_credential")
+            and account.employee.rop_credential is not None
+        )()
 
-                groups = await sync_to_async(
-                    lambda: list(SalesGroup.objects.filter(leader=account.employee, is_active=True))
-                )()
-                group = groups[0]
-                text = info_prefix + rop_menu_text(account.employee.full_name, group.code, account.employee.employee_id)
-                reply_markup = rop_menu_keyboard()
-                await message.answer(text, reply_markup=reply_markup)
+        if account.role == "ROP" and is_leader_with_cred:
+            if not require_rop_session(account):
+                await state.update_data(employee_id=account.employee.employee_id)
+                await state.set_state(RegistrationStates.enter_password)
+                await message.answer("Sessiyangiz eskirgan. Qayta kirish uchun parolingizni kiriting:")
                 return
 
+            groups = await sync_to_async(
+                lambda: list(SalesGroup.objects.filter(leader=account.employee, is_active=True))
+            )()
+            group = groups[0]
+            text = info_prefix + rop_menu_text(account.employee.full_name, group.code, account.employee.employee_id)
+            reply_markup = rop_menu_keyboard()
+            await message.answer(text, reply_markup=reply_markup)
+            return
+
         text = info_prefix + xizmatlar_menu_text()
-        reply_markup = xizmatlar_menu_keyboard()
+        reply_markup = xizmatlar_menu_keyboard(show_rop_switch=is_leader_with_cred)
         await message.answer(text, reply_markup=reply_markup)
         return
 
@@ -534,7 +536,12 @@ async def confirm_yes(callback: CallbackQuery, state: FSMContext) -> None:
 
     welcome_prefix = f"Muvaffaqiyatli bog'landi! Xush kelibsiz, <b>{employee.full_name}</b>!\n\n"
     text = welcome_prefix + xizmatlar_menu_text()
-    keyboard = xizmatlar_menu_keyboard(is_rop=False)
+    is_leader_with_cred = await sync_to_async(
+        lambda: SalesGroup.objects.filter(leader=employee, is_active=True).exists()
+        and hasattr(employee, "rop_credential")
+        and employee.rop_credential is not None
+    )()
+    keyboard = xizmatlar_menu_keyboard(show_rop_switch=is_leader_with_cred)
 
     if callback.message:
         await callback.message.answer(text, reply_markup=keyboard)
@@ -576,31 +583,74 @@ async def employee_stats(message: Message, state: FSMContext | None = None) -> N
 
     await ensure_fresh_data_and_get_timestamp()
 
-    if account.role == "ROP":
-        is_leader = await sync_to_async(
-            lambda: SalesGroup.objects.filter(leader=account.employee, is_active=True).exists()
-        )()
-        if is_leader:
-            if not require_rop_session(account):
-                if state is not None:
-                    await state.update_data(employee_id=account.employee.employee_id)
-                    await state.set_state(RegistrationStates.enter_password)
-                await message.answer("Sessiyangiz eskirgan. Qayta kirish uchun parolingizni kiriting:")
-                return
+    is_leader_with_cred = await sync_to_async(
+        lambda: SalesGroup.objects.filter(leader=account.employee, is_active=True).exists()
+        and hasattr(account.employee, "rop_credential")
+        and account.employee.rop_credential is not None
+    )()
 
-
-            groups = await sync_to_async(
-                lambda: list(SalesGroup.objects.filter(leader=account.employee, is_active=True))
-            )()
-            group = groups[0]
-            text = rop_menu_text(account.employee.full_name, group.code, account.employee.employee_id)
-            reply_markup = rop_menu_keyboard()
-            await message.answer(text, reply_markup=reply_markup)
+    if account.role == "ROP" and is_leader_with_cred:
+        if not require_rop_session(account):
+            if state is not None:
+                await state.update_data(employee_id=account.employee.employee_id)
+                await state.set_state(RegistrationStates.enter_password)
+            await message.answer("Sessiyangiz eskirgan. Qayta kirish uchun parolingizni kiriting:")
             return
 
+        groups = await sync_to_async(
+            lambda: list(SalesGroup.objects.filter(leader=account.employee, is_active=True))
+        )()
+        group = groups[0]
+        text = rop_menu_text(account.employee.full_name, group.code, account.employee.employee_id)
+        reply_markup = rop_menu_keyboard()
+        await message.answer(text, reply_markup=reply_markup)
+        return
+
     text = xizmatlar_menu_text()
-    reply_markup = xizmatlar_menu_keyboard()
+    reply_markup = xizmatlar_menu_keyboard(show_rop_switch=is_leader_with_cred)
     await message.answer(text, reply_markup=reply_markup)
+
+
+@router.callback_query(F.data == "xm_switch_rop")
+async def handle_switch_rop(callback: CallbackQuery, state: FSMContext) -> None:
+    """Handle click on [ 👔 ROP PANELI ] switch button from personal menu."""
+    if callback.from_user is None:
+        return
+
+    telegram_id = callback.from_user.id
+    account = await sync_to_async(
+        lambda: TelegramAccount.objects.select_related("employee").filter(telegram_id=telegram_id).first()
+    )()
+    if not account or not account.employee:
+        await callback.answer("Avval profilingizni bog'lang.", show_alert=True)
+        return
+
+    is_leader_with_cred = await sync_to_async(
+        lambda: SalesGroup.objects.filter(leader=account.employee, is_active=True).exists()
+        and hasattr(account.employee, "rop_credential")
+        and account.employee.rop_credential is not None
+    )()
+    if not is_leader_with_cred:
+        await callback.answer("Siz guruh rahbari emassiz.", show_alert=True)
+        return
+
+    if require_rop_session(account):
+        groups = await sync_to_async(
+            lambda: list(SalesGroup.objects.filter(leader=account.employee, is_active=True))
+        )()
+        group_code = groups[0].code if groups else (account.employee.group.code if account.employee.group else "-")
+        text = rop_menu_text(account.employee.full_name, group_code, account.employee.employee_id)
+        reply_markup = rop_menu_keyboard()
+        if callback.message:
+            await callback.message.edit_text(text, reply_markup=reply_markup)
+        await callback.answer()
+        return
+
+    await state.update_data(employee_id=account.employee.employee_id)
+    await state.set_state(RegistrationStates.enter_password)
+    if callback.message:
+        await callback.message.answer("Parolingizni kiriting:")
+    await callback.answer()
 
 
 @router.callback_query(F.data.startswith("rop_"))
@@ -690,7 +740,7 @@ async def handle_rop_callback(callback: CallbackQuery, state: FSMContext) -> Non
         keyboard = rop_card_keyboard()
     elif action == "rop_card:mop_xizmatlar":
         text = xizmatlar_menu_text()
-        keyboard = xizmatlar_menu_keyboard(is_rop=True)
+        keyboard = xizmatlar_menu_keyboard(show_rop_switch=True, src="rop")
     else:
 
         text = rop_menu_text(account.employee.full_name, group.code, account.employee.employee_id)
@@ -770,8 +820,13 @@ async def handle_bare_text_message(message: Message, state: FSMContext) -> None:
         return
 
     await ensure_fresh_data_and_get_timestamp()
+    is_leader_with_cred = await sync_to_async(
+        lambda: SalesGroup.objects.filter(leader=account.employee, is_active=True).exists()
+        and hasattr(account.employee, "rop_credential")
+        and account.employee.rop_credential is not None
+    )()
     text = xizmatlar_menu_text()
-    reply_markup = xizmatlar_menu_keyboard(is_rop=(account.role == "ROP"))
+    reply_markup = xizmatlar_menu_keyboard(show_rop_switch=is_leader_with_cred)
     await message.answer(text, reply_markup=reply_markup)
 
 
@@ -849,8 +904,13 @@ async def handle_xizmatlar_callback(callback: CallbackQuery) -> None:
         return
 
     if action in ("xm_menu", "xm_period"):
+        is_leader_with_cred = await sync_to_async(
+            lambda: SalesGroup.objects.filter(leader=employee, is_active=True).exists()
+            and hasattr(employee, "rop_credential")
+            and employee.rop_credential is not None
+        )()
         text = xizmatlar_menu_text(period_label)
-        reply_markup = xizmatlar_menu_keyboard(period_iso, is_rop=(account.role == "ROP"))
+        reply_markup = xizmatlar_menu_keyboard(period_iso=period_iso, show_rop_switch=is_leader_with_cred)
 
 
 

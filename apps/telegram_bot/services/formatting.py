@@ -41,23 +41,37 @@ def xizmatlar_menu_text(period_label: str | None = None) -> str:
     return "<b>XIZMATLAR</b>"
 
 
-def xizmatlar_menu_keyboard(period_iso: str | None = None, is_rop: bool = False) -> InlineKeyboardMarkup:
+def xizmatlar_menu_keyboard(
+    period_iso: str | None = None,
+    show_rop_switch: bool = False,
+    src: str | None = None,
+) -> InlineKeyboardMarkup:
     """Render the XIZMATLAR inline keyboard matching the required layout."""
     builder = InlineKeyboardBuilder()
     suffix = f":{period_iso}" if period_iso else ""
+    src_suffix = f":src={src}" if src else ""
 
-    builder.button(text="💵 JAMI OYLIK", callback_data=f"xm_card:earned_salary{suffix}")
-    builder.button(text="📊 JAMI SAVDO", callback_data=f"xm_card:total_sales{suffix}")
-    builder.button(text="✅ Uspeshka", callback_data=f"xm_card:uspeshka{suffix}")
-    builder.button(text="❌ Otkaz", callback_data=f"xm_card:otkaz{suffix}")
-    builder.button(text="⏳ Jarayonda", callback_data=f"xm_card:v_proc{suffix}")
-    builder.button(text="🗓 AVVALGI OYLIKLAR", callback_data="xm_months")
+    builder.button(text="💵 JAMI OYLIK", callback_data=f"xm_card:earned_salary{suffix}{src_suffix}")
+    builder.button(text="📊 JAMI SAVDO", callback_data=f"xm_card:total_sales{suffix}{src_suffix}")
+    builder.button(text="✅ Uspeshka", callback_data=f"xm_card:uspeshka{suffix}{src_suffix}")
+    builder.button(text="❌ Otkaz", callback_data=f"xm_card:otkaz{suffix}{src_suffix}")
+    builder.button(text="⏳ Jarayonda", callback_data=f"xm_card:v_proc{suffix}{src_suffix}")
+    builder.button(text="🗓 AVVALGI OYLIKLAR", callback_data=f"xm_months{src_suffix}")
+
+    if show_rop_switch:
+        builder.button(text="👔 ROP PANELI", callback_data="xm_switch_rop")
 
     if period_iso:
-        builder.button(text="⬅️ Oylarni tanlash", callback_data="xm_months")
-        builder.adjust(1, 1, 3, 1, 1)
+        builder.button(text="⬅️ Oylarni tanlash", callback_data=f"xm_months{src_suffix}")
+        if show_rop_switch:
+            builder.adjust(1, 1, 3, 1, 1, 1)
+        else:
+            builder.adjust(1, 1, 3, 1, 1)
     else:
-        builder.adjust(1, 1, 3, 1)
+        if show_rop_switch:
+            builder.adjust(1, 1, 3, 1, 1)
+        else:
+            builder.adjust(1, 1, 3, 1)
 
     return builder.as_markup()
 
@@ -227,7 +241,7 @@ def rop_menu_keyboard() -> InlineKeyboardMarkup:
     builder.button(text="📊 GURUH SAVDOSI", callback_data="rop_card:group_sales")
     builder.button(text="📈 GURUH STATS", callback_data="rop_card:group_stats")
     builder.button(text="💵 ROP OYLIK", callback_data="rop_card:rop_salary")
-    builder.button(text="👤 MOP XIZMATLAR", callback_data="rop_card:mop_xizmatlar")
+    builder.button(text="👤 SHAXSIY XIZMATLAR", callback_data="rop_card:mop_xizmatlar")
     builder.adjust(2, 1, 1)
     return builder.as_markup()
 
