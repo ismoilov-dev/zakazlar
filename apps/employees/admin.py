@@ -11,34 +11,6 @@ from apps.employees.models import Employee, EmployeeMonthlyStat, RopCredential
 from apps.groups.models import SalesGroup
 
 
-class EmployeeAdminForm(forms.ModelForm):
-    rop_password = forms.CharField(
-        label="ROP uchun parol (ROP Password)",
-        widget=forms.PasswordInput(render_value=False),
-        required=False,
-        help_text="Faqat ROP rahbarlari uchun. Yangi parol kiriting, saqlanganda shifrlanadi.",
-    )
-
-    class Meta:
-        model = Employee
-        fields = (
-            "employee_id",
-            "full_name",
-            "monthly_salary",
-            "summary_data",
-            "group",
-            "is_active",
-            "rop_password",
-        )
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        if self.instance and self.instance.pk:
-            has_cred = hasattr(self.instance, "rop_credential") and self.instance.rop_credential is not None
-            if has_cred:
-                self.fields["rop_password"].help_text = "🔒 Parol o'rnatilgan. O'zgartirish uchun yangi parol kiriting."
-
-
 class RopCredentialAdminForm(forms.ModelForm):
     raw_password = forms.CharField(
         label="Yangi parol (Plaintext Password)",
@@ -51,13 +23,17 @@ class RopCredentialAdminForm(forms.ModelForm):
         model = RopCredential
         fields = ("employee", "raw_password")
 
-    def clean_employee(self):
-        employee = self.cleaned_data.get("employee")
+    def clean(self):
+        cleaned_data = super().clean()
+        employee = cleaned_data.get("employee")
+        if not employee and hasattr(self, "instance") and getattr(self.instance, "employee", None):
+            employee = self.instance.employee
+
         if employee:
             is_leader = SalesGroup.objects.filter(leader=employee, is_active=True).exists()
             if not is_leader:
-                raise ValidationError("Faqat guruh rahbarlari (SalesGroup.leader) uchun parol o'rnatish mumkin.")
-        return employee
+                self.add_error("employee", "Faqat guruh rahbarlari (SalesGroup.leader) uchun parol o'rnatish mumkin.")
+        return cleaned_data
 
     def save(self, commit=True):
         instance = super().save(commit=False)
@@ -69,6 +45,14 @@ class RopCredentialAdminForm(forms.ModelForm):
         return instance
 
 
+class RopCredentialInline(admin.StackedInline):
+    model = RopCredential
+    form = RopCredentialAdminForm
+    extra = 0
+    max_num = 1
+    fields = ("raw_password",)
+
+
 class TelegramAccountInline(admin.TabularInline):
     model = TelegramAccount
     extra = 0
@@ -78,8 +62,7 @@ class TelegramAccountInline(admin.TabularInline):
 
 @admin.register(Employee)
 class EmployeeAdmin(admin.ModelAdmin):
-    form = EmployeeAdminForm
-    list_display = ("employee_id", "full_name", "group", "monthly_salary", "is_active", "updated_at")
+    list_display = ("employee_id", "full_name", "group", "monthly_salary", "has_rop_credential", "is_active", "updated_at")
     list_filter = ("is_active", "group")
     search_fields = ("employee_id", "full_name")
     list_select_related = ("group",)
@@ -91,18 +74,12 @@ class EmployeeAdmin(admin.ModelAdmin):
         "summary_data",
         "group",
         "is_active",
-        "rop_password",
     )
-    inlines = [TelegramAccountInline]
+    inlines = [RopCredentialInline, TelegramAccountInline]
 
-    def save_model(self, request, obj, form, change):
-        super().save_model(request, obj, form, change)
-        rop_password = form.cleaned_data.get("rop_password")
-        if rop_password:
-            cred, _ = RopCredential.objects.get_or_create(employee=obj)
-            cred.set_password(rop_password)
-            cred.save()
-            messages.success(request, f"{obj.full_name} uchun ROP paroli muvaffaqiyatli saqlandi!")
+    @admin.display(boolean=True, description="ROP Paroli")
+    def has_rop_credential(self, obj: Employee) -> bool:
+        return hasattr(obj, "rop_credential") and obj.rop_credential is not None
 
 
 @admin.action(description="Tanlangan oylik statlarni yopish (Close period)")
