@@ -93,3 +93,16 @@ class SpreadsheetPeriodTest(TestCase):
             service.sync_if_needed(force=True, allow_period_mismatch=False)
 
         self.assertIn("does not match sheet data modal month", str(ctx.exception))
+
+    def test_health_check_endpoint(self):
+        SpreadsheetPeriod.objects.all().delete()
+        sp = SpreadsheetPeriod.objects.create(
+            period=date(2026, 9, 1),
+            spreadsheet_id="1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upm4",
+            is_active=True,
+        )
+        response = self.client.get("/health/")
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["status"], "ok")
+        self.assertEqual(data["active_period"], "2026-09")

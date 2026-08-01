@@ -72,4 +72,40 @@ class ImportJobAdmin(admin.ModelAdmin):
         ImportJob.objects.filter(id__in=job_ids).delete()
 
 
+from apps.imports.models import SpreadsheetPeriod
+
+
+@admin.action(description="Faollashtirish")
+def activate_period_action(modeladmin, request: HttpRequest, queryset) -> None:
+    count = queryset.count()
+    if count != 1:
+        modeladmin.message_user(
+            request,
+            "Faqat bitta davrni faollashtirish mumkin. Iltimos bitta qatorni tanlang.",
+            level=messages.ERROR,
+        )
+        return
+    obj = queryset.first()
+    obj.is_active = True
+    obj.save()
+    modeladmin.message_user(request, "1 ta spreadsheet period faollashtirildi.", level=messages.SUCCESS)
+
+
+@admin.register(SpreadsheetPeriod)
+class SpreadsheetPeriodAdmin(admin.ModelAdmin):
+    list_display = ("period_display", "spreadsheet_id_short", "is_active", "note", "created_at")
+    list_filter = ("is_active", "period")
+    actions = [activate_period_action]
+
+    def period_display(self, obj: SpreadsheetPeriod) -> str:
+        return obj.period.strftime("%Y-%m")
+    period_display.short_description = "Period"
+
+    def spreadsheet_id_short(self, obj: SpreadsheetPeriod) -> str:
+        if len(obj.spreadsheet_id) > 20:
+            return f"{obj.spreadsheet_id[:16]}..."
+        return obj.spreadsheet_id
+    spreadsheet_id_short.short_description = "Spreadsheet ID"
+
+
 

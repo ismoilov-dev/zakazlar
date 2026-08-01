@@ -61,3 +61,27 @@ class SheetChangedWebhookAPIView(APIView):
             {"status": "accepted", "detail": "Cache lock bo'shatildi."},
             status=status.HTTP_202_ACCEPTED,
         )
+
+
+class HealthCheckAPIView(APIView):
+    """System health check endpoint including active period & last sync timestamp."""
+
+    permission_classes = [AllowAny]
+
+    def get(self, request, *args, **kwargs) -> Response:
+        from apps.imports.models import SpreadsheetPeriod, SyncLog
+
+        active_sp = SpreadsheetPeriod.objects.filter(is_active=True).first()
+        active_period_str = active_sp.period.strftime("%Y-%m") if active_sp else None
+
+        last_sync = SyncLog.get_last_successful()
+        last_sync_ts = last_sync.finished_at.isoformat() if last_sync and last_sync.finished_at else None
+
+        return Response(
+            {
+                "status": "ok",
+                "active_period": active_period_str,
+                "last_sync_timestamp": last_sync_ts,
+            },
+            status=status.HTTP_200_OK,
+        )
