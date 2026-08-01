@@ -276,9 +276,32 @@ async def process_employee_id(message: Message, state: FSMContext) -> None:
     await message.answer("Iltimos, ism va familiyangizni kiriting:")
 
 
+def verify_rop_credentials(employee_id: str, raw_password: str) -> tuple[bool, str, Employee | None]:
+    """Check if employee exists, is active leader, has credential, and password matches.
+
+    Returns (success, error_code, employee).
+    """
+    try:
+        employee = EmployeeRepository().get_active_by_employee_id(employee_id)
+    except Employee.DoesNotExist:
+        return False, "NOT_FOUND", None
+
+    is_leader = SalesGroup.objects.filter(leader=employee, is_active=True).exists()
+    if not is_leader:
+        return False, "NOT_LEADER", employee
+
+    if not hasattr(employee, "rop_credential") or employee.rop_credential is None:
+        return False, "NO_CREDENTIAL", employee
+
+    if not employee.rop_credential.check_password(raw_password):
+        return False, "WRONG_PASSWORD", employee
+
+    return True, "SUCCESS", employee
+
+
 @router.message(RegistrationStates.enter_password)
 async def process_password(message: Message, state: FSMContext) -> None:
-    """Validate ROP password, deleting plaintext password immediately."""
+    """Validate ROP password for registration (unbound) or re-authentication (bound)."""
     if message.from_user is None or message.text is None:
         return
 
@@ -315,39 +338,14 @@ async def process_password(message: Message, state: FSMContext) -> None:
         logger.warning("ROP login failed for telegram_id %s, employee_id %s: %s", telegram_id, employee_id, reason)
         await message.answer(custom_msg or "ID yoki parol noto'g'ri.")
 
-    try:
-        employee = await sync_to_async(EmployeeRepository().get_active_by_employee_id)(employee_id)
-    except Employee.DoesNotExist:
-        await fail_login("Employee ID not in roster")
-        return
-
-    is_leader = await sync_to_async(
-        lambda: SalesGroup.objects.filter(leader=employee, is_active=True).exists()
-    )()
-    if not is_leader:
-        await fail_login("Employee is not a group leader")
-        return
-
-    has_credential = await sync_to_async(
-        lambda: hasattr(employee, "rop_credential") and employee.rop_credential is not None
-    )()
-
-    if not has_credential:
-        await fail_login("Leader has no password credential set", custom_msg="Siz uchun hali ROP paroli o'rnatilmagan. Administrator bilan bog'laning.")
+    ok, error_code, employee = await sync_to_async(verify_rop_credentials)(employee_id, raw_password)
+    if not ok or not employee:
+        if error_code == "NO_CREDENTIAL":
+            await fail_login("Leader has no password credential set", custom_msg="Siz uchun hali ROP paroli o'rnatilmagan. Administrator bilan bog'laning.")
+        else:
+            await fail_login(f"ROP password check failed: {error_code}")
         await state.clear()
         return
-
-    password_matches = await sync_to_async(
-        lambda: employee.rop_credential.check_password(raw_password)
-    )()
-    if not password_matches:
-        await fail_login("Password mismatch")
-        return
-
-    try:
-        await message.delete()
-    except Exception:
-        pass
 
     session_hours = getattr(settings, "ROP_SESSION_HOURS", 12)
     success_text = f"🔑 ROP sessiyangiz tasdiqlandi! (Sessiya {session_hours} soat davomida faol bo'ladi)\n\n"
@@ -355,7 +353,9 @@ async def process_password(message: Message, state: FSMContext) -> None:
     existing_binding = await sync_to_async(
         lambda: TelegramAccount.objects.filter(telegram_id=telegram_id).first()
     )()
+
     if existing_binding and existing_binding.role == "ROP":
+        # Re-authentication path: session expired, binding exists.
         existing_binding.rop_authenticated_at = timezone.now()
         await sync_to_async(existing_binding.save)(update_fields=["rop_authenticated_at"])
         await sync_to_async(clear_failed_attempts)(telegram_id)
@@ -369,6 +369,7 @@ async def process_password(message: Message, state: FSMContext) -> None:
         await message.answer(text, reply_markup=reply_markup)
         return
 
+    # Registration path: no binding exists, create binding via bind()
     try:
         employee = await sync_to_async(TelegramBindingService().bind)(
             employee_id=employee_id,
