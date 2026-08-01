@@ -371,5 +371,83 @@ class RopPartATestCase(TestCase):
         await handle_rop_callback(callback_pick, state)
         state.update_data.assert_called_once_with(selected_group_id=group_c.id)
 
+    async def test_switch_button_visible_only_for_leader_with_cred(self):
+        from apps.telegram_bot.routers import employee_stats, handle_bare_text_message
+        # Leader with credential sees [ 👔 ROP PANELI ]
+        account = await TelegramAccount.objects.acreate(
+            employee=self.leader,
+            telegram_id=777,
+            role="MOP",
+        )
+        msg = MagicMock()
+        msg.from_user.id = 777
+        msg.answer = AsyncMock()
+        await employee_stats(msg)
+        reply_markup = msg.answer.call_args[1].get("reply_markup")
+        btn_texts = [b.text for row in reply_markup.inline_keyboard for b in row]
+        self.assertIn("👔 ROP PANELI", btn_texts)
+
+        # Regular MOP (non-leader) does not see switch button
+        mop_emp = await Employee.objects.acreate(employee_id="0090", full_name="Regular MOP", group=self.group)
+        await TelegramAccount.objects.acreate(employee=mop_emp, telegram_id=778, role="MOP")
+        msg_mop = MagicMock()
+        msg_mop.from_user.id = 778
+        msg_mop.answer = AsyncMock()
+        await employee_stats(msg_mop)
+        reply_markup_mop = msg_mop.answer.call_args[1].get("reply_markup")
+        btn_texts_mop = [b.text for row in reply_markup_mop.inline_keyboard for b in row]
+        self.assertNotIn("👔 ROP PANELI", btn_texts_mop)
+
+    async def test_rop_command_refused_for_non_leader(self):
+        from apps.telegram_bot.routers import rop_command
+        mop_emp = await Employee.objects.acreate(employee_id="0091", full_name="Regular MOP 2", group=self.group)
+        await TelegramAccount.objects.acreate(employee=mop_emp, telegram_id=779, role="MOP")
+
+        msg = MagicMock()
+        msg.from_user.id = 779
+        msg.answer = AsyncMock()
+        state = AsyncMock()
+
+        await rop_command(msg, state)
+        msg.answer.assert_called_once_with("Siz guruh rahbari emassiz.")
+
+    async def test_rop_command_expired_session_prompts_password(self):
+        from apps.telegram_bot.routers import rop_command, RegistrationStates
+        account = await TelegramAccount.objects.acreate(
+            employee=self.leader,
+            telegram_id=780,
+            role="MOP",
+            rop_authenticated_at=None,
+        )
+        msg = MagicMock()
+        msg.from_user.id = 780
+        msg.answer = AsyncMock()
+        state = AsyncMock()
+
+        await rop_command(msg, state)
+        state.set_state.assert_called_once_with(RegistrationStates.enter_password)
+        msg.answer.assert_called_once_with("Parolingizni kiriting:")
+
+    async def test_back_navigation_with_src_rop_returns_to_rop_menu(self):
+        from apps.telegram_bot.routers import handle_xizmatlar_callback
+        account = await TelegramAccount.objects.acreate(
+            employee=self.leader,
+            telegram_id=781,
+            role="MOP",
+            rop_authenticated_at=timezone.now(),
+        )
+        callback = MagicMock()
+        callback.from_user.id = 781
+        callback.data = "xm_menu:src=rop"
+        callback.message.edit_text = AsyncMock()
+        callback.message.answer = AsyncMock()
+        callback.answer = AsyncMock()
+
+        await handle_xizmatlar_callback(callback)
+        callback.message.edit_text.assert_called_once()
+        text = callback.message.edit_text.call_args[0][0]
+        self.assertIn("Bo'lim: <b>A</b>", text)
+        self.assertIn("XIZMATLAR", text)
+
 
 

@@ -892,7 +892,7 @@ async def handle_bare_text_message(message: Message, state: FSMContext) -> None:
 
 
 @router.callback_query(F.data.startswith("xm_"))
-async def handle_xizmatlar_callback(callback: CallbackQuery) -> None:
+async def handle_xizmatlar_callback(callback: CallbackQuery, state: FSMContext | None = None) -> None:
     """Unified handler for XIZMATLAR menu, focused cards, and historical period navigation."""
     if callback.from_user is None or callback.data is None:
         return
