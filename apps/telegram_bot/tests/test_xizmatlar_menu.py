@@ -62,7 +62,7 @@ class XizmatlarMenuTest(TestCase):
         text = card_text("earned_salary", "Amir Karimov", "A", self.emp.summary_data)
         self.assertIn("Amir Karimov", text)
         self.assertIn("Bo'lim: <b>A</b>", text)
-        self.assertIn("Oylik ish haqi: <b>5,000,000 so'm</b>", text)
+        self.assertIn("Shaxsiy oylik: <b>5,000,000 so'm</b>", text)
 
     def test_card_text_total_sales(self):
         text = card_text("total_sales", "Amir Karimov", "A", self.emp.summary_data)
@@ -135,7 +135,7 @@ class XizmatlarMenuTest(TestCase):
         await handle_xizmatlar_callback(callback)
         callback.message.edit_text.assert_called_once()
         text = callback.message.edit_text.call_args[0][0]
-        self.assertIn("Oylik ish haqi: <b>5,000,000 so'm</b>", text)
+        self.assertIn("Shaxsiy oylik: <b>5,000,000 so'm</b>", text)
         callback.answer.assert_called_once()
 
     @patch("apps.telegram_bot.routers.ensure_fresh_data_and_get_timestamp", return_value=("31.07.2026 14:00:00", False))
@@ -163,5 +163,5 @@ class XizmatlarMenuTest(TestCase):
         callback.message.edit_text.assert_called_once()
         text = callback.message.edit_text.call_args[0][0]
         self.assertIn("Oy: <b>Iyun 2026</b>", text)
-        self.assertIn("Oylik ish haqi: <b>4,800,000 so'm</b>", text)
+        self.assertIn("Shaxsiy oylik: <b>4,800,000 so'm</b>", text)
 

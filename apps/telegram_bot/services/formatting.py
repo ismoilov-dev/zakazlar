@@ -115,7 +115,7 @@ def card_text(
             sal = fallback_salary
 
         if sal is not None:
-            lines.append(f"💵 Oylik ish haqi: <b>{sal:,.0f} so'm</b>")
+            lines.append(f"💵 Shaxsiy oylik: <b>{sal:,.0f} so'm</b>")
         else:
             lines.append(MISSING_VALUE_TEXT)
 
@@ -258,7 +258,7 @@ def rop_card_keyboard() -> InlineKeyboardMarkup:
 
 def rop_group_sales_card_text(group_code: str, totals: dict[str, Decimal | None]) -> str:
     """Render GURUH SAVDOSI card text."""
-    lines = [f"🏢 Bo'lim: <b>{group_code}</b>\n"]
+    lines = [f"🏢 <b>{group_code} guruh</b>\n"]
     for label, key in [
         ("📊 Jami savdo", "total_sales"),
         ("✅ Uspeshka", "successful_sales"),
@@ -276,7 +276,7 @@ def rop_group_sales_card_text(group_code: str, totals: dict[str, Decimal | None]
 def rop_group_stats_card_text(group_code: str, stats: dict[str, int | None]) -> str:
     """Render GURUH STATS card text."""
     lines = [
-        f"🏢 Bo'lim: <b>{group_code}</b>\n",
+        f"🏢 <b>{group_code} guruh</b>\n",
         f"👥 Xodimlar soni: <b>{stats['total_count']} ta</b>",
     ]
     if stats.get("total_upakovka") is not None:
@@ -289,16 +289,16 @@ def rop_group_stats_card_text(group_code: str, stats: dict[str, int | None]) -> 
 
 def rop_salary_card_text(group_code: str, salary_info: dict[str, Any]) -> str:
     """Render ROP OYLIK card text with inputs, calculated salary, and mismatch warning if present."""
-    lines = [f"🏢 Bo'lim: <b>{group_code}</b>\n"]
+    lines = [f"🏢 <b>{group_code} guruh</b>\n"]
     if salary_info.get("group_total_sales") is not None:
         lines.append(f"📊 Guruh jami savdosi: <b>{salary_info['group_total_sales']:,.0f} so'm</b>")
     else:
         lines.append(f"📊 Guruh jami savdosi: {MISSING_VALUE_TEXT}")
     lines.append(f"📐 Foiz: <b>{salary_info['rate_pct_str']}</b>")
     if salary_info.get("computed_salary") is not None:
-        lines.append(f"💵 ROP oyligi: <b>{salary_info['computed_salary']:,.0f} so'm</b>")
+        lines.append(f"💵 ROP oyligi (guruh 2%): <b>{salary_info['computed_salary']:,.0f} so'm</b>")
     else:
-        lines.append(f"💵 ROP oyligi: {MISSING_VALUE_TEXT}")
+        lines.append(f"💵 ROP oyligi (guruh 2%): {MISSING_VALUE_TEXT}")
     if salary_info.get("mismatch"):
         lines.append(
             "\n⚠️ Diqqat: bu raqam Google Sheets'dagi qiymatdan farq qilmoqda.\nAdministratorga murojaat qiling."

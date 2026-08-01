@@ -233,7 +233,7 @@ class RopPartATestCase(TestCase):
 
         callback.message.edit_text.assert_called_once()
         text = callback.message.edit_text.call_args[0][0]
-        self.assertIn("Bo'lim: <b>A</b>", text)
+        self.assertIn("A guruh", text)
         self.assertIn("Jami savdo:", text)
 
     @patch("apps.groups.services.rop_service.logger.error")
@@ -328,7 +328,7 @@ class RopPartATestCase(TestCase):
         await handle_rop_callback(callback, state)
 
         text = callback.message.edit_text.call_args[0][0]
-        self.assertIn("Bo'lim: <b>A</b>", text)
+        self.assertIn("A guruh", text)
         self.assertNotIn("Group B", text)
         self.assertNotIn("99,000,000", text)
 
