@@ -250,6 +250,16 @@ class RopPartATestCase(TestCase):
         self.assertTrue(salary_info2["mismatch"])
         mock_log_err.assert_called_once()
 
+        # Set leader_bonus to None -> skips mismatch check
+        self.group.leader_bonus = None
+        await self.group.asave()
+        mock_log_err.reset_mock()
+
+        salary_info3 = await sync_to_async(RopService().calculate_rop_salary)(self.group)
+        self.assertEqual(salary_info3["computed_salary"], Decimal("1000000.00"))
+        self.assertFalse(salary_info3["mismatch"])
+        mock_log_err.assert_not_called()
+
     @patch("apps.telegram_bot.routers.ensure_fresh_data_and_get_timestamp", return_value=("31.07.2026 14:00:00", False))
     async def test_unassigned_leader_loses_access_immediately(self, _mock_ts):
         account = await TelegramAccount.objects.acreate(

@@ -20,7 +20,7 @@ class SalesGroup(TimeStampedModel):
     is_active = models.BooleanField(default=True)
     group_total_sales = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal("0.00"))
     group_profit = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0.00"))
-    leader_bonus = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0.00"))
+    leader_bonus = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
     synced_at = models.DateTimeField(null=True, blank=True)
 
 
