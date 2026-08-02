@@ -89,4 +89,49 @@ class TarixRouterTest(TestCase):
         text = callback.message.edit_text.call_args[0][0]
         self.assertIn("🔒 <b>Oy yopilgan</b>", text)
 
+    @patch("apps.telegram_bot.routers.ensure_fresh_data_and_get_timestamp", return_value=("30.07.2026 12:00:00", False))
+    async def test_historical_card_reads_snapshot_not_live_data(self, _mock_ts):
+        from asgiref.sync import sync_to_async
+
+        def update_live_and_snapshot():
+            self.emp.summary_data = {"otkaz_sales": "60000000.00", "earned_salary": "9999999.00"}
+            self.emp.monthly_salary = Decimal("9999999.00") if hasattr(self, "Decimal") else 9999999
+            self.emp.save()
+            self.stat.summary_data = {
+                "otkaz_sales": "52755000.00",
+                "earned_salary": "3000000.00",
+                "total_sales": "1000000.00",
+                "successful_sales": "1000000.00",
+                "perv_sales": "0.00",
+                "baza_sales": "1000000.00",
+                "v_proc_sales": "0.00",
+                "successful_orders": 1,
+            }
+            self.stat.save()
+
+        await sync_to_async(update_live_and_snapshot)()
+
+        callback = MagicMock()
+        callback.from_user.id = 12345678
+        callback.data = "xm_card:otkaz:2026-06-01"
+        callback.message.edit_text = AsyncMock()
+        callback.answer = AsyncMock()
+
+        await handle_xizmatlar_callback(callback)
+        text = callback.message.edit_text.call_args[0][0]
+        self.assertIn("52,755,000", text)
+        self.assertNotIn("60,000,000", text)
+
+    @patch("apps.telegram_bot.routers.ensure_fresh_data_and_get_timestamp", return_value=("30.07.2026 12:00:00", False))
+    async def test_missing_snapshot_renders_not_saved_message(self, _mock_ts):
+        callback = MagicMock()
+        callback.from_user.id = 12345678
+        callback.data = "xm_card:otkaz:2026-05-01"
+        callback.message.edit_text = AsyncMock()
+        callback.answer = AsyncMock()
+
+        await handle_xizmatlar_callback(callback)
+        text = callback.message.edit_text.call_args[0][0]
+        self.assertIn("Bu oy uchun ma'lumot saqlanmagan.", text)
+
 

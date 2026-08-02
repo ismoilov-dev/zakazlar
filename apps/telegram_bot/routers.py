@@ -955,12 +955,15 @@ async def handle_xizmatlar_callback(callback: CallbackQuery, state: FSMContext |
             lambda: EmployeeMonthlyStat.objects.filter(employee=employee, period=period_date).first()
         )()
         if not stat:
-            await callback.answer("Ushbu oy uchun ma'lumot topilmadi.", show_alert=True)
-            return
+            summary_data = None
+            is_closed = False
+            period_label = format_uzbek_period(period_date)
+        else:
+            summary_data = stat.summary_data
+            is_closed = stat.is_closed
+            period_label = format_uzbek_period(period_date)
 
-        summary_data = stat.summary_data or {}
-        is_closed = stat.is_closed
-        period_label = format_uzbek_period(period_date)
+        fallback_salary = None
 
     ts_str, is_stale = await ensure_fresh_data_and_get_timestamp()
     footer = "\n\n🔒 <b>Oy yopilgan</b>" if is_closed else format_footer(ts_str, is_stale)
@@ -1002,6 +1005,8 @@ async def handle_xizmatlar_callback(callback: CallbackQuery, state: FSMContext |
 
     if action in ("xm_menu", "xm_period"):
         text = xizmatlar_menu_text(period_label)
+        if period_iso and (summary_data is None or not summary_data):
+            text += "\n\nBu oy uchun ma'lumot saqlanmagan."
         reply_markup = xizmatlar_menu_keyboard(period_iso=period_iso, show_rop_switch=is_leader_with_cred, src=src)
 
     elif action == "xm_card":

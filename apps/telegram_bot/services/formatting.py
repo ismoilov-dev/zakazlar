@@ -108,10 +108,14 @@ def card_text(
         lines.append(f"📅 Oy: <b>{period_label}</b>")
     lines.append("")
 
+    if period_label and (summary_data is None or not summary_data):
+        lines.append("Bu oy uchun ma'lumot saqlanmagan.")
+        return "\n".join(lines)
+
     if card_type == "earned_salary":
         raw_sal = data.get("earned_salary")
         sal = _parse_decimal_val(raw_sal)
-        if sal is None and fallback_salary is not None:
+        if sal is None and fallback_salary is not None and not period_label:
             sal = fallback_salary
 
         if sal is not None:
