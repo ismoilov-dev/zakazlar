@@ -39,19 +39,15 @@ class DataImporter:
         self.employees = EmployeeRepository()
         self.sales = SaleRepository()
 
-    def import_dto_lists(
+    def import_payroll_only(
         self,
         *,
-        orders: list[OrderDTO],
         payroll: list[PayrollDTO],
         group_summaries: list[GroupSummaryDTO] | None = None,
-        job: ImportJob | None = None,
         period: date | None = None,
         sheet_id: str = "",
-    ) -> ImportResult:
-        """Persist payroll, groups, monthly stats and orders inside a single atomic transaction."""
-        from apps.employees.models import EmployeeMonthlyStat
-
+    ) -> int:
+        """Persist payroll, groups and monthly stats without touching Sale records."""
         with transaction.atomic():
             if period:
                 from apps.common.services.exceptions import ValidationError
@@ -97,7 +93,6 @@ class DataImporter:
                             period,
                         )
 
-
             # Upsert group summaries
             if group_summaries:
                 for g_dto in group_summaries:
@@ -108,28 +103,42 @@ class DataImporter:
                     group.synced_at = timezone.now()
                     group.save(update_fields=["group_total_sales", "group_profit", "leader_bonus", "synced_at"])
 
-
             # Clear stale summary_data and monthly_salary for active employees no longer in List2
             Employee.objects.filter(is_active=True).exclude(employee_id__in=payroll_employee_ids).update(
                 summary_data={},
                 monthly_salary=Decimal("0.00"),
             )
 
+            return len(payroll)
 
-            # Pre-load all employees into a map to eliminate N+1 queries
+    def import_orders_only(
+        self,
+        *,
+        orders: list[OrderDTO],
+        job: ImportJob | None = None,
+        period: date | None = None,
+    ) -> tuple[int, int]:
+        """Persist order sales inside an atomic transaction."""
+        with transaction.atomic():
+            if period:
+                from apps.common.services.exceptions import ValidationError
+                from apps.imports.models import SpreadsheetPeriod
+                active_sp = SpreadsheetPeriod.objects.filter(is_active=True).first()
+                if active_sp and (active_sp.period.year != period.year or active_sp.period.month != period.month):
+                    logger.error(
+                        "Active SpreadsheetPeriod (%s) does not match import period (%s). Sync aborted.",
+                        active_sp.period.strftime("%Y-%m"),
+                        period.strftime("%Y-%m"),
+                    )
+                    raise ValidationError(
+                        f"Active SpreadsheetPeriod ({active_sp.period.strftime('%Y-%m')}) does not match import period ({period.strftime('%Y-%m')}). Sync aborted."
+                    )
+
             employee_map = {
                 emp.employee_id: emp
                 for emp in Employee.objects.select_related("group").all()
             }
-            group_cache = {}
 
-            def get_group(code: str):
-                clean_code = code.strip().upper()
-                if clean_code not in group_cache:
-                    group_cache[clean_code] = self.groups.get_or_create(code=clean_code)
-                return group_cache[clean_code]
-
-            # Delete only stale Sale records for the affected month(s) in the current import batch
             if orders:
                 imported_order_ids = {row.order_id for row in orders if row.order_id}
                 year_months = {(row.ordered_at.year, row.ordered_at.month) for row in orders if row.ordered_at}
@@ -140,7 +149,6 @@ class DataImporter:
                         month_filter |= Q(ordered_at__year=yr, ordered_at__month=mth)
                     Sale.objects.filter(month_filter).exclude(external_order_id__in=imported_order_ids).delete()
 
-            # 2. Upsert sales
             sales_to_upsert: list[Sale] = []
             for row in orders:
                 employee = employee_map.get(row.employee_id)
@@ -161,8 +169,31 @@ class DataImporter:
                     )
                 )
 
+            return self.sales.bulk_upsert(sales_to_upsert)
 
-            created, updated = self.sales.bulk_upsert(sales_to_upsert)
+    def import_dto_lists(
+        self,
+        *,
+        orders: list[OrderDTO],
+        payroll: list[PayrollDTO],
+        group_summaries: list[GroupSummaryDTO] | None = None,
+        job: ImportJob | None = None,
+        period: date | None = None,
+        sheet_id: str = "",
+    ) -> ImportResult:
+        """Persist payroll, groups, monthly stats and orders inside a single atomic transaction."""
+        with transaction.atomic():
+            self.import_payroll_only(
+                payroll=payroll,
+                group_summaries=group_summaries,
+                period=period,
+                sheet_id=sheet_id,
+            )
+            created, updated = self.import_orders_only(
+                orders=orders,
+                job=job,
+                period=period,
+            )
             return ImportResult(
                 processed_rows=len(orders),
                 created_sales=created,

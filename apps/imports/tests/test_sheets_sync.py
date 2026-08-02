@@ -14,6 +14,7 @@ class SheetsSyncFailureTest(TestCase):
         # Set up mock source to raise exception on read()
         mock_source = mock_sheets_source_cls.return_value
         mock_source.sheet_id = "test_sheet_id"
+        mock_source.read_payroll_only.side_effect = Exception("API connection timeout")
         mock_source.read.side_effect = Exception("API connection timeout")
 
         service = SheetsSyncService()
@@ -85,8 +86,59 @@ class SheetsSyncFailureTest(TestCase):
         service = SheetsSyncService()
         with self.assertLogs("apps.imports.services.sheets_sync", level="ERROR") as cm:
             with self.assertRaises(ValidationError):
-                service.sync_if_needed(force=True)
+                service.sync_orders(force=True)
 
         self.assertTrue(any("does not match" in log for log in cm.output))
         self.assertEqual(EmployeeMonthlyStat.objects.count(), 0)
+
+    @patch("apps.imports.services.sheets_sync.SHEETS_RECALC_DELAY_SECONDS", 0)
+    @patch("apps.imports.services.sheets_sync.SheetsSource")
+    def test_sync_payroll_fast_path_writes_no_sale_rows(self, mock_sheets_source_cls) -> None:
+        from datetime import date
+        from decimal import Decimal
+        from apps.employees.models import Employee, EmployeeMonthlyStat
+        from apps.imports.dto import GroupSummaryDTO, PayrollDTO
+        from apps.imports.models import SpreadsheetPeriod
+        from apps.sales.models import Sale
+
+        SpreadsheetPeriod.objects.all().delete()
+        SpreadsheetPeriod.objects.create(
+            period=date(2026, 8, 1),
+            spreadsheet_id="1W8wvi0nmrlnIsrqUBjNjEuoXbkcLQxFCK5fd3v3hto8",
+            is_active=True,
+        )
+
+        mock_source = mock_sheets_source_cls.return_value
+        mock_source.sheet_id = "1W8wvi0nmrlnIsrqUBjNjEuoXbkcLQxFCK5fd3v3hto8"
+        mock_source.read_payroll_only.return_value = (
+            [
+                PayrollDTO(
+                    group_code="A",
+                    employee_id="0001",
+                    employee_name="Test Seller",
+                    monthly_salary=Decimal("5000000"),
+                    summary_data={"earned_salary": "5000000", "total_sales": "10000000"},
+                )
+            ],
+            [
+                GroupSummaryDTO(
+                    group_code="A",
+                    group_total_sales=Decimal("10000000"),
+                    group_profit=Decimal("2000000"),
+                    leader_bonus=Decimal("200000"),
+                )
+            ],
+        )
+
+        service = SheetsSyncService()
+        log = service.sync_payroll(force=True)
+
+        self.assertEqual(log.status, SyncStatus.SUCCESS)
+        self.assertEqual(Sale.objects.count(), 0)
+
+        emp = Employee.objects.get(employee_id="0001")
+        self.assertEqual(emp.summary_data["earned_salary"], "5000000")
+
+        stat = EmployeeMonthlyStat.objects.get(employee=emp, period=date(2026, 8, 1))
+        self.assertEqual(stat.summary_data["total_sales"], "10000000")
 

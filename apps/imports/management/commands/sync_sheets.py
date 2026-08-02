@@ -81,19 +81,20 @@ class Command(BaseCommand):
 
     def _sync_once(self, service: SheetsSyncService, force: bool, allow_period_mismatch: bool = False) -> None:
         try:
-            sync_log = service.sync_if_needed(force=force, allow_period_mismatch=allow_period_mismatch)
+            payroll_log = service.sync_payroll(force=force)
+            orders_log = service.sync_orders(force=force)
 
-            if sync_log.status == "success":
+            if payroll_log.status == "success" or orders_log.status == "success":
                 self.stdout.write(
                     self.style.SUCCESS(
-                        f"Muvaffaqiyatli sinxronlandi! {sync_log.row_count} ta buyurtma saqlandi "
-                        f"(Yangi: {sync_log.created_sales}, Yangilandi: {sync_log.updated_sales})."
+                        f"Muvaffaqiyatli sinxronlandi! {orders_log.row_count} ta buyurtma saqlandi "
+                        f"(Yangi: {orders_log.created_sales}, Yangilandi: {orders_log.updated_sales})."
                     )
                 )
             else:
                 self.stdout.write(
                     self.style.WARNING(
-                        f"Sinxronizatsiya holati: {sync_log.status} (O'zgarishsiz o'tkazib yuborildi)."
+                        f"Sinxronizatsiya holati: {orders_log.status} (O'zgarishsiz o'tkazib yuborildi)."
                     )
                 )
         except ValidationError as exc:

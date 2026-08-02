@@ -125,6 +125,54 @@ class SheetsSource(BaseSource):
 
         raise ValidationError("Google Service Account kalitlari topilmadi (GOOGLE_SERVICE_ACCOUNT_JSON yoki GOOGLE_SERVICE_ACCOUNT_FILE).")
 
+    def read_payroll_only(self) -> tuple[list[PayrollDTO], list[GroupSummaryDTO]]:
+        """Read List2 (payroll) and Guruhlar worksheets only for the fast path."""
+        try:
+            spreadsheet = self.client.open_by_key(self.sheet_id)
+        except Exception as exc:
+            raise ValidationError(f"Google Sheet faylini ochib bo'lmadi (ID: {self.sheet_id}): {exc}") from exc
+
+        self.last_dropped_payroll_rows = []
+        worksheets = {ws.title.strip().lower(): ws for ws in spreadsheet.worksheets()}
+
+        payroll_candidates: list[gspread.Worksheet] = []
+        for name in ["list2", "xodimlar maoshi", "ish haqi"]:
+            ws = worksheets.get(name)
+            if ws and ws not in payroll_candidates:
+                payroll_candidates.append(ws)
+
+        if not payroll_candidates:
+            raise ValidationError("Google Sheet'da 'List2', 'Xodimlar maoshi' yoki 'Ish haqi' varog'i topilmadi.")
+
+        payroll_by_id: dict[str, PayrollDTO] = {}
+        successful_parses = 0
+        for ws in payroll_candidates:
+            try:
+                parsed = self._parse_payroll(ws)
+                for dto in parsed:
+                    existing = payroll_by_id.get(dto.employee_id)
+                    if existing is None or (dto.summary_data and not existing.summary_data):
+                        payroll_by_id[dto.employee_id] = dto
+                successful_parses += 1
+            except Exception as exc:
+                logger.warning("Payroll varag'ini ('%s') tahlil qilishda xatolik: %s", ws.title, exc)
+
+        if successful_parses == 0:
+            raise ValidationError("Birorta ham payroll varog'ini tahlil qilib bo'lmadi.")
+
+        payroll = list(payroll_by_id.values())
+
+        ws_guruhlar = worksheets.get("guruhlar")
+        groups_summary: list[GroupSummaryDTO] = []
+        if ws_guruhlar:
+            try:
+                groups_summary = self._parse_groups(ws_guruhlar)
+            except Exception as exc:
+                logger.warning("Guruhlar varag'ini tahlil qilishda xatolik: %s", exc)
+
+        self.groups_summary = groups_summary
+        return payroll, groups_summary
+
     def read(self) -> tuple[list[OrderDTO], list[PayrollDTO]]:
         """Read data from Google Sheets and return DTO lists. (Read-only)"""
         try:
