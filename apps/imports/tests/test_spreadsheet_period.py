@@ -90,7 +90,7 @@ class SpreadsheetPeriodTest(TestCase):
 
         service = SheetsSyncService()
         with self.assertRaises(ValidationError) as ctx:
-            service.sync_if_needed(force=True, allow_period_mismatch=False)
+            service.sync_orders(force=True)
 
         self.assertIn("does not match sheet data modal month", str(ctx.exception))
 

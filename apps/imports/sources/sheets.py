@@ -128,9 +128,12 @@ class SheetsSource(BaseSource):
 
     def read_payroll_only(self) -> tuple[list[PayrollDTO], list[GroupSummaryDTO]]:
         """Read List2 (payroll) and Guruhlar worksheets using a single values_batch_get API call."""
-        self.last_dropped_payroll_rows = []
+        try:
+            spreadsheet = self.client.open_by_key(self.sheet_id)
+        except Exception as exc:
+            raise ValidationError(f"Google Sheet faylini ochib bo'lmadi (ID: {self.sheet_id}): {exc}") from exc
 
-        spreadsheet = gspread.Spreadsheet(self.client, properties={"id": self.sheet_id})
+        self.last_dropped_payroll_rows = []
 
         cache_key = f"sheets_ws_titles_{self.sheet_id}"
         ws_titles = cache.get(cache_key)

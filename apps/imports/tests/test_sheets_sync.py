@@ -143,12 +143,13 @@ class SheetsSyncFailureTest(TestCase):
         stat = EmployeeMonthlyStat.objects.get(employee=emp, period=date(2026, 8, 1))
         self.assertEqual(stat.summary_data["total_sales"], "10000000")
 
-    @patch("gspread.Spreadsheet.values_batch_get")
-    @patch.object(SheetsSource, "_authenticate")
-    def test_read_payroll_only_uses_values_batch_get_single_api_call(self, _mock_auth, mock_batch_get) -> None:
+    @patch("apps.imports.sources.sheets.SheetsSource._authenticate")
+    def test_read_payroll_only_uses_values_batch_get_single_api_call(self, mock_auth) -> None:
         from apps.imports.sources.sheets import SheetsSource
 
-        mock_batch_get.return_value = {
+        mock_client = mock_auth.return_value
+        mock_spreadsheet = mock_client.open_by_key.return_value
+        mock_spreadsheet.values_batch_get.return_value = {
             "valueRanges": [
                 {
                     "range": "List2!A1:Z100",
@@ -170,7 +171,7 @@ class SheetsSyncFailureTest(TestCase):
         source = SheetsSource(sheet_id="test_sheet_id")
         payroll, groups = source.read_payroll_only()
 
-        self.assertEqual(mock_batch_get.call_count, 1)
+        self.assertEqual(mock_spreadsheet.values_batch_get.call_count, 1)
         self.assertEqual(len(payroll), 1)
         self.assertEqual(payroll[0].employee_id, "0001")
         self.assertEqual(len(groups), 1)
@@ -230,4 +231,48 @@ class SheetsSyncFailureTest(TestCase):
             log2 = service.sync_payroll(force=False)
             self.assertFalse(mock_import.called)
             self.assertEqual(log2.pk, log1.pk)
+
+    @patch("apps.imports.management.commands.sync_benchmark.SheetsSource")
+    @patch("apps.imports.management.commands.sync_benchmark.SheetsSyncService")
+    def test_sync_benchmark_command_executes_successfully(self, mock_service_cls, mock_source_cls) -> None:
+        from io import StringIO
+        from datetime import datetime, timezone as dt_timezone
+        from decimal import Decimal
+        from django.core.management import call_command
+        from apps.imports.dto import OrderDTO, PayrollDTO
+
+        mock_source = mock_source_cls.return_value
+        mock_source.sheet_id = "test_sheet_id"
+        mock_source.read.return_value = (
+            [
+                OrderDTO(
+                    employee_id="0001",
+                    employee_name="Test Seller",
+                    group_code="A",
+                    order_id="202608_0001_1",
+                    status="successful",
+                    source="Baza",
+                    sale_amount=Decimal("100000"),
+                    ordered_at=datetime(2026, 8, 1, tzinfo=dt_timezone.utc),
+                )
+            ],
+            [],
+        )
+        mock_source._parse_payroll.return_value = [
+            PayrollDTO(
+                group_code="A",
+                employee_id="0001",
+                employee_name="Test Seller",
+                monthly_salary=None,
+                summary_data={"earned_salary": "100000"},
+            )
+        ]
+        mock_source._parse_groups.return_value = []
+
+        out = StringIO()
+        call_command("sync_benchmark", runs=1, stdout=out)
+        output = out.getvalue()
+        self.assertIn("FAST PATH", output)
+        self.assertIn("SLOW PATH", output)
+        self.assertIn("TOTAL FAST PATH TIME", output)
 

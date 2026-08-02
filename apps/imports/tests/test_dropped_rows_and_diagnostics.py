@@ -89,7 +89,9 @@ class DroppedRowsAndDiagnosticsTest(TestCase):
         mock_source = MagicMock()
         mock_source.sheet_id = "test-sheet-id"
         mock_source.last_dropped_rows = [{"row_idx": i} for i in range(10)]  # 10 dropped rows
+        mock_source.last_dropped_payroll_rows = [{"row_idx": i} for i in range(10)]
         mock_source.read.return_value = ([], [])  # 0 parsed orders
+        mock_source.read_payroll_only.return_value = ([], [])
         mock_source_cls.return_value = mock_source
 
         sync_service = SheetsSyncService()

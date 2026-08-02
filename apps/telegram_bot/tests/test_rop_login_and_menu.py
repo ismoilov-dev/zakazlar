@@ -453,8 +453,14 @@ class RopPartATestCase(TestCase):
         self.assertIn("👔 ROP PANELI", btn_texts)
 
         # Regular MOP (non-leader) does not see switch button
-        mop_emp = await Employee.objects.acreate(employee_id="0090", full_name="Regular MOP", group=self.group)
-        await TelegramAccount.objects.acreate(employee=mop_emp, telegram_id=778, role="MOP")
+        mop_emp, _ = await Employee.objects.aget_or_create(
+            employee_id="0099",
+            defaults={"full_name": "Regular MOP", "group": self.group},
+        )
+        await TelegramAccount.objects.aget_or_create(
+            telegram_id=778,
+            defaults={"employee": mop_emp, "role": "MOP"},
+        )
         msg_mop = MagicMock()
         msg_mop.from_user.id = 778
         msg_mop.answer = AsyncMock()
