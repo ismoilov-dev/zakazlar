@@ -7,9 +7,9 @@ from apps.telegram_bot.routers import SYNC_TIMEOUT_SECONDS, ensure_fresh_data_an
 
 
 class SyncTimeoutAndStaleTest(TestCase):
-    def test_sync_timeout_constant_is_three_seconds(self):
-        """SYNC_TIMEOUT_SECONDS should be 3.0 seconds."""
-        self.assertEqual(SYNC_TIMEOUT_SECONDS, 3.0)
+    def test_sync_timeout_constant_is_one_point_five_seconds(self):
+        """SYNC_TIMEOUT_SECONDS should be 1.5 seconds."""
+        self.assertEqual(SYNC_TIMEOUT_SECONDS, 1.5)
 
     @patch("apps.telegram_bot.routers.SheetsSyncService")
     async def test_ensure_fresh_data_calls_sync_without_force(self, mock_service_cls):

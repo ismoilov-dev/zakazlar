@@ -62,7 +62,7 @@ router = Router(name="sales_bot")
 
 
 STALE_THRESHOLD_SECONDS = 300
-SYNC_TIMEOUT_SECONDS = 3.0
+SYNC_TIMEOUT_SECONDS = getattr(settings, "SYNC_TIMEOUT_SECONDS", 1.5)
 
 _background_tasks: set[asyncio.Task] = set()
 _current_sync_task: asyncio.Task | None = None
