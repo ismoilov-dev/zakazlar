@@ -202,3 +202,32 @@ class SheetsSyncFailureTest(TestCase):
         self.assertEqual(log.status, SyncStatus.SUCCESS)
         self.assertTrue(mock_source.read_payroll_only.called)
 
+    @patch("apps.imports.services.sheets_sync.SheetsSource")
+    def test_unchanged_payroll_hash_short_circuits_and_skips_db_writes(self, mock_sheets_source_cls) -> None:
+        from apps.imports.dto import PayrollDTO
+
+        mock_source = mock_sheets_source_cls.return_value
+        mock_source.sheet_id = "test_sheet_id"
+        mock_source.last_payroll_hash = "fixed_hash_123"
+        mock_source.read_payroll_only.return_value = (
+            [
+                PayrollDTO(
+                    group_code="A",
+                    employee_id="0001",
+                    employee_name="Test Seller",
+                    monthly_salary=None,
+                    summary_data={"earned_salary": "100000"},
+                )
+            ],
+            [],
+        )
+
+        service = SheetsSyncService()
+        log1 = service.sync_payroll(force=True)
+        self.assertEqual(log1.payroll_hash, "fixed_hash_123")
+
+        with patch.object(service.importer, "import_payroll_only") as mock_import:
+            log2 = service.sync_payroll(force=False)
+            self.assertFalse(mock_import.called)
+            self.assertEqual(log2.pk, log1.pk)
+

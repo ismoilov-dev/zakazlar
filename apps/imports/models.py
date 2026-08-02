@@ -60,6 +60,9 @@ class SyncLog(TimeStampedModel):
     created_sales = models.PositiveIntegerField(default=0)
     updated_sales = models.PositiveIntegerField(default=0)
     status = models.CharField(max_length=16, choices=SyncStatus.choices, default=SyncStatus.PENDING)
+    sync_type = models.CharField(max_length=16, default="payroll")
+    payroll_hash = models.CharField(max_length=64, blank=True, default="")
+    orders_hash = models.CharField(max_length=64, blank=True, default="")
     error_text = models.TextField(blank=True, default="")
     sheet_modified_at = models.CharField(max_length=64, blank=True, default="")
 

@@ -173,6 +173,10 @@ class SheetsSource(BaseSource):
         raw_payroll = value_ranges[0].get("values", []) if len(value_ranges) > 0 else []
         raw_guruhlar = value_ranges[1].get("values", []) if len(value_ranges) > 1 else []
 
+        import hashlib
+        raw_payroll_str = json.dumps({"payroll": raw_payroll, "guruhlar": raw_guruhlar}, sort_keys=True)
+        self.last_payroll_hash = hashlib.sha256(raw_payroll_str.encode("utf-8")).hexdigest()
+
         payroll = self._parse_payroll(raw_payroll, sheet_title=payroll_title)
         groups_summary = self._parse_groups(raw_guruhlar)
 
@@ -239,6 +243,10 @@ class SheetsSource(BaseSource):
             logger.warning("Google Sheet'da 'Guruhlar' varog'i topilmadi.")
 
         self.groups_summary = groups_summary
+
+        import hashlib
+        orders_payload = [(r.order_id, r.employee_id, r.status, str(r.sale_amount)) for r in orders]
+        self.last_orders_hash = hashlib.sha256(json.dumps(orders_payload, sort_keys=True).encode("utf-8")).hexdigest()
 
         return orders, payroll
 

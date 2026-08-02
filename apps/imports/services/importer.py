@@ -65,43 +65,74 @@ class DataImporter:
 
             payroll_employee_ids = {row.employee_id for row in payroll}
 
-            # 1. Upsert payroll & employees & monthly stats
+            existing_employees = {
+                emp.employee_id: emp
+                for emp in Employee.objects.select_related("group").filter(employee_id__in=payroll_employee_ids)
+            }
+            existing_stats = {}
+            if period:
+                from apps.employees.models import EmployeeMonthlyStat
+                existing_stats = {
+                    (stat.employee_id, stat.period): stat
+                    for stat in EmployeeMonthlyStat.objects.filter(period=period)
+                }
+
+            # 1. Upsert payroll & employees & monthly stats (only if changed)
             for row in payroll:
                 group = self.groups.get_or_create(code=row.group_code)
-                emp = self.employees.upsert(
-                    employee_id=row.employee_id,
-                    full_name=row.employee_name,
-                    group=group,
-                    monthly_salary=row.monthly_salary,
-                    summary_data=row.summary_data or {},
-                )
+                existing_emp = existing_employees.get(row.employee_id)
+                summary_dict = row.summary_data or {}
+
+                if (
+                    existing_emp is None
+                    or existing_emp.full_name != row.employee_name
+                    or existing_emp.group_id != group.id
+                    or existing_emp.monthly_salary != row.monthly_salary
+                    or existing_emp.summary_data != summary_dict
+                ):
+                    emp = self.employees.upsert(
+                        employee_id=row.employee_id,
+                        full_name=row.employee_name,
+                        group=group,
+                        monthly_salary=row.monthly_salary,
+                        summary_data=summary_dict,
+                    )
+                else:
+                    emp = existing_emp
 
                 if period:
-                    from apps.employees.repositories.monthly_stat import ClosedPeriodError, EmployeeMonthlyStatRepository
-                    try:
-                        EmployeeMonthlyStatRepository().upsert_snapshot(
-                            employee=emp,
-                            period=period,
-                            summary_data=row.summary_data or {},
-                            source_spreadsheet_id=sheet_id,
-                            force=False,
-                        )
-                    except ClosedPeriodError:
-                        logger.info(
-                            "Xodim %s uchun %s davri yopilgan (is_closed=True), oylik snapshot yangilanishi o'tkazib yuborildi.",
-                            emp.employee_id,
-                            period,
-                        )
+                    existing_stat = existing_stats.get((emp.id, period))
+                    if existing_stat is None or existing_stat.summary_data != summary_dict or existing_stat.source_spreadsheet_id != sheet_id:
+                        from apps.employees.repositories.monthly_stat import ClosedPeriodError, EmployeeMonthlyStatRepository
+                        try:
+                            EmployeeMonthlyStatRepository().upsert_snapshot(
+                                employee=emp,
+                                period=period,
+                                summary_data=summary_dict,
+                                source_spreadsheet_id=sheet_id,
+                                force=False,
+                            )
+                        except ClosedPeriodError:
+                            logger.info(
+                                "Xodim %s uchun %s davri yopilgan (is_closed=True), oylik snapshot yangilanishi o'tkazib yuborildi.",
+                                emp.employee_id,
+                                period,
+                            )
 
-            # Upsert group summaries
+            # Upsert group summaries only if changed
             if group_summaries:
                 for g_dto in group_summaries:
                     group = self.groups.get_or_create(code=g_dto.group_code)
-                    group.group_total_sales = g_dto.group_total_sales
-                    group.group_profit = g_dto.group_profit
-                    group.leader_bonus = g_dto.leader_bonus
-                    group.synced_at = timezone.now()
-                    group.save(update_fields=["group_total_sales", "group_profit", "leader_bonus", "synced_at"])
+                    if (
+                        group.group_total_sales != g_dto.group_total_sales
+                        or group.group_profit != g_dto.group_profit
+                        or group.leader_bonus != g_dto.leader_bonus
+                    ):
+                        group.group_total_sales = g_dto.group_total_sales
+                        group.group_profit = g_dto.group_profit
+                        group.leader_bonus = g_dto.leader_bonus
+                        group.synced_at = timezone.now()
+                        group.save(update_fields=["group_total_sales", "group_profit", "leader_bonus", "synced_at"])
 
             # Clear stale summary_data and monthly_salary for active employees no longer in List2
             Employee.objects.filter(is_active=True).exclude(employee_id__in=payroll_employee_ids).update(
@@ -139,6 +170,7 @@ class DataImporter:
                 for emp in Employee.objects.select_related("group").all()
             }
 
+            existing_sales: dict[str, Sale] = {}
             if orders:
                 imported_order_ids = {row.order_id for row in orders if row.order_id}
                 year_months = {(row.ordered_at.year, row.ordered_at.month) for row in orders if row.ordered_at}
@@ -147,13 +179,30 @@ class DataImporter:
                     month_filter = Q()
                     for yr, mth in year_months:
                         month_filter |= Q(ordered_at__year=yr, ordered_at__month=mth)
-                    Sale.objects.filter(month_filter).exclude(external_order_id__in=imported_order_ids).delete()
+                    existing_sales = {
+                        s.external_order_id: s
+                        for s in Sale.objects.filter(month_filter)
+                    }
+                    stale_ids = set(existing_sales.keys()) - imported_order_ids
+                    if stale_ids:
+                        Sale.objects.filter(month_filter, external_order_id__in=stale_ids).delete()
 
             sales_to_upsert: list[Sale] = []
             for row in orders:
                 employee = employee_map.get(row.employee_id)
                 if employee is None:
                     logger.warning("Rejecting order %s: employee ID %s not in payroll roster", row.order_id, row.employee_id)
+                    continue
+
+                existing_sale = existing_sales.get(row.order_id)
+                if (
+                    existing_sale is not None
+                    and existing_sale.employee_id == employee.id
+                    and existing_sale.status == row.status
+                    and existing_sale.source == row.source
+                    and existing_sale.sale_amount == row.sale_amount
+                    and existing_sale.ordered_at == row.ordered_at
+                ):
                     continue
 
                 sales_to_upsert.append(
@@ -168,6 +217,9 @@ class DataImporter:
                         ordered_at=row.ordered_at,
                     )
                 )
+
+            if not sales_to_upsert:
+                return (0, 0)
 
             return self.sales.bulk_upsert(sales_to_upsert)
 
