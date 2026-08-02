@@ -65,6 +65,7 @@ class SyncLog(TimeStampedModel):
     orders_hash = models.CharField(max_length=64, blank=True, default="")
     error_text = models.TextField(blank=True, default="")
     sheet_modified_at = models.CharField(max_length=64, blank=True, default="")
+    unchanged = models.BooleanField(default=False)
 
     class Meta:
         db_table = "sync_logs"
@@ -74,8 +75,11 @@ class SyncLog(TimeStampedModel):
         return f"SyncLog #{self.pk} ({self.status} at {self.started_at})"
 
     @classmethod
-    def get_last_successful(cls) -> SyncLog | None:
-        return cls.objects.filter(status=SyncStatus.SUCCESS).first()
+    def get_last_successful(cls, sync_type: str | None = None) -> SyncLog | None:
+        qs = cls.objects.filter(status=SyncStatus.SUCCESS)
+        if sync_type:
+            qs = qs.filter(sync_type=sync_type)
+        return qs.first()
 
 
 import re

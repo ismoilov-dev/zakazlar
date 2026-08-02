@@ -89,7 +89,7 @@ async def ensure_fresh_data_and_get_timestamp() -> tuple[str, bool]:
     """Single-flight background sync; awaits sync with 3s timeout before returning timestamp."""
     global _current_sync_task
     now = timezone.now()
-    last_successful = await sync_to_async(SyncLog.get_last_successful)()
+    last_successful = await sync_to_async(SyncLog.get_last_successful)(sync_type="payroll")
 
     should_sync = False
     if not last_successful or not last_successful.finished_at or (now - last_successful.finished_at).total_seconds() > 15:
@@ -109,8 +109,8 @@ async def ensure_fresh_data_and_get_timestamp() -> tuple[str, bool]:
         except TimeoutError:
             logger.warning("Sync timed out after %s seconds; serving existing snapshot", SYNC_TIMEOUT_SECONDS)
 
-    last_attempt = await sync_to_async(lambda: SyncLog.objects.order_by("-started_at").first())()
-    last_successful = await sync_to_async(SyncLog.get_last_successful)()
+    last_attempt = await sync_to_async(lambda: SyncLog.objects.filter(sync_type="payroll").order_by("-started_at").first())()
+    last_successful = await sync_to_async(SyncLog.get_last_successful)(sync_type="payroll")
 
     is_stale = False
     if last_attempt and last_attempt.status == SyncStatus.FAILED:

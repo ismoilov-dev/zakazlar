@@ -7,13 +7,13 @@ from apps.sales.models import Sale
 
 @admin.register(Sale)
 class SaleAdmin(admin.ModelAdmin):
-    list_display = ("external_order_id", "employee", "status", "source", "sale_amount", "profit_amount", "ordered_at")
-    list_filter = ("status", "source", "ordered_at")
+    list_display = ("external_order_id", "employee", "status", "source", "sale_amount", "has_sheet_error", "profit_amount", "ordered_at")
+    list_filter = ("status", "source", "has_sheet_error", "ordered_at")
     search_fields = ("external_order_id", "employee__employee_id", "employee__full_name")
     list_select_related = ("employee", "import_job")
     date_hierarchy = "ordered_at"
     readonly_fields = (
-        "external_order_id", "employee", "import_job", "status", "source", "sale_amount", "profit_amount", "ordered_at",
+        "external_order_id", "employee", "import_job", "status", "source", "sale_amount", "has_sheet_error", "profit_amount", "ordered_at",
         "created_at", "updated_at",
     )
 

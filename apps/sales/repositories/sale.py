@@ -39,7 +39,7 @@ class SaleRepository:
             items,
             batch_size=1000,
             update_conflicts=True,
-            update_fields=["employee", "import_job", "status", "source", "sale_amount", "profit_amount", "ordered_at", "updated_at"],
+            update_fields=["employee", "import_job", "status", "source", "sale_amount", "has_sheet_error", "profit_amount", "ordered_at", "updated_at"],
             unique_fields=["external_order_id"],
         )
         updated = sum(item.external_order_id in existing_ids for item in items)

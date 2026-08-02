@@ -88,7 +88,7 @@ class SheetsSyncService:
 
     def sync_payroll(self, force: bool = False) -> SyncLog:
         """Fast path: Reads List2 and Guruhlar ONLY. Updates payroll, stats and groups without touching Sale records."""
-        last_successful = SyncLog.get_last_successful()
+        last_successful = SyncLog.get_last_successful(sync_type="payroll")
 
         if not force and cache.get(self.CACHE_KEY):
             if last_successful:
@@ -105,10 +105,21 @@ class SheetsSyncService:
             current_modified_time = self._get_drive_modified_time(source, sheet_id)
 
             if not force and current_modified_time and last_successful and last_successful.sheet_modified_at == current_modified_time:
-                return last_successful
+                logger.info("Drive modified_time (%s) o'zgarmagan, short-circuit success log yaratilmoqda.", current_modified_time)
+                return SyncLog.objects.create(
+                    status=SyncStatus.SUCCESS,
+                    sync_type="payroll",
+                    finished_at=timezone.now(),
+                    sheet_modified_at=current_modified_time,
+                    payroll_hash=last_successful.payroll_hash,
+                    orders_hash=last_successful.orders_hash,
+                    row_count=0,
+                    unchanged=True,
+                )
 
             sync_log = SyncLog.objects.create(
                 status=SyncStatus.PENDING,
+                sync_type="payroll",
                 sheet_modified_at=current_modified_time,
             )
 
@@ -130,12 +141,32 @@ class SheetsSyncService:
             payroll_hash_val = getattr(source, "last_payroll_hash", "")
             payroll_hash = str(payroll_hash_val) if isinstance(payroll_hash_val, str) else ""
 
-            last_payroll_log = SyncLog.objects.filter(status=SyncStatus.SUCCESS, sync_type="payroll").first()
+            last_payroll_log = SyncLog.get_last_successful(sync_type="payroll")
             if not force and payroll_hash and last_payroll_log and last_payroll_log.payroll_hash == payroll_hash:
                 logger.info("Payroll hash (%s) o'zgarmagan, DB yozuvlari o'tkazib yuborildi.", payroll_hash)
-                if sync_log:
-                    sync_log.delete()
-                return last_payroll_log
+                sync_log.status = SyncStatus.SUCCESS
+                sync_log.sync_type = "payroll"
+                sync_log.payroll_hash = payroll_hash
+                sync_log.finished_at = timezone.now()
+                sync_log.row_count = 0
+                sync_log.skipped_rows = 0
+                sync_log.created_sales = 0
+                sync_log.updated_sales = 0
+                sync_log.unchanged = True
+                sync_log.save(
+                    update_fields=[
+                        "status",
+                        "sync_type",
+                        "payroll_hash",
+                        "finished_at",
+                        "row_count",
+                        "skipped_rows",
+                        "created_sales",
+                        "updated_sales",
+                        "unchanged",
+                    ]
+                )
+                return sync_log
 
             skipped_rows = len(getattr(source, "last_dropped_payroll_rows", []))
             total_rows = len(payroll) + skipped_rows
@@ -170,9 +201,23 @@ class SheetsSyncService:
             sync_log.skipped_rows = skipped_rows
             sync_log.created_sales = 0
             sync_log.updated_sales = 0
+            sync_log.unchanged = False
             if skipped_rows > 0:
                 sync_log.error_text = f"Tashlangan qatorlar: {skipped_rows} ta."
-            sync_log.save(update_fields=["status", "sync_type", "payroll_hash", "finished_at", "row_count", "skipped_rows", "created_sales", "updated_sales", "error_text"])
+            sync_log.save(
+                update_fields=[
+                    "status",
+                    "sync_type",
+                    "payroll_hash",
+                    "finished_at",
+                    "row_count",
+                    "skipped_rows",
+                    "created_sales",
+                    "updated_sales",
+                    "unchanged",
+                    "error_text",
+                ]
+            )
 
             return sync_log
 
@@ -198,7 +243,7 @@ class SheetsSyncService:
 
     def sync_orders(self, force: bool = False) -> SyncLog:
         """Slow path: Reads List1, resolves modal month, verifies period and writes Sale records."""
-        last_successful = SyncLog.get_last_successful()
+        last_successful = SyncLog.get_last_successful(sync_type="orders")
 
         sync_log = None
         try:
@@ -208,7 +253,17 @@ class SheetsSyncService:
             current_modified_time = self._get_drive_modified_time(source, sheet_id)
 
             if not force and current_modified_time and last_successful and last_successful.sheet_modified_at == current_modified_time:
-                return last_successful
+                logger.info("Drive modified_time (%s) o'zgarmagan, short-circuit success log yaratilmoqda.", current_modified_time)
+                return SyncLog.objects.create(
+                    status=SyncStatus.SUCCESS,
+                    sync_type="orders",
+                    finished_at=timezone.now(),
+                    sheet_modified_at=current_modified_time,
+                    payroll_hash=last_successful.payroll_hash,
+                    orders_hash=last_successful.orders_hash,
+                    row_count=0,
+                    unchanged=True,
+                )
 
             sync_log = SyncLog.objects.create(
                 status=SyncStatus.PENDING,
@@ -220,12 +275,32 @@ class SheetsSyncService:
             orders_hash_val = getattr(source, "last_orders_hash", "")
             orders_hash = str(orders_hash_val) if isinstance(orders_hash_val, str) else ""
 
-            last_orders_log = SyncLog.objects.filter(status=SyncStatus.SUCCESS, sync_type="orders").first()
+            last_orders_log = SyncLog.get_last_successful(sync_type="orders")
             if not force and orders_hash and last_orders_log and last_orders_log.orders_hash == orders_hash:
                 logger.info("Orders hash (%s) o'zgarmagan, DB yozuvlari o'tkazib yuborildi.", orders_hash)
-                if sync_log:
-                    sync_log.delete()
-                return last_orders_log
+                sync_log.status = SyncStatus.SUCCESS
+                sync_log.sync_type = "orders"
+                sync_log.orders_hash = orders_hash
+                sync_log.finished_at = timezone.now()
+                sync_log.row_count = 0
+                sync_log.skipped_rows = 0
+                sync_log.created_sales = 0
+                sync_log.updated_sales = 0
+                sync_log.unchanged = True
+                sync_log.save(
+                    update_fields=[
+                        "status",
+                        "sync_type",
+                        "orders_hash",
+                        "finished_at",
+                        "row_count",
+                        "skipped_rows",
+                        "created_sales",
+                        "updated_sales",
+                        "unchanged",
+                    ]
+                )
+                return sync_log
 
             skipped_rows = len(getattr(source, "last_dropped_rows", []))
             total_rows = len(orders) + skipped_rows
@@ -267,9 +342,23 @@ class SheetsSyncService:
             sync_log.skipped_rows = skipped_rows
             sync_log.created_sales = created
             sync_log.updated_sales = updated
+            sync_log.unchanged = False
             if skipped_rows > 0:
                 sync_log.error_text = f"Tashlangan qatorlar: {skipped_rows} ta."
-            sync_log.save(update_fields=["status", "sync_type", "orders_hash", "finished_at", "row_count", "skipped_rows", "created_sales", "updated_sales", "error_text"])
+            sync_log.save(
+                update_fields=[
+                    "status",
+                    "sync_type",
+                    "orders_hash",
+                    "finished_at",
+                    "row_count",
+                    "skipped_rows",
+                    "created_sales",
+                    "updated_sales",
+                    "unchanged",
+                    "error_text",
+                ]
+            )
 
             return sync_log
 

@@ -25,3 +25,23 @@ class BotTimezoneTest(TestCase):
         # Should display local time 15:00:00 instead of UTC 10:00:00
         self.assertEqual(formatted_ts, "28.07.2026 15:00:00")
 
+    @patch("apps.telegram_bot.routers._do_sync")
+    async def test_orders_failure_does_not_affect_employee_payroll_staleness(self, _mock_do_sync) -> None:
+        now = datetime.now(tz=zoneinfo.ZoneInfo("UTC"))
+        await SyncLog.objects.acreate(
+            sync_type="payroll",
+            status=SyncStatus.SUCCESS,
+            started_at=now,
+            finished_at=now,
+        )
+        await SyncLog.objects.acreate(
+            sync_type="orders",
+            status=SyncStatus.FAILED,
+            error_text="Period mismatch error",
+            started_at=now,
+            finished_at=now,
+        )
+
+        _, is_stale = await ensure_fresh_data_and_get_timestamp()
+        self.assertFalse(is_stale)
+

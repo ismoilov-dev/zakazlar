@@ -459,22 +459,27 @@ class SheetsSource(BaseSource):
                 logger.warning("List1 %s-qator tashlandi: %s | Birinchi 6 katak: %s", row_idx, reason, first_6)
                 continue
 
-            try:
-                amount = self._parse_money(amount_str, sheet_name="List1", row_idx=row_idx)
-            except PARSE_ERRORS as exc:
-                dropped_invalid_id += 1
-                reason = f"Summa xatosi: {exc}"
-                first_6 = [str(c).strip() for c in row[:6]]
-                dropped_rows.append({"row_idx": row_idx, "reason": reason, "raw_cells": first_6, "row_data": row})
-                logger.warning("List1 %s-qator tashlandi: %s | Birinchi 6 katak: %s", row_idx, reason, first_6)
-                continue
-
+            sale_amount: Decimal | None = None
+            has_sheet_error = False
+            raw_amount_cell = str(row[amount_idx]).strip() if amount_idx is not None and amount_idx < len(row) else ""
+            if raw_amount_cell and self._is_sheet_error(raw_amount_cell):
+                has_sheet_error = True
+                sale_amount = None
+            else:
+                try:
+                    sale_amount = self._parse_money(amount_str, sheet_name="List1", row_idx=row_idx)
+                except PARSE_ERRORS as exc:
+                    dropped_invalid_id += 1
+                    reason = f"Summa xatosi: {exc}"
+                    first_6 = [str(c).strip() for c in row[:6]]
+                    dropped_rows.append({"row_idx": row_idx, "reason": reason, "raw_cells": first_6, "row_data": row})
+                    logger.warning("List1 %s-qator tashlandi: %s | Birinchi 6 katak: %s", row_idx, reason, first_6)
+                    continue
 
             src_raw_cell = self._get_cell(row, source_idx) if source_idx is not None else ""
             src_val, unrecognized_src = self._normalize_source(src_raw_cell)
             if unrecognized_src:
                 unrecognized_sources_count[unrecognized_src] += 1
-
 
             try:
                 clean_ord = normalize_order_id(ord_raw)
@@ -495,8 +500,9 @@ class SheetsSource(BaseSource):
                     order_id=ord_id,
                     status=stat_val,
                     source=src_val,
-                    sale_amount=amount,
+                    sale_amount=sale_amount,
                     ordered_at=ordered_at,
+                    has_sheet_error=has_sheet_error,
                 )
             )
             parsed_rows_count += 1

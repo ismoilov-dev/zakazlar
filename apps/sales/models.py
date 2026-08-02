@@ -31,7 +31,8 @@ class Sale(TimeStampedModel):
     status = models.CharField(max_length=16, choices=SaleStatus.choices)
     source = models.CharField(max_length=64, choices=SaleSource.choices, default=SaleSource.UNKNOWN, blank=True)
 
-    sale_amount = models.DecimalField(max_digits=16, decimal_places=2, validators=[MinValueValidator(Decimal("0"))])
+    sale_amount = models.DecimalField(max_digits=16, decimal_places=2, null=True, blank=True, validators=[MinValueValidator(Decimal("0"))])
+    has_sheet_error = models.BooleanField(default=False)
     profit_amount = models.DecimalField(max_digits=16, decimal_places=2, default=Decimal("0"))
     ordered_at = models.DateTimeField()
 

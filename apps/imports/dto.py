@@ -49,8 +49,9 @@ class OrderDTO:
     order_id: str
     status: str
     source: str
-    sale_amount: Decimal
+    sale_amount: Decimal | None
     ordered_at: datetime
+    has_sheet_error: bool = False
 
 
 @dataclass(frozen=True, slots=True)

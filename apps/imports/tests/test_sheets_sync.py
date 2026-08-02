@@ -226,11 +226,46 @@ class SheetsSyncFailureTest(TestCase):
         service = SheetsSyncService()
         log1 = service.sync_payroll(force=True)
         self.assertEqual(log1.payroll_hash, "fixed_hash_123")
+        self.assertFalse(log1.unchanged)
 
         with patch.object(service.importer, "import_payroll_only") as mock_import:
             log2 = service.sync_payroll(force=False)
             self.assertFalse(mock_import.called)
-            self.assertEqual(log2.pk, log1.pk)
+            self.assertEqual(log2.status, SyncStatus.SUCCESS)
+            self.assertTrue(log2.unchanged)
+            self.assertEqual(log2.row_count, 0)
+            self.assertGreaterEqual(log2.finished_at, log1.finished_at)
+
+            last_successful = SyncLog.get_last_successful()
+            self.assertEqual(last_successful.pk, log2.pk)
+            self.assertEqual(last_successful.finished_at, log2.finished_at)
+
+    @patch("apps.imports.services.sheets_sync.SheetsSource")
+    def test_get_last_successful_includes_payroll_fast_path_logs(self, mock_sheets_source_cls) -> None:
+        from apps.imports.dto import PayrollDTO
+
+        mock_source = mock_sheets_source_cls.return_value
+        mock_source.sheet_id = "test_sheet_id"
+        mock_source.read_payroll_only.return_value = (
+            [
+                PayrollDTO(
+                    group_code="A",
+                    employee_id="0001",
+                    employee_name="Test Seller",
+                    monthly_salary=None,
+                    summary_data={"earned_salary": "100000"},
+                )
+            ],
+            [],
+        )
+
+        service = SheetsSyncService()
+        payroll_log = service.sync_payroll(force=True)
+
+        last_successful = SyncLog.get_last_successful()
+        self.assertIsNotNone(last_successful)
+        self.assertEqual(last_successful.pk, payroll_log.pk)
+        self.assertEqual(last_successful.sync_type, "payroll")
 
     @patch("apps.imports.management.commands.sync_benchmark.SheetsSource")
     @patch("apps.imports.management.commands.sync_benchmark.SheetsSyncService")
@@ -311,4 +346,25 @@ class SheetsSyncFailureTest(TestCase):
         self.assertEqual(source.last_dropped_payroll_rows[0]["employee_id"], "0079")
         self.assertEqual(source.last_dropped_payroll_rows[0]["column"], "Otkaz")
         self.assertEqual(source.last_dropped_payroll_rows[0]["literal"], "#N/A")
+
+    def test_list1_row_with_formula_error_amount_imports_as_null_and_has_sheet_error(self) -> None:
+        from unittest.mock import MagicMock
+        from apps.imports.sources.sheets import SheetsSource
+
+        ws = MagicMock()
+        ws.title = "List1"
+        ws.get_all_values.return_value = [
+            ["№", "ID", "Ответственный", "Сумма", "Дата Заказа", "статус", "Источник"],
+            ["1", "0001", "Amir Karimov", "#N/A", "28.07.2026", "успешно", "Baza"],
+        ]
+
+        source = SheetsSource(sheet_id="test_sheet_id")
+        orders = source._parse_orders(ws)
+
+        self.assertEqual(len(orders), 1)
+        dto = orders[0]
+        self.assertEqual(dto.order_id, "202607_0001_1")
+        self.assertIsNone(dto.sale_amount)
+        self.assertTrue(dto.has_sheet_error)
+        self.assertEqual(len(getattr(source, "last_dropped_rows", [])), 0)
 
