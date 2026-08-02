@@ -397,6 +397,9 @@ class SheetsSource(BaseSource):
                         emp_id,
                         last_seen_emp_name,
                     )
+                elif not has_meaningful_content and not raw_emp_name:
+                    empty_rows_skipped += 1
+                    continue
                 else:
                     dropped_empty_id += 1
                     reason = "ID katakchasi bo'sh yoki ism mos kelmadi"
