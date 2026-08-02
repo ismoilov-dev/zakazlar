@@ -38,6 +38,21 @@ SCOPES = [
 SHEETS_FORWARD_FILL_EMPLOYEE_ID = True
 MAX_SKIPPED_ROWS_RATIO_THRESHOLD = 0.05
 
+SHEET_ERROR_LITERALS: set[str] = {
+    "#N/A",
+    "#REF!",
+    "#DIV/0!",
+    "#VALUE!",
+    "#NAME?",
+    "#NULL!",
+    "#NUM!",
+    "#ERROR!",
+    "#N/A N/A",
+    "N/A",
+    "ERR",
+    "ERROR",
+}
+
 STATUS_MAP = {
     "успешно": "successful",
     "успешна": "successful",
@@ -753,10 +768,20 @@ class SheetsSource(BaseSource):
         return None
 
     @staticmethod
+    def _is_sheet_error(val: object) -> bool:
+        if val is None:
+            return False
+        s = str(val).strip().upper()
+        return s in SHEET_ERROR_LITERALS or s.startswith("#")
+
+    @staticmethod
     def _get_cell(row: list[str], idx: int | None) -> str:
         if idx is None or idx >= len(row):
             return ""
-        return str(row[idx]).strip()
+        val = str(row[idx]).strip()
+        if SheetsSource._is_sheet_error(val):
+            return ""
+        return val
 
     @staticmethod
     def _require_text(val: str, field_name: str) -> str:
@@ -769,10 +794,10 @@ class SheetsSource(BaseSource):
         if val is None:
             return Decimal("0.00")
         s = str(val).strip()
-        if not s:
+        if not s or SheetsSource._is_sheet_error(s):
             return Decimal("0.00")
         clean = s.replace(" ", "").replace("\xa0", "").replace("$", "").replace("so'm", "").replace("som", "").strip()
-        if not clean:
+        if not clean or SheetsSource._is_sheet_error(clean):
             return Decimal("0.00")
         if "." not in clean and clean.count(",") == 1:
             clean = clean.replace(",", ".")
