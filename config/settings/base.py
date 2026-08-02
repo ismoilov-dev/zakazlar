@@ -149,6 +149,7 @@ from decimal import Decimal
 
 ROP_SESSION_HOURS = 12
 ROP_SALARY_RATE = Decimal("0.02")
+SHEETS_RECALC_DELAY_SECONDS = 0
 
 
 

@@ -103,9 +103,19 @@ class SheetsSyncService:
                 sheet_modified_at=current_modified_time,
             )
 
-            if self.SHEETS_RECALC_DELAY_SECONDS > 0:
-                logger.info("Google Sheets hisob-kitoblari yakunlanishi uchun %s sekund kutilmoqda...", self.SHEETS_RECALC_DELAY_SECONDS)
-                time.sleep(self.SHEETS_RECALC_DELAY_SECONDS)
+            recalc_delay = getattr(settings, "SHEETS_RECALC_DELAY_SECONDS", 0)
+            last_webhook = cache.get("sheet_webhook_last_call_timestamp")
+            should_sleep = False
+            if recalc_delay > 0 and last_webhook:
+                try:
+                    if (time.time() - float(last_webhook)) < 10.0:
+                        should_sleep = True
+                except (TypeError, ValueError):
+                    pass
+
+            if should_sleep:
+                logger.info("Google Sheets hisob-kitoblari yakunlanishi uchun %s sekund kutilmoqda...", recalc_delay)
+                time.sleep(recalc_delay)
 
             payroll, group_summaries = source.read_payroll_only()
 
