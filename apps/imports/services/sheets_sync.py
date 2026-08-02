@@ -133,15 +133,13 @@ class SheetsSyncService:
                 data_modal_month = period.strftime("%Y-%m")
                 if active_period_str != data_modal_month:
                     err_msg = f"Active SpreadsheetPeriod ({active_period_str}) does not match sheet data modal month ({data_modal_month}). Sync aborted."
-                    if not allow_period_mismatch:
-                        logger.error(err_msg)
-                        raise ValidationError(err_msg)
-                    else:
-                        logger.warning(
-                            "Active SpreadsheetPeriod (%s) does not match sheet data modal month (%s). Proceeding due to allow_period_mismatch flag.",
-                            active_period_str,
-                            data_modal_month,
-                        )
+                    logger.error(
+                        "Active SpreadsheetPeriod (%s) does not match sheet data modal month (%s). Sync aborted.",
+                        active_period_str,
+                        data_modal_month,
+                    )
+                    raise ValidationError(err_msg)
+
             group_summaries = getattr(source, "groups_summary", [])
 
             with transaction.atomic():

@@ -53,6 +53,20 @@ class DataImporter:
         from apps.employees.models import EmployeeMonthlyStat
 
         with transaction.atomic():
+            if period:
+                from apps.common.services.exceptions import ValidationError
+                from apps.imports.models import SpreadsheetPeriod
+                active_sp = SpreadsheetPeriod.objects.filter(is_active=True).first()
+                if active_sp and (active_sp.period.year != period.year or active_sp.period.month != period.month):
+                    logger.error(
+                        "Active SpreadsheetPeriod (%s) does not match import period (%s). Sync aborted.",
+                        active_sp.period.strftime("%Y-%m"),
+                        period.strftime("%Y-%m"),
+                    )
+                    raise ValidationError(
+                        f"Active SpreadsheetPeriod ({active_sp.period.strftime('%Y-%m')}) does not match import period ({period.strftime('%Y-%m')}). Sync aborted."
+                    )
+
             payroll_employee_ids = {row.employee_id for row in payroll}
 
             # 1. Upsert payroll & employees & monthly stats
