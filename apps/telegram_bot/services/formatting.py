@@ -248,9 +248,99 @@ def rop_menu_keyboard() -> InlineKeyboardMarkup:
     builder.button(text="📈 GURUH STATS", callback_data="rop_card:group_stats")
     builder.button(text="💵 ROP OYLIK", callback_data="rop_card:rop_salary")
     builder.button(text="💰 MOP OYLIK", callback_data="rop_card:mop_salary")
+    builder.button(text="👥 XODIMLAR RO'YXATI", callback_data="rop_card:employee_list")
     builder.button(text="👤 SHAXSIY XIZMATLAR", callback_data="rop_card:mop_xizmatlar")
-    builder.adjust(2, 2, 1)
+    builder.adjust(2, 2, 1, 1)
     return builder.as_markup()
+
+
+def rop_employee_filter_menu_keyboard() -> InlineKeyboardMarkup:
+    """Render filter selection keyboard for ROP employee list."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="✅ Sotuvi bor", callback_data="rop_emp_filter:has_sales:1")
+    builder.button(text="⭕ Sotuvi yo'q", callback_data="rop_emp_filter:no_sales:1")
+    builder.button(text="📋 Barchasi", callback_data="rop_emp_filter:all:1")
+    builder.button(text="⬅️ Xizmatlarga qaytish", callback_data="rop_menu")
+    builder.adjust(2, 1, 1)
+    return builder.as_markup()
+
+
+def rop_employee_list_keyboard(filter_key: str, page: int, total_pages: int) -> InlineKeyboardMarkup:
+    """Render pagination and back buttons for ROP employee list."""
+    builder = InlineKeyboardBuilder()
+
+    if total_pages > 1:
+        if page > 1:
+            builder.button(text="⬅️ Oldingi", callback_data=f"rop_emp_filter:{filter_key}:{page - 1}")
+        if page < total_pages:
+            builder.button(text="Keyingi ➡️", callback_data=f"rop_emp_filter:{filter_key}:{page + 1}")
+
+    builder.button(text="⬅️ Filtrlashga qaytish", callback_data="rop_card:employee_list")
+    builder.button(text="⬅️ Xizmatlarga qaytish", callback_data="rop_menu")
+
+    if total_pages > 1:
+        if page > 1 and page < total_pages:
+            builder.adjust(2, 1, 1)
+        else:
+            builder.adjust(1, 1, 1)
+    else:
+        builder.adjust(1, 1)
+
+    return builder.as_markup()
+
+
+FILTER_LABELS = {
+    "has_sales": "Sotuvi bor",
+    "no_sales": "Sotuvi yo'q",
+    "all": "Barchasi",
+}
+
+
+def rop_employee_list_card_text(
+    group_code: str,
+    filter_key: str,
+    employees: list[dict[str, Any]],
+    page: int,
+    total_count: int,
+    page_size: int = 20,
+) -> str:
+    """Render formatted employee list text for ROP card."""
+    filter_label = FILTER_LABELS.get(filter_key, "Barchasi")
+    lines = [f"👥 <b>{group_code} guruh — {filter_label} ({total_count} ta)</b>\n"]
+
+    start_idx = (page - 1) * page_size
+    page_items = employees[start_idx : start_idx + page_size]
+
+    uncalculated_count = sum(1 for e in employees if e["has_error"])
+
+    if not page_items:
+        lines.append("<i>Birorta ham xodim topilmadi.</i>")
+    else:
+        for idx, emp in enumerate(page_items, start=start_idx + 1):
+            emp_id = emp["employee_id"]
+            name = emp["full_name"]
+            sales_val = emp["sales_val"]
+            orders_val = emp["orders_val"]
+            has_error = emp["has_error"]
+
+            lines.append(f"{idx}. {emp_id} {name}")
+
+            if has_error:
+                lines.append("   📊 —")
+            elif filter_key == "no_sales" and (sales_val is None or sales_val == Decimal("0")):
+                pass
+            elif sales_val is not None and sales_val > Decimal("0"):
+                sales_str = f"{sales_val:,.0f} so'm"
+                if orders_val is not None:
+                    orders_str = f"📦 {orders_val} ta"
+                else:
+                    orders_str = "📦 —"
+                lines.append(f"   📊 {sales_str} · {orders_str}")
+
+    if uncalculated_count > 0:
+        lines.append(f"\n⚠️ {uncalculated_count} ta xodimning ma'lumoti hisoblanmagan.")
+
+    return "\n".join(lines)
 
 
 def rop_card_keyboard() -> InlineKeyboardMarkup:

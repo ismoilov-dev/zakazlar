@@ -103,6 +103,63 @@ class RopService:
             "mismatch": mismatch,
         }
 
+    def get_group_employee_list(self, group: SalesGroup, filter_key: str) -> list[dict[str, Any]]:
+        """Fetch active employees for group, filter by sales, and sort highest sales first."""
+        employees = Employee.objects.filter(group=group, is_active=True)
+
+        parsed_list: list[dict[str, Any]] = []
+        for emp in employees:
+            sales_val, orders_val, has_error = self.parse_employee_sales_data(emp.summary_data or {})
+            parsed_list.append({
+                "employee_id": emp.employee_id,
+                "full_name": emp.full_name,
+                "sales_val": sales_val,
+                "orders_val": orders_val,
+                "has_error": has_error,
+            })
+
+        if filter_key == "has_sales":
+            filtered = [e for e in parsed_list if e["sales_val"] is not None and e["sales_val"] > Decimal("0")]
+        elif filter_key == "no_sales":
+            filtered = [e for e in parsed_list if e["sales_val"] == Decimal("0") or e["has_error"]]
+        else:
+            filtered = parsed_list
+
+        def sort_key(item: dict[str, Any]) -> tuple[int, Decimal, str]:
+            if item["sales_val"] is not None:
+                return (0, -item["sales_val"], item["employee_id"])
+            return (1, Decimal("0"), item["employee_id"])
+
+        filtered.sort(key=sort_key)
+        return filtered
+
+    @staticmethod
+    def parse_employee_sales_data(summary_data: dict[str, Any]) -> tuple[Decimal | None, int | None, bool]:
+        s = summary_data or {}
+        raw_sales = s.get("total_sales")
+        raw_orders = s.get("successful_orders")
+
+        sales_val: Decimal | None = None
+        has_error = False
+
+        if raw_sales is None or str(raw_sales).strip() == "":
+            sales_val = Decimal("0")
+        else:
+            try:
+                sales_val = Decimal(str(raw_sales).replace(",", "").strip())
+            except Exception:
+                sales_val = None
+                has_error = True
+
+        orders_val: int | None = None
+        if raw_orders is not None and str(raw_orders).strip() != "":
+            try:
+                orders_val = int(Decimal(str(raw_orders).replace(",", "").strip()))
+            except Exception:
+                orders_val = None
+
+        return sales_val, orders_val, has_error
+
     @staticmethod
     def _parse_decimal(raw: Any) -> Decimal:
         if raw is None or raw == "":

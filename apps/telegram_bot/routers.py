@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 from datetime import date
 
 from django.conf import settings
@@ -47,6 +48,9 @@ from apps.telegram_bot.services.formatting import (
     group_dashboard_text,
     period_selector_keyboard,
     rop_card_keyboard,
+    rop_employee_filter_menu_keyboard,
+    rop_employee_list_card_text,
+    rop_employee_list_keyboard,
     rop_group_sales_card_text,
     rop_group_stats_card_text,
     rop_menu_keyboard,
@@ -758,7 +762,7 @@ async def handle_rop_callback(callback: CallbackQuery, state: FSMContext) -> Non
         else:
             await callback.answer("Ruxsat berilmagan guruh.", show_alert=True)
             return
-    elif len(groups) > 1 and not callback.data.startswith("rop_card:"):
+    elif len(groups) > 1 and not callback.data.startswith("rop_card:") and not callback.data.startswith("rop_emp_filter:"):
         data = await state.get_data()
         selected_id = data.get("selected_group_id")
         selected = next((g for g in groups if g.id == selected_id), None)
@@ -813,6 +817,33 @@ async def handle_rop_callback(callback: CallbackQuery, state: FSMContext) -> Non
     elif action == "rop_card:mop_xizmatlar":
         text = xizmatlar_menu_text()
         keyboard = xizmatlar_menu_keyboard(show_rop_switch=True, src="rop")
+    elif action == "rop_card:employee_list":
+        text = "<b>Xodimlarni filtrlash:</b>"
+        keyboard = rop_employee_filter_menu_keyboard()
+    elif action.startswith("rop_emp_filter:"):
+        parts = action.split(":")
+        filter_key = parts[1] if len(parts) > 1 else "all"
+        if filter_key not in ("has_sales", "no_sales", "all"):
+            filter_key = "all"
+        try:
+            page = int(parts[2]) if len(parts) > 2 else 1
+        except ValueError:
+            page = 1
+        if page < 1:
+            page = 1
+
+        employees = await sync_to_async(RopService().get_group_employee_list)(group, filter_key)
+        total_count = len(employees)
+        page_size = 20
+        total_pages = max(1, math.ceil(total_count / page_size))
+        if page > total_pages:
+            page = total_pages
+
+        text = (
+            rop_employee_list_card_text(group.code, filter_key, employees, page, total_count, page_size)
+            + footer
+        )
+        keyboard = rop_employee_list_keyboard(filter_key, page, total_pages)
     else:
 
         text = rop_menu_text(account.employee.full_name, group.code, account.employee.employee_id)
