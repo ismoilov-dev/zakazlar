@@ -70,6 +70,21 @@ class SheetsSyncService:
         """Clear cache lock so next sync_if_needed executes immediately."""
         cache.delete(cls.CACHE_KEY)
 
+    def _get_drive_modified_time(self, source: SheetsSource, sheet_id: str) -> str:
+        cache_key = f"drive_modified_time_{sheet_id}"
+        cached_val = cache.get(cache_key)
+        if cached_val is not None:
+            return str(cached_val)
+
+        try:
+            drive_meta = source.client.http_client.get_file_drive_metadata(sheet_id)
+            current_modified_time = str(drive_meta.get("modifiedTime", ""))
+            if current_modified_time:
+                cache.set(cache_key, current_modified_time, timeout=5)
+            return current_modified_time
+        except Exception as exc:
+            logger.warning("Google Drive metadata olishda xatolik (sheet_id=%s): %s", sheet_id, exc)
+            return ""
 
     def sync_payroll(self, force: bool = False) -> SyncLog:
         """Fast path: Reads List2 and Guruhlar ONLY. Updates payroll, stats and groups without touching Sale records."""
@@ -87,13 +102,7 @@ class SheetsSyncService:
             source = SheetsSource()
             sheet_id = source.sheet_id
 
-            current_modified_time = ""
-            try:
-                drive_meta = source.client.http_client.get_file_drive_metadata(sheet_id)
-                current_modified_time = str(drive_meta.get("modifiedTime", ""))
-            except Exception as exc:
-                logger.warning("Google Drive metadata olishda xatolik (sheet_id=%s): %s", sheet_id, exc)
-                current_modified_time = ""
+            current_modified_time = self._get_drive_modified_time(source, sheet_id)
 
             if not force and current_modified_time and last_successful and last_successful.sheet_modified_at == current_modified_time:
                 return last_successful
@@ -183,13 +192,10 @@ class SheetsSyncService:
             source = SheetsSource()
             sheet_id = source.sheet_id
 
-            current_modified_time = ""
-            try:
-                drive_meta = source.client.http_client.get_file_drive_metadata(sheet_id)
-                current_modified_time = str(drive_meta.get("modifiedTime", ""))
-            except Exception as exc:
-                logger.warning("Google Drive metadata olishda xatolik (sheet_id=%s): %s", sheet_id, exc)
-                current_modified_time = ""
+            current_modified_time = self._get_drive_modified_time(source, sheet_id)
+
+            if not force and current_modified_time and last_successful and last_successful.sheet_modified_at == current_modified_time:
+                return last_successful
 
             sync_log = SyncLog.objects.create(
                 status=SyncStatus.PENDING,

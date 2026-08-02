@@ -176,3 +176,29 @@ class SheetsSyncFailureTest(TestCase):
         self.assertEqual(len(groups), 1)
         self.assertEqual(groups[0].group_code, "A")
 
+    @patch("apps.imports.services.sheets_sync.SheetsSource")
+    def test_drive_metadata_failure_proceeds_to_read(self, mock_sheets_source_cls) -> None:
+        from apps.imports.dto import PayrollDTO
+
+        mock_source = mock_sheets_source_cls.return_value
+        mock_source.sheet_id = "test_sheet_id"
+        mock_source.client.http_client.get_file_drive_metadata.side_effect = Exception("Drive API unavailable")
+        mock_source.read_payroll_only.return_value = (
+            [
+                PayrollDTO(
+                    group_code="A",
+                    employee_id="0001",
+                    employee_name="Test Seller",
+                    monthly_salary=None,
+                    summary_data={"earned_salary": "100000"},
+                )
+            ],
+            [],
+        )
+
+        service = SheetsSyncService()
+        log = service.sync_payroll(force=True)
+
+        self.assertEqual(log.status, SyncStatus.SUCCESS)
+        self.assertTrue(mock_source.read_payroll_only.called)
+
