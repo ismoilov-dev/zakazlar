@@ -10,6 +10,7 @@ from decimal import Decimal
 
 logger = logging.getLogger(__name__)
 
+from django.core.cache import cache
 from django.core.exceptions import ValidationError
 
 from apps.common.services.exceptions import ValidationError as DomainValidationError
@@ -126,49 +127,54 @@ class SheetsSource(BaseSource):
         raise ValidationError("Google Service Account kalitlari topilmadi (GOOGLE_SERVICE_ACCOUNT_JSON yoki GOOGLE_SERVICE_ACCOUNT_FILE).")
 
     def read_payroll_only(self) -> tuple[list[PayrollDTO], list[GroupSummaryDTO]]:
-        """Read List2 (payroll) and Guruhlar worksheets only for the fast path."""
-        try:
-            spreadsheet = self.client.open_by_key(self.sheet_id)
-        except Exception as exc:
-            raise ValidationError(f"Google Sheet faylini ochib bo'lmadi (ID: {self.sheet_id}): {exc}") from exc
-
+        """Read List2 (payroll) and Guruhlar worksheets using a single values_batch_get API call."""
         self.last_dropped_payroll_rows = []
-        worksheets = {ws.title.strip().lower(): ws for ws in spreadsheet.worksheets()}
 
-        payroll_candidates: list[gspread.Worksheet] = []
+        spreadsheet = gspread.Spreadsheet(self.client, properties={"id": self.sheet_id})
+
+        cache_key = f"sheets_ws_titles_{self.sheet_id}"
+        ws_titles = cache.get(cache_key)
+        if not ws_titles:
+            try:
+                ws_titles = [ws.title for ws in spreadsheet.worksheets()]
+                cache.set(cache_key, ws_titles, timeout=86400)
+            except Exception as exc:
+                logger.warning("Worksheet nomlarini olishda xatolik: %s", exc)
+                ws_titles = ["List2", "Guruhlar"]
+
+        payroll_title = None
         for name in ["list2", "xodimlar maoshi", "ish haqi"]:
-            ws = worksheets.get(name)
-            if ws and ws not in payroll_candidates:
-                payroll_candidates.append(ws)
+            for t in ws_titles:
+                if t.strip().lower() == name:
+                    payroll_title = t
+                    break
+            if payroll_title:
+                break
 
-        if not payroll_candidates:
-            raise ValidationError("Google Sheet'da 'List2', 'Xodimlar maoshi' yoki 'Ish haqi' varog'i topilmadi.")
+        if not payroll_title:
+            payroll_title = "List2"
 
-        payroll_by_id: dict[str, PayrollDTO] = {}
-        successful_parses = 0
-        for ws in payroll_candidates:
-            try:
-                parsed = self._parse_payroll(ws)
-                for dto in parsed:
-                    existing = payroll_by_id.get(dto.employee_id)
-                    if existing is None or (dto.summary_data and not existing.summary_data):
-                        payroll_by_id[dto.employee_id] = dto
-                successful_parses += 1
-            except Exception as exc:
-                logger.warning("Payroll varag'ini ('%s') tahlil qilishda xatolik: %s", ws.title, exc)
+        guruhlar_title = None
+        for t in ws_titles:
+            if t.strip().lower() == "guruhlar":
+                guruhlar_title = t
+                break
+        if not guruhlar_title:
+            guruhlar_title = "Guruhlar"
 
-        if successful_parses == 0:
-            raise ValidationError("Birorta ham payroll varog'ini tahlil qilib bo'lmadi.")
+        ranges_to_fetch = [payroll_title, guruhlar_title]
 
-        payroll = list(payroll_by_id.values())
+        try:
+            batch_resp = spreadsheet.values_batch_get(ranges_to_fetch)
+        except Exception as exc:
+            raise ValidationError(f"Google Sheet batch read xatosi (ID: {self.sheet_id}): {exc}") from exc
 
-        ws_guruhlar = worksheets.get("guruhlar")
-        groups_summary: list[GroupSummaryDTO] = []
-        if ws_guruhlar:
-            try:
-                groups_summary = self._parse_groups(ws_guruhlar)
-            except Exception as exc:
-                logger.warning("Guruhlar varag'ini tahlil qilishda xatolik: %s", exc)
+        value_ranges = batch_resp.get("valueRanges", [])
+        raw_payroll = value_ranges[0].get("values", []) if len(value_ranges) > 0 else []
+        raw_guruhlar = value_ranges[1].get("values", []) if len(value_ranges) > 1 else []
+
+        payroll = self._parse_payroll(raw_payroll, sheet_title=payroll_title)
+        groups_summary = self._parse_groups(raw_guruhlar)
 
         self.groups_summary = groups_summary
         return payroll, groups_summary
@@ -495,10 +501,16 @@ class SheetsSource(BaseSource):
         return orders
 
 
-    def _parse_payroll(self, worksheet: gspread.Worksheet) -> list[PayrollDTO]:
-        raw_rows = worksheet.get_all_values(combine_merged_cells=True)
+    def _parse_payroll(self, worksheet_or_rows: gspread.Worksheet | list[list[Any]], sheet_title: str = "List2") -> list[PayrollDTO]:
+        if isinstance(worksheet_or_rows, list):
+            raw_rows = worksheet_or_rows
+            title = sheet_title
+        else:
+            raw_rows = worksheet_or_rows.get_all_values(combine_merged_cells=True)
+            title = worksheet_or_rows.title
+
         if not raw_rows:
-            raise ValidationError(f"'{worksheet.title}' varog'i bo'sh.")
+            raise ValidationError(f"'{title}' varog'i bo'sh.")
 
         # Locate header row dynamically in the first 15 rows
         header_row_idx = None
@@ -509,7 +521,7 @@ class SheetsSource(BaseSource):
                 break
 
         if header_row_idx is None:
-            raise ValidationError(f"'{worksheet.title}' varog'ida 'ID' yoki 'Tabel raqami' ustuni topilmadi.")
+            raise ValidationError(f"'{title}' varog'ida 'ID' yoki 'Tabel raqami' ustuni topilmadi.")
 
         headings = raw_rows[header_row_idx]
 
@@ -600,12 +612,12 @@ class SheetsSource(BaseSource):
                     )
                 )
             except PARSE_ERRORS as exc:
-                logger.warning("Payroll varog'i '%s', %s-qator tahlil xatosi: %s", worksheet.title, row_idx, exc)
+                logger.warning("Payroll varog'i '%s', %s-qator tahlil xatosi: %s", title, row_idx, exc)
                 if not hasattr(self, "last_dropped_payroll_rows"):
                     self.last_dropped_payroll_rows = []
                 self.last_dropped_payroll_rows.append(
                     {
-                        "sheet_title": worksheet.title,
+                        "sheet_title": title,
                         "row_idx": row_idx,
                         "reason": str(exc),
                         "row_data": row,
@@ -617,8 +629,11 @@ class SheetsSource(BaseSource):
         return payroll
 
 
-    def _parse_groups(self, worksheet: gspread.Worksheet) -> list[GroupSummaryDTO]:
-        raw_rows = worksheet.get_all_values(combine_merged_cells=True)
+    def _parse_groups(self, worksheet_or_rows: gspread.Worksheet | list[list[Any]]) -> list[GroupSummaryDTO]:
+        if isinstance(worksheet_or_rows, list):
+            raw_rows = worksheet_or_rows
+        else:
+            raw_rows = worksheet_or_rows.get_all_values(combine_merged_cells=True)
         if not raw_rows:
             return []
 

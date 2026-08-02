@@ -5,6 +5,7 @@ from django.utils import timezone
 
 from apps.imports.models import SyncLog, SyncStatus
 from apps.imports.services.sheets_sync import SheetsSyncService
+from apps.imports.sources.sheets import SheetsSource
 from apps.telegram_bot.routers import ensure_fresh_data_and_get_timestamp
 
 
@@ -141,4 +142,37 @@ class SheetsSyncFailureTest(TestCase):
 
         stat = EmployeeMonthlyStat.objects.get(employee=emp, period=date(2026, 8, 1))
         self.assertEqual(stat.summary_data["total_sales"], "10000000")
+
+    @patch("gspread.Spreadsheet.values_batch_get")
+    @patch.object(SheetsSource, "_authenticate")
+    def test_read_payroll_only_uses_values_batch_get_single_api_call(self, _mock_auth, mock_batch_get) -> None:
+        from apps.imports.sources.sheets import SheetsSource
+
+        mock_batch_get.return_value = {
+            "valueRanges": [
+                {
+                    "range": "List2!A1:Z100",
+                    "values": [
+                        ["ID", "FISH", "Guruhi", "Ish haqi", "Umumiy zakaz summasi"],
+                        ["0001", "Amir Karimov", "A", "5,000,000", "10,000,000"],
+                    ],
+                },
+                {
+                    "range": "Guruhlar!A1:Z50",
+                    "values": [
+                        ["Guruh", "Guruh foydasi", "Rahbar bonusi"],
+                        ["A", "2,000,000", "200,000"],
+                    ],
+                },
+            ]
+        }
+
+        source = SheetsSource(sheet_id="test_sheet_id")
+        payroll, groups = source.read_payroll_only()
+
+        self.assertEqual(mock_batch_get.call_count, 1)
+        self.assertEqual(len(payroll), 1)
+        self.assertEqual(payroll[0].employee_id, "0001")
+        self.assertEqual(len(groups), 1)
+        self.assertEqual(groups[0].group_code, "A")
 
