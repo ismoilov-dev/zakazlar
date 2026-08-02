@@ -32,29 +32,28 @@ class Command(BaseCommand):
 
         employees = Employee.objects.filter(is_active=True).exclude(summary_data={})
 
+        from apps.employees.repositories.monthly_stat import ClosedPeriodError, EmployeeMonthlyStatRepository
+        repo = EmployeeMonthlyStatRepository()
+
         for emp in employees:
-            stat, created = EmployeeMonthlyStat.objects.get_or_create(
-                employee=emp,
-                period=period_date,
-                defaults={
-                    "summary_data": emp.summary_data,
-                    "source_spreadsheet_id": "backfill",
-                },
-            )
-            if created:
-                created_count += 1
-            else:
-                if stat.is_closed:
-                    skipped_closed_count += 1
-                    self.stdout.write(
-                        self.style.WARNING(
-                            f"Xodim {emp.employee_id} uchun {period_str} davri yopilgan (is_closed=True), o'tkazib yuborildi."
-                        )
-                    )
+            try:
+                _, created = repo.upsert_snapshot(
+                    employee=emp,
+                    period=period_date,
+                    summary_data=emp.summary_data,
+                    source_spreadsheet_id="backfill",
+                )
+                if created:
+                    created_count += 1
                 else:
-                    stat.summary_data = emp.summary_data
-                    stat.save(update_fields=["summary_data"])
                     updated_count += 1
+            except ClosedPeriodError:
+                skipped_closed_count += 1
+                self.stdout.write(
+                    self.style.WARNING(
+                        f"Xodim {emp.employee_id} uchun {period_str} davri yopilgan (is_closed=True), o'tkazib yuborildi."
+                    )
+                )
 
         self.stdout.write(
             self.style.SUCCESS(

@@ -102,6 +102,28 @@ def reopen_selected_monthly_stats(modeladmin, request, queryset):
     modeladmin.message_user(request, f"{updated} ta oylik statistika qayta ochildi.")
 
 
+def check_unclosed_historical_periods_and_warn(request) -> None:
+    try:
+        from apps.imports.models import SpreadsheetPeriod
+        active_sp = SpreadsheetPeriod.objects.filter(is_active=True).first()
+        if not active_sp:
+            return
+        unclosed_periods = (
+            EmployeeMonthlyStat.objects.filter(period__lt=active_sp.period, is_closed=False)
+            .values_list("period", flat=True)
+            .distinct()
+            .order_by("period")
+        )
+        if unclosed_periods:
+            periods_str = ", ".join(p.strftime("%m.%Y") for p in unclosed_periods)
+            messages.warning(
+                request,
+                f"⚠️ Diqqat: Faol oydan ({active_sp.period.strftime('%m.%Y')}) oldingi yopilmagan oylik statistikalar mavjud: {periods_str}. Iltimos, u ushbu oylarni yoping.",
+            )
+    except Exception:
+        pass
+
+
 @admin.register(EmployeeMonthlyStat)
 class EmployeeMonthlyStatAdmin(admin.ModelAdmin):
     list_display = ("employee", "period", "is_closed", "closed_at", "closed_by", "source_spreadsheet_id", "updated_at")
@@ -109,6 +131,10 @@ class EmployeeMonthlyStatAdmin(admin.ModelAdmin):
     search_fields = ("employee__employee_id", "employee__full_name")
     actions = [close_selected_monthly_stats, reopen_selected_monthly_stats]
     readonly_fields = ("closed_at", "closed_by")
+
+    def changelist_view(self, request, extra_context=None):
+        check_unclosed_historical_periods_and_warn(request)
+        return super().changelist_view(request, extra_context=extra_context)
 
 
 @admin.action(description="Parolni tiklash (Reset Password)")

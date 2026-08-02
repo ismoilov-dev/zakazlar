@@ -81,25 +81,21 @@ class DataImporter:
                 )
 
                 if period:
-                    stat, created = EmployeeMonthlyStat.objects.get_or_create(
-                        employee=emp,
-                        period=period,
-                        defaults={
-                            "summary_data": row.summary_data or {},
-                            "source_spreadsheet_id": sheet_id,
-                        },
-                    )
-                    if not created:
-                        if stat.is_closed:
-                            logger.info(
-                                "Xodim %s uchun %s davri yopilgan (is_closed=True), oylik snapshot yangilanishi o'tkazib yuborildi.",
-                                emp.employee_id,
-                                period,
-                            )
-                        else:
-                            stat.summary_data = row.summary_data or {}
-                            stat.source_spreadsheet_id = sheet_id
-                            stat.save(update_fields=["summary_data", "source_spreadsheet_id"])
+                    from apps.employees.repositories.monthly_stat import ClosedPeriodError, EmployeeMonthlyStatRepository
+                    try:
+                        EmployeeMonthlyStatRepository().upsert_snapshot(
+                            employee=emp,
+                            period=period,
+                            summary_data=row.summary_data or {},
+                            source_spreadsheet_id=sheet_id,
+                            force=False,
+                        )
+                    except ClosedPeriodError:
+                        logger.info(
+                            "Xodim %s uchun %s davri yopilgan (is_closed=True), oylik snapshot yangilanishi o'tkazib yuborildi.",
+                            emp.employee_id,
+                            period,
+                        )
 
 
             # Upsert group summaries
