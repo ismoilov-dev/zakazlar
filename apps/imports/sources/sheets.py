@@ -48,9 +48,6 @@ SHEET_ERROR_LITERALS: set[str] = {
     "#NUM!",
     "#ERROR!",
     "#N/A N/A",
-    "N/A",
-    "ERR",
-    "ERROR",
 }
 
 STATUS_MAP = {
@@ -775,7 +772,7 @@ class SheetsSource(BaseSource):
         if val is None:
             return False
         s = str(val).strip().upper()
-        return s in SHEET_ERROR_LITERALS or s.startswith("#")
+        return s in SHEET_ERROR_LITERALS
 
     @staticmethod
     def _get_cell(row: list[str], idx: int | None) -> str:

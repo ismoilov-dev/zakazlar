@@ -5,6 +5,7 @@ This is the ONLY code that touches the database during imports.
 
 from __future__ import annotations
 
+import json
 import logging
 from datetime import date
 from decimal import Decimal

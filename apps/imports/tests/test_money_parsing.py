@@ -27,8 +27,9 @@ class MoneyParsingTest(TestCase):
         with self.assertRaises((DjangoValidationError, DomainValidationError)):
             SheetsSource._parse_money("abc")
 
-        with self.assertRaises((DjangoValidationError, DomainValidationError)):
-            SheetsSource._parse_money("#REF!")
+        # Formula error strings return Decimal("0.00") instead of failing the import
+        self.assertEqual(SheetsSource._parse_money("#REF!"), Decimal("0.00"))
+        self.assertEqual(SheetsSource._parse_money("#N/A"), Decimal("0.00"))
 
         # ExcelSource _money with decimal comma
         self.assertEqual(ExcelSource._money("1,5"), Decimal("1.50"))

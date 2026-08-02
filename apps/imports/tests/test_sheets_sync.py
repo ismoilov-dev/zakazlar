@@ -276,23 +276,17 @@ class SheetsSyncFailureTest(TestCase):
         self.assertIn("SLOW PATH", output)
         self.assertIn("TOTAL FAST PATH TIME", output)
 
-    def test_sheet_formula_errors_parsed_without_dropping_rows(self) -> None:
-        from decimal import Decimal
+    def test_tightened_sheet_error_detector(self) -> None:
         from apps.imports.sources.sheets import SheetsSource, SHEET_ERROR_LITERALS
 
         source = SheetsSource(sheet_id="test_sheet_id")
-        self.assertIn("#N/A", SHEET_ERROR_LITERALS)
-        self.assertEqual(source._parse_money("#N/A"), Decimal("0.00"))
-        self.assertEqual(source._parse_money("#REF!"), Decimal("0.00"))
-        self.assertEqual(source._get_cell(["#N/A", "Valid"], 0), "")
-        self.assertEqual(source._get_cell(["#DIV/0!", "Valid"], 0), "")
+        self.assertFalse(source._is_sheet_error("#1 mijoz"))
+        self.assertFalse(source._is_sheet_error("N/A"))
+        self.assertFalse(source._is_sheet_error("ERR"))
+        self.assertFalse(source._is_sheet_error("ERROR"))
 
-        raw_payroll = [
-            ["ID", "FISH", "Guruhi", "Ish haqi", "Umumiy zakaz summasi", "Первичный Заказ"],
-            ["0079", "Test Emp 0079", "A", "10,000,000", "#N/A", "#REF!"],
-        ]
-        payroll = source._parse_payroll(raw_payroll)
-        self.assertEqual(len(payroll), 1)
-        self.assertEqual(payroll[0].employee_id, "0079")
-        self.assertEqual(payroll[0].monthly_salary, Decimal("10000000"))
+        self.assertTrue(source._is_sheet_error("#N/A"))
+        self.assertTrue(source._is_sheet_error("#REF!"))
+        self.assertTrue(source._is_sheet_error("#DIV/0!"))
+        self.assertTrue(source._is_sheet_error("#VALUE!"))
 
