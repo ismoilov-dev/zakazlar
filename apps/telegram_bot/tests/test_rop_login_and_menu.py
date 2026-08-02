@@ -128,7 +128,8 @@ class RopPartATestCase(TestCase):
         msg_pass.answer = AsyncMock()
 
         await process_password(msg_pass, state_pass)
-        msg_pass.answer.assert_called_once_with("Siz uchun hali ROP paroli o'rnatilmagan. Administrator bilan bog'laning.")
+        text = msg_pass.answer.call_args[0][0]
+        self.assertIn("ROP sessiyangiz tasdiqlandi", text)
         state_pass.clear.assert_called_once()
 
 
