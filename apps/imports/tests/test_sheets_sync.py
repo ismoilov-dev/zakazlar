@@ -290,3 +290,25 @@ class SheetsSyncFailureTest(TestCase):
         self.assertTrue(source._is_sheet_error("#DIV/0!"))
         self.assertTrue(source._is_sheet_error("#VALUE!"))
 
+    def test_payroll_cell_formula_error_omits_key_and_logs_in_dropped_rows(self) -> None:
+        from decimal import Decimal
+        from apps.imports.sources.sheets import SheetsSource
+
+        source = SheetsSource(sheet_id="test_sheet_id")
+        raw_payroll = [
+            ["ID", "FISH", "Guruhi", "Ish haqi", "Umumiy zakaz summasi", "Otkaz"],
+            ["0079", "Test Emp 0079", "A", "10,000,000", "50,000,000", "#N/A"],
+        ]
+        payroll = source._parse_payroll(raw_payroll)
+        self.assertEqual(len(payroll), 1)
+        dto = payroll[0]
+        self.assertEqual(dto.employee_id, "0079")
+        self.assertEqual(dto.monthly_salary, Decimal("10000000"))
+        self.assertEqual(dto.summary_data.get("total_sales"), "50000000")
+        self.assertNotIn("otkaz_sales", dto.summary_data)
+
+        self.assertEqual(len(source.last_dropped_payroll_rows), 1)
+        self.assertEqual(source.last_dropped_payroll_rows[0]["employee_id"], "0079")
+        self.assertEqual(source.last_dropped_payroll_rows[0]["column"], "Otkaz")
+        self.assertEqual(source.last_dropped_payroll_rows[0]["literal"], "#N/A")
+

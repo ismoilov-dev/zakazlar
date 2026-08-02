@@ -595,38 +595,72 @@ class SheetsSource(BaseSource):
                 salary_str = self._get_cell(row, salary_idx) if salary_idx is not None else ""
                 salary = self._parse_money(salary_str) if salary_str else Decimal("0.00")
 
+                if not hasattr(self, "last_dropped_payroll_rows") or self.last_dropped_payroll_rows is None:
+                    self.last_dropped_payroll_rows = []
+
                 summary: dict[str, object] = {}
-                if total_sales_idx is not None and self._get_cell(row, total_sales_idx):
-                    summary["total_sales"] = str(self._parse_money(self._get_cell(row, total_sales_idx)))
-                if successful_sales_idx is not None and self._get_cell(row, successful_sales_idx):
-                    summary["successful_sales"] = str(self._parse_money(self._get_cell(row, successful_sales_idx)))
-                if perv_sales_idx is not None and self._get_cell(row, perv_sales_idx):
-                    summary["perv_sales"] = str(self._parse_money(self._get_cell(row, perv_sales_idx)))
-                if baza_sales_idx is not None and self._get_cell(row, baza_sales_idx):
-                    summary["baza_sales"] = str(self._parse_money(self._get_cell(row, baza_sales_idx)))
-                if otkaz_sales_idx is not None and self._get_cell(row, otkaz_sales_idx):
-                    summary["otkaz_sales"] = str(self._parse_money(self._get_cell(row, otkaz_sales_idx)))
-                if v_proc_sales_idx is not None and self._get_cell(row, v_proc_sales_idx):
-                    summary["v_proc_sales"] = str(self._parse_money(self._get_cell(row, v_proc_sales_idx)))
-                if upakovka_idx is not None and self._get_cell(row, upakovka_idx):
-                    try:
-                        summary["successful_orders"] = int(float(str(self._get_cell(row, upakovka_idx)).replace(",", ".")))
-                    except Exception:
-                        pass
-                if salary_str:
-                    summary["earned_salary"] = str(salary)
-                if conv_idx is not None and self._get_cell(row, conv_idx):
-                    raw_c = str(self._get_cell(row, conv_idx)).replace("%", "").replace(",", ".").strip()
-                    try:
-                        summary["conversion_rate"] = float(Decimal(raw_c) / 100) if float(Decimal(raw_c)) > 1 else float(Decimal(raw_c))
-                    except Exception:
-                        pass
-                if real_conv_idx is not None and self._get_cell(row, real_conv_idx):
-                    raw_rc = str(self._get_cell(row, real_conv_idx)).replace("%", "").replace(",", ".").strip()
-                    try:
-                        summary["real_conversion_rate"] = float(Decimal(raw_rc) / 100) if float(Decimal(raw_rc)) > 1 else float(Decimal(raw_rc))
-                    except Exception:
-                        pass
+
+                def _process_payroll_col(col_idx: int | None, col_name: str, key_name: str, parser_fn):
+                    if col_idx is not None and col_idx < len(row):
+                        raw_val = str(row[col_idx]).strip()
+                        if raw_val:
+                            if self._is_sheet_error(raw_val):
+                                self.last_dropped_payroll_rows.append(
+                                    {
+                                        "sheet_title": title,
+                                        "row_idx": row_idx,
+                                        "employee_id": emp_id,
+                                        "column": col_name,
+                                        "literal": raw_val,
+                                        "reason": f"Column '{col_name}' has formula error '{raw_val}'",
+                                    }
+                                )
+                            else:
+                                try:
+                                    res = parser_fn(raw_val)
+                                    if res is not None:
+                                        summary[key_name] = res
+                                except Exception:
+                                    pass
+
+                # Salary processing
+                salary = Decimal("0.00")
+                if salary_idx is not None and salary_idx < len(row):
+                    raw_sal = str(row[salary_idx]).strip()
+                    if raw_sal:
+                        if self._is_sheet_error(raw_sal):
+                            self.last_dropped_payroll_rows.append(
+                                {
+                                    "sheet_title": title,
+                                    "row_idx": row_idx,
+                                    "employee_id": emp_id,
+                                    "column": "Ish haqi",
+                                    "literal": raw_sal,
+                                    "reason": f"Column 'Ish haqi' has formula error '{raw_sal}'",
+                                }
+                            )
+                        else:
+                            try:
+                                salary = self._parse_money(raw_sal, sheet_name=title, row_idx=row_idx)
+                                summary["earned_salary"] = str(salary)
+                            except Exception:
+                                pass
+
+                _process_payroll_col(total_sales_idx, "Umumiy zakaz summasi", "total_sales", lambda v: str(self._parse_money(v, sheet_name=title, row_idx=row_idx)))
+                _process_payroll_col(successful_sales_idx, "Uspeshka summasi", "successful_sales", lambda v: str(self._parse_money(v, sheet_name=title, row_idx=row_idx)))
+                _process_payroll_col(perv_sales_idx, "Первичный Заказ", "perv_sales", lambda v: str(self._parse_money(v, sheet_name=title, row_idx=row_idx)))
+                _process_payroll_col(baza_sales_idx, "База", "baza_sales", lambda v: str(self._parse_money(v, sheet_name=title, row_idx=row_idx)))
+                _process_payroll_col(otkaz_sales_idx, "Otkaz", "otkaz_sales", lambda v: str(self._parse_money(v, sheet_name=title, row_idx=row_idx)))
+                _process_payroll_col(v_proc_sales_idx, "В процесс", "v_proc_sales", lambda v: str(self._parse_money(v, sheet_name=title, row_idx=row_idx)))
+                _process_payroll_col(upakovka_idx, "Upakovka soni", "successful_orders", lambda v: int(float(v.replace(",", "."))))
+
+                def _parse_conv(v: str) -> float | None:
+                    raw_c = v.replace("%", "").replace(",", ".").strip()
+                    val_dec = Decimal(raw_c)
+                    return float(val_dec / 100) if float(val_dec) > 1 else float(val_dec)
+
+                _process_payroll_col(conv_idx, "Konversiya", "conversion_rate", _parse_conv)
+                _process_payroll_col(real_conv_idx, "Real konversiya", "real_conversion_rate", _parse_conv)
 
                 payroll.append(
                     PayrollDTO(
