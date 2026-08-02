@@ -65,6 +65,9 @@ class DataImporter:
 
             payroll_employee_ids = {row.employee_id for row in payroll}
 
+            from apps.groups.models import SalesGroup
+            groups_map = {g.code: g for g in SalesGroup.objects.all()}
+
             existing_employees = {
                 emp.employee_id: emp
                 for emp in Employee.objects.select_related("group").filter(employee_id__in=payroll_employee_ids)
@@ -79,7 +82,12 @@ class DataImporter:
 
             # 1. Upsert payroll & employees & monthly stats (only if changed)
             for row in payroll:
-                group = self.groups.get_or_create(code=row.group_code)
+                grp_code = row.group_code or "A"
+                group = groups_map.get(grp_code)
+                if group is None:
+                    group = self.groups.get_or_create(code=grp_code)
+                    groups_map[grp_code] = group
+
                 existing_emp = existing_employees.get(row.employee_id)
                 summary_dict = row.summary_data or {}
 
@@ -88,7 +96,7 @@ class DataImporter:
                     or existing_emp.full_name != row.employee_name
                     or existing_emp.group_id != group.id
                     or existing_emp.monthly_salary != row.monthly_salary
-                    or existing_emp.summary_data != summary_dict
+                    or json.dumps(existing_emp.summary_data or {}, sort_keys=True) != json.dumps(summary_dict, sort_keys=True)
                 ):
                     emp = self.employees.upsert(
                         employee_id=row.employee_id,
@@ -102,7 +110,12 @@ class DataImporter:
 
                 if period:
                     existing_stat = existing_stats.get((emp.id, period))
-                    if existing_stat is None or existing_stat.summary_data != summary_dict or existing_stat.source_spreadsheet_id != sheet_id:
+                    stat_summary_changed = (
+                        existing_stat is None
+                        or json.dumps(existing_stat.summary_data or {}, sort_keys=True) != json.dumps(summary_dict, sort_keys=True)
+                        or (sheet_id and existing_stat.source_spreadsheet_id != sheet_id)
+                    )
+                    if stat_summary_changed:
                         from apps.employees.repositories.monthly_stat import ClosedPeriodError, EmployeeMonthlyStatRepository
                         try:
                             EmployeeMonthlyStatRepository().upsert_snapshot(
@@ -122,7 +135,11 @@ class DataImporter:
             # Upsert group summaries only if changed
             if group_summaries:
                 for g_dto in group_summaries:
-                    group = self.groups.get_or_create(code=g_dto.group_code)
+                    grp_code = g_dto.group_code or "A"
+                    group = groups_map.get(grp_code)
+                    if group is None:
+                        group = self.groups.get_or_create(code=grp_code)
+                        groups_map[grp_code] = group
                     if (
                         group.group_total_sales != g_dto.group_total_sales
                         or group.group_profit != g_dto.group_profit
