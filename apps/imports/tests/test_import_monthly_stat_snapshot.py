@@ -13,6 +13,14 @@ class ImportMonthlyStatSnapshotTest(TestCase):
         importer = DataImporter()
         period = date(2026, 6, 1)
 
+        from apps.imports.models import SpreadsheetPeriod
+        SpreadsheetPeriod.objects.all().delete()
+        SpreadsheetPeriod.objects.create(
+            period=period,
+            spreadsheet_id="16rSon1F6rSon1F6rSon1F6rSon1F6rSon1F6rSon1F",
+            is_active=True,
+        )
+
         payroll = [
             PayrollDTO(
                 employee_id="0191",
