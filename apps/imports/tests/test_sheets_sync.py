@@ -325,7 +325,7 @@ class SheetsSyncFailureTest(TestCase):
         self.assertTrue(source._is_sheet_error("#DIV/0!"))
         self.assertTrue(source._is_sheet_error("#VALUE!"))
 
-    def test_payroll_cell_formula_error_omits_key_and_logs_in_dropped_rows(self) -> None:
+    def test_payroll_cell_formula_error_omits_key_without_dropping_row(self) -> None:
         from decimal import Decimal
         from apps.imports.sources.sheets import SheetsSource
 
@@ -341,11 +341,31 @@ class SheetsSyncFailureTest(TestCase):
         self.assertEqual(dto.monthly_salary, Decimal("10000000"))
         self.assertEqual(dto.summary_data.get("total_sales"), "50000000")
         self.assertNotIn("otkaz_sales", dto.summary_data)
+        self.assertEqual(len(getattr(source, "last_dropped_payroll_rows", [])), 0)
 
-        self.assertEqual(len(source.last_dropped_payroll_rows), 1)
-        self.assertEqual(source.last_dropped_payroll_rows[0]["employee_id"], "0079")
-        self.assertEqual(source.last_dropped_payroll_rows[0]["column"], "Otkaz")
-        self.assertEqual(source.last_dropped_payroll_rows[0]["literal"], "#N/A")
+    def test_payroll_high_ratio_formula_errors_syncs_successfully(self) -> None:
+        """300 qatordan 250 tasida #N/A bo'lsa ham sync muvaffaqiyatli tugashi va boshqa ko'rsatkichlar saqlanishi kerak."""
+        from decimal import Decimal
+        from apps.imports.sources.sheets import SheetsSource
+
+        source = SheetsSource(sheet_id="test_sheet_id")
+        raw_payroll = [["ID", "FISH", "Guruhi", "Ish haqi", "Umumiy zakaz summasi", "Otkaz"]]
+        for i in range(1, 301):
+            emp_id = str(i).zfill(4)
+            otkaz_val = "#N/A" if i <= 250 else "1,000,000"
+            raw_payroll.append([emp_id, f"Emp {emp_id}", "A", "10,000,000", "50,000,000", otkaz_val])
+
+        payroll = source._parse_payroll(raw_payroll)
+        self.assertEqual(len(payroll), 300)
+        self.assertEqual(len(getattr(source, "last_dropped_payroll_rows", [])), 0)
+
+        # Check first 250 employees have total_sales but omit otkaz_sales
+        self.assertEqual(payroll[0].summary_data.get("total_sales"), "50000000")
+        self.assertNotIn("otkaz_sales", payroll[0].summary_data)
+
+        # Check remaining 50 employees have both total_sales and otkaz_sales
+        self.assertEqual(payroll[255].summary_data.get("total_sales"), "50000000")
+        self.assertEqual(payroll[255].summary_data.get("otkaz_sales"), "1000000")
 
     def test_list1_row_with_formula_error_amount_imports_as_null_and_has_sheet_error(self) -> None:
         from unittest.mock import MagicMock

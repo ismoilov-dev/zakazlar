@@ -601,56 +601,29 @@ class SheetsSource(BaseSource):
                 salary_str = self._get_cell(row, salary_idx) if salary_idx is not None else ""
                 salary = self._parse_money(salary_str) if salary_str else Decimal("0.00")
 
-                if not hasattr(self, "last_dropped_payroll_rows") or self.last_dropped_payroll_rows is None:
-                    self.last_dropped_payroll_rows = []
-
                 summary: dict[str, object] = {}
 
                 def _process_payroll_col(col_idx: int | None, col_name: str, key_name: str, parser_fn):
                     if col_idx is not None and col_idx < len(row):
                         raw_val = str(row[col_idx]).strip()
-                        if raw_val:
-                            if self._is_sheet_error(raw_val):
-                                self.last_dropped_payroll_rows.append(
-                                    {
-                                        "sheet_title": title,
-                                        "row_idx": row_idx,
-                                        "employee_id": emp_id,
-                                        "column": col_name,
-                                        "literal": raw_val,
-                                        "reason": f"Column '{col_name}' has formula error '{raw_val}'",
-                                    }
-                                )
-                            else:
-                                try:
-                                    res = parser_fn(raw_val)
-                                    if res is not None:
-                                        summary[key_name] = res
-                                except Exception:
-                                    pass
+                        if raw_val and not self._is_sheet_error(raw_val):
+                            try:
+                                res = parser_fn(raw_val)
+                                if res is not None:
+                                    summary[key_name] = res
+                            except Exception:
+                                pass
 
                 # Salary processing
                 salary = Decimal("0.00")
                 if salary_idx is not None and salary_idx < len(row):
                     raw_sal = str(row[salary_idx]).strip()
-                    if raw_sal:
-                        if self._is_sheet_error(raw_sal):
-                            self.last_dropped_payroll_rows.append(
-                                {
-                                    "sheet_title": title,
-                                    "row_idx": row_idx,
-                                    "employee_id": emp_id,
-                                    "column": "Ish haqi",
-                                    "literal": raw_sal,
-                                    "reason": f"Column 'Ish haqi' has formula error '{raw_sal}'",
-                                }
-                            )
-                        else:
-                            try:
-                                salary = self._parse_money(raw_sal, sheet_name=title, row_idx=row_idx)
-                                summary["earned_salary"] = str(salary)
-                            except Exception:
-                                pass
+                    if raw_sal and not self._is_sheet_error(raw_sal):
+                        try:
+                            salary = self._parse_money(raw_sal, sheet_name=title, row_idx=row_idx)
+                            summary["earned_salary"] = str(salary)
+                        except Exception:
+                            pass
 
                 _process_payroll_col(total_sales_idx, "Umumiy zakaz summasi", "total_sales", lambda v: str(self._parse_money(v, sheet_name=title, row_idx=row_idx)))
                 _process_payroll_col(successful_sales_idx, "Uspeshka summasi", "successful_sales", lambda v: str(self._parse_money(v, sheet_name=title, row_idx=row_idx)))
