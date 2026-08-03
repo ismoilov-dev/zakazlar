@@ -241,8 +241,9 @@ class SheetsSource(BaseSource):
 
         payroll = list(payroll_by_id.values())
         valid_employee_ids = set(payroll_by_id.keys())
+        name_to_id_map = {p.employee_name.strip().lower(): p.employee_id for p in payroll if p.employee_name}
 
-        orders = self._parse_orders(worksheets["list1"], valid_employee_ids=valid_employee_ids)
+        orders = self._parse_orders(worksheets["list1"], valid_employee_ids=valid_employee_ids, name_to_id_map=name_to_id_map)
 
         if not orders:
             raise ValidationError("List1 varog'idan birorta ham buyurtma o'qilmadi.")
@@ -266,11 +267,28 @@ class SheetsSource(BaseSource):
         return orders, payroll
 
 
-    def _parse_orders(self, worksheet: gspread.Worksheet, valid_employee_ids: set[str] | None = None) -> list[OrderDTO]:
+    def _parse_orders(
+        self,
+        worksheet: gspread.Worksheet,
+        valid_employee_ids: set[str] | None = None,
+        name_to_id_map: dict[str, str] | None = None,
+    ) -> list[OrderDTO]:
 
         raw_rows = worksheet.get_all_values(combine_merged_cells=True)
         if not raw_rows:
             raise ValidationError("List1 varog'i bo'sh.")
+
+        name_map: dict[str, str] = {}
+        if name_to_id_map:
+            name_map = {k.strip().lower(): v for k, v in name_to_id_map.items() if k}
+
+        try:
+            from apps.employees.models import Employee
+            for emp in Employee.objects.all():
+                if emp.full_name and emp.full_name.strip().lower() not in name_map:
+                    name_map[emp.full_name.strip().lower()] = emp.employee_id
+        except Exception:
+            pass
 
         # Dynamically locate header row in first 15 rows with case-insensitive trimmed matching
         header_row_idx = None
@@ -342,8 +360,6 @@ class SheetsSource(BaseSource):
         from collections import Counter
         unrecognized_sources_count = Counter()
 
-
-
         for row_idx, row in enumerate(raw_rows[header_row_idx + 1:], start=header_row_idx + 2):
 
             # Test for an all-empty row first, before any field-level validation
@@ -371,6 +387,7 @@ class SheetsSource(BaseSource):
                     last_seen_emp_id = emp_id
                     if raw_emp_name:
                         last_seen_emp_name = raw_emp_name
+                        name_map[raw_emp_name.strip().lower()] = emp_id
                 except PARSE_ERRORS as exc:
                     dropped_invalid_id += 1
                     reason = f"ID formati noto'g'ri: {exc}"
@@ -379,13 +396,19 @@ class SheetsSource(BaseSource):
                     logger.warning("List1 %s-qator tashlandi: %s | Birinchi 6 katak: %s", row_idx, reason, first_6)
                     continue
             else:
+                mapped_id = name_map.get(raw_emp_name.strip().lower()) if raw_emp_name else None
                 names_match = (
                     name_idx is not None
                     and last_seen_emp_name is not None
                     and bool(raw_emp_name)
                     and raw_emp_name.lower() == last_seen_emp_name.lower()
                 )
-                if has_meaningful_content and SHEETS_FORWARD_FILL_EMPLOYEE_ID and last_seen_emp_id and names_match:
+                if mapped_id:
+                    emp_id = mapped_id
+                    last_seen_emp_id = emp_id
+                    if raw_emp_name:
+                        last_seen_emp_name = raw_emp_name
+                elif has_meaningful_content and SHEETS_FORWARD_FILL_EMPLOYEE_ID and last_seen_emp_id and names_match:
                     emp_id = last_seen_emp_id
                     logger.info(
                         "List1 %s-qator bo'sh ID forward-fill qilindi: %s (ism: %s)",
@@ -395,7 +418,7 @@ class SheetsSource(BaseSource):
                     )
                 else:
                     dropped_empty_id += 1
-                    reason = "ID katakchasi bo'sh yoki ism mos kelmadi"
+                    reason = f"ID katakchasi bo'sh yoki ism mos kelmadi: '{raw_emp_name}'"
                     first_6 = [str(c).strip() for c in row[:6]]
                     dropped_rows.append({"row_idx": row_idx, "reason": reason, "raw_cells": first_6, "row_data": row})
                     logger.warning("List1 %s-qator tashlandi: %s | Birinchi 6 katak: %s", row_idx, reason, first_6)

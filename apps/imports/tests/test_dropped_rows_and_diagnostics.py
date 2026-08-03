@@ -158,3 +158,22 @@ class DroppedRowsAndDiagnosticsTest(TestCase):
         self.assertEqual(source.last_parse_summary["dropped_count"], 0)
         self.assertEqual(len(source.last_dropped_rows), 0)
 
+    def test_empty_id_resolved_by_name_map_from_payroll_or_db(self):
+        """Empty ID cell with a known employee name is resolved using name_to_id_map rather than dropped."""
+        raw_data = [
+            ["№", "ID", "Ответственный", "Сумма", "Дата Заказа", "статус", "Источник"],
+            ["1", "0191", "Amir Karimov", "100,000", "28.07.2026", "успешно", "Baza"],
+            ["2", "", "Bekzod Alimov", "150,000", "28.07.2026", "успешно", "Baza"],
+        ]
+
+        source = SheetsSource.__new__(SheetsSource)
+        mock_worksheet = MagicMock()
+        mock_worksheet.get_all_values.return_value = raw_data
+
+        name_to_id_map = {"bekzod alimov": "0079"}
+        orders = source._parse_orders(mock_worksheet, name_to_id_map=name_to_id_map)
+        self.assertEqual(len(orders), 2)
+        self.assertEqual(orders[0].employee_id, "0191")
+        self.assertEqual(orders[1].employee_id, "0079")
+        self.assertEqual(len(source.last_dropped_rows), 0)
+
