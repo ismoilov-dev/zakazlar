@@ -55,6 +55,23 @@ class TarixRouterTest(TestCase):
         reply_markup = message.answer.call_args[1].get("reply_markup")
         self.assertIsNotNone(reply_markup)
 
+    def test_active_month_excluded_from_tarix_periods(self):
+        from apps.imports.models import SpreadsheetPeriod
+        from apps.statistics.services.statistics import StatisticsService
+
+        SpreadsheetPeriod.objects.all().delete()
+        SpreadsheetPeriod.objects.create(period=date(2026, 8, 1), spreadsheet_id="1W8wvi0nmrlnIsrqUBjNjEuoXbkcLQxFCK5fd3v3hto8", is_active=True)
+        EmployeeMonthlyStat.objects.create(
+            employee=self.emp,
+            period=date(2026, 8, 1),
+            summary_data={"earned_salary": "6000000.00"},
+        )
+
+        periods = StatisticsService().available_periods_for_telegram(self.account.telegram_id)
+        period_dates = [p[0] for p in periods]
+        self.assertNotIn(date(2026, 8, 1), period_dates)
+        self.assertIn(date(2026, 6, 1), period_dates)
+
     @patch("apps.telegram_bot.routers.ensure_fresh_data_and_get_timestamp", return_value=("30.07.2026 12:00:00", False))
     async def test_show_historical_stat_callback_renders_stat(self, _mock_ts):
         callback = MagicMock()
