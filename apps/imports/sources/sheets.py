@@ -359,11 +359,10 @@ class SheetsSource(BaseSource):
             stat_raw = self._get_cell(row, status_idx) if status_idx is not None else ""
             has_meaningful_content = bool(ord_raw.strip() or amount_str.strip() or stat_raw.strip())
 
-            # Secondary check: if all mapped cells are empty, treat as empty row
-            if not id_val and not raw_emp_name and not ord_raw and not amount_str and not stat_raw:
+            # Secondary check: if both employee ID and employee name are empty, treat as empty template row
+            if not id_val and not raw_emp_name:
                 empty_rows_skipped += 1
                 continue
-
 
             emp_id: str | None = None
             if id_val:
@@ -394,9 +393,6 @@ class SheetsSource(BaseSource):
                         emp_id,
                         last_seen_emp_name,
                     )
-                elif not has_meaningful_content and not raw_emp_name:
-                    empty_rows_skipped += 1
-                    continue
                 else:
                     dropped_empty_id += 1
                     reason = "ID katakchasi bo'sh yoki ism mos kelmadi"

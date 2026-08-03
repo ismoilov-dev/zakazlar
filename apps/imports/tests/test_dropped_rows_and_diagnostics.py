@@ -135,3 +135,26 @@ class DroppedRowsAndDiagnosticsTest(TestCase):
         self.assertEqual(successful, 1)
         self.assertEqual(total, empty + dropped + successful)
 
+    def test_300_real_rows_and_4000_blank_rows_fixture(self):
+        """300 real order rows and 4000 blank/template rows with pre-filled order numbers yields empty_rows_skipped == 4000 and dropped_rows == 0."""
+        headers = ["№", "ID", "Ответственный", "Сумма", "Дата Заказа", "статус", "Источник"]
+        real_rows = [
+            [str(i), "0191", "Amir Karimov", f"{i * 100000}", "28.07.2026", "успешно", "Baza"]
+            for i in range(1, 301)
+        ]
+        blank_rows_with_row_numbers = [
+            [str(i), "", "", "", "", "", ""]
+            for i in range(301, 4301)
+        ]
+        raw_data = [headers] + real_rows + blank_rows_with_row_numbers
+
+        source = SheetsSource.__new__(SheetsSource)
+        mock_worksheet = MagicMock()
+        mock_worksheet.get_all_values.return_value = raw_data
+
+        orders = source._parse_orders(mock_worksheet)
+        self.assertEqual(len(orders), 300)
+        self.assertEqual(source.last_parse_summary["empty_rows_skipped"], 4000)
+        self.assertEqual(source.last_parse_summary["dropped_count"], 0)
+        self.assertEqual(len(source.last_dropped_rows), 0)
+
