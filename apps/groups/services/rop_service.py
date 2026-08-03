@@ -14,26 +14,47 @@ logger = logging.getLogger(__name__)
 class RopService:
     """Calculate ROP group sales, statistics, and salary."""
 
-    def get_group_sales_totals(self, group: SalesGroup) -> dict[str, Decimal | None]:
+    def get_group_sales_totals(self, group: SalesGroup) -> dict[str, Any]:
         """Calculate group sales totals by summing summary_data across group employees."""
         employees = Employee.objects.filter(group=group, is_active=True)
 
-        totals: dict[str, Decimal | None] = {
+        totals: dict[str, Any] = {
             "total_sales": Decimal("0.00"),
             "successful_sales": Decimal("0.00"),
             "otkaz_sales": Decimal("0.00"),
             "v_proc_sales": Decimal("0.00"),
         }
 
+        uncalculated_uspeshka_count = 0
+        has_any_uspeshka = False
+
         for emp in employees:
             s = emp.summary_data or {}
-            for field in ["total_sales", "successful_sales", "otkaz_sales", "v_proc_sales"]:
+
+            # Process fields other than successful_sales
+            for field in ["total_sales", "otkaz_sales", "v_proc_sales"]:
                 if totals[field] is not None:
                     try:
                         totals[field] += self._parse_decimal(s.get(field))
                     except ValueError:
                         totals[field] = None
 
+            # Process successful_sales (Uspeshka summasi) specially
+            raw_uspeshka = s.get("successful_sales")
+            if raw_uspeshka is None or str(raw_uspeshka).strip() == "":
+                uncalculated_uspeshka_count += 1
+            else:
+                try:
+                    val = self._parse_decimal(raw_uspeshka)
+                    totals["successful_sales"] += val
+                    has_any_uspeshka = True
+                except ValueError:
+                    uncalculated_uspeshka_count += 1
+
+        if not has_any_uspeshka and employees.exists():
+            totals["successful_sales"] = None
+
+        totals["uncalculated_uspeshka_count"] = uncalculated_uspeshka_count
         return totals
 
     def get_group_stats(self, group: SalesGroup) -> dict[str, int | None]:
@@ -69,16 +90,20 @@ class RopService:
         }
 
     def calculate_rop_salary(self, group: SalesGroup) -> dict[str, Any]:
-        """Calculate ROP salary in Django as SUM(group sales) * ROP_SALARY_RATE."""
+        """Calculate ROP salary in Django as SUM(group Uspeshka summasi) * ROP_SALARY_RATE."""
         totals = self.get_group_sales_totals(group)
 
         group_total_sales = totals["total_sales"]
+        group_successful_sales = totals["successful_sales"]
+        uncalculated_uspeshka_count = totals.get("uncalculated_uspeshka_count", 0)
 
         rate = getattr(settings, "ROP_SALARY_RATE", Decimal("0.02"))
-        if group_total_sales is not None:
-            computed_salary = (group_total_sales * rate).quantize(Decimal("0.01"))
-        else:
+
+        if group_successful_sales is None:
+            logger.warning("Group %s missing Uspeshka summasi column/data for ROP salary calculation", group.code)
             computed_salary = None
+        else:
+            computed_salary = (group_successful_sales * rate).quantize(Decimal("0.01"))
 
         sheet_bonus = group.leader_bonus if group.leader_bonus is not None else Decimal("0.00")
 
@@ -97,6 +122,8 @@ class RopService:
 
         return {
             "group_total_sales": group_total_sales,
+            "group_successful_sales": group_successful_sales,
+            "uncalculated_uspeshka_count": uncalculated_uspeshka_count,
             "rate_pct_str": f"{int(rate * 100)}%",
             "computed_salary": computed_salary,
             "sheet_bonus": sheet_bonus,

@@ -60,6 +60,11 @@ employee_id | employee_name | group_code | order_id | status | sale_amount | pro
 - `/rop` — ROP paneli (guruh rahbari uchun).
 - `/chiqish` — ROP sessiyasidan chiqish.
 
+## ROP oyligi hisoblash
+
+Guruh rahbari (ROP) oyligi guruhdagi barcha faol xodimlarning **Uspeshka summasi** (`successful_sales`) yig'indisining 2% qismi (`ROP_SALARY_RATE`) sifatida hisoblanadi:
+`ROP oyligi = SUM(guruhdagi Uspeshka summasi) × 0.02`
+
 ## REST API
 
 Admin huquqiga ega autentifikatsiyalangan foydalanuvchilar uchun:

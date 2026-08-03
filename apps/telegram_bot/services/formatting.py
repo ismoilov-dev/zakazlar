@@ -389,11 +389,23 @@ def rop_salary_card_text(group_code: str, salary_info: dict[str, Any]) -> str:
         lines.append(f"📊 Guruh jami savdosi: <b>{salary_info['group_total_sales']:,.0f} so'm</b>")
     else:
         lines.append(f"📊 Guruh jami savdosi: {MISSING_VALUE_TEXT}")
-    lines.append(f"📐 Foiz: <b>{salary_info['rate_pct_str']}</b>")
-    if salary_info.get("computed_salary") is not None:
-        lines.append(f"💵 ROP oyligi (guruh 2%): <b>{salary_info['computed_salary']:,.0f} so'm</b>")
+
+    if salary_info.get("group_successful_sales") is not None:
+        lines.append(f"✅ Guruh uspeshka summasi: <b>{salary_info['group_successful_sales']:,.0f} so'm</b>")
     else:
-        lines.append(f"💵 ROP oyligi (guruh 2%): {MISSING_VALUE_TEXT}")
+        lines.append(f"✅ Guruh uspeshka summasi: {MISSING_VALUE_TEXT}")
+
+    lines.append(f"📐 Foiz: <b>{salary_info['rate_pct_str']}</b>")
+
+    if salary_info.get("computed_salary") is not None:
+        lines.append(f"💵 ROP oyligi: <b>{salary_info['computed_salary']:,.0f} so'm</b>")
+    else:
+        lines.append(f"💵 ROP oyligi: {MISSING_VALUE_TEXT}")
+
+    uncalc_count = salary_info.get("uncalculated_uspeshka_count", 0)
+    if uncalc_count > 0:
+        lines.append(f"\n⚠️ {uncalc_count} ta xodimning uspeshka summasi hisoblanmagan.")
+
     if salary_info.get("mismatch"):
         lines.append(
             "\n⚠️ Diqqat: bu raqam Google Sheets'dagi qiymatdan farq qilmoqda.\nAdministratorga murojaat qiling."

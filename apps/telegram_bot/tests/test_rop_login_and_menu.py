@@ -310,7 +310,7 @@ class RopPartATestCase(TestCase):
             employee_id="0020",
             full_name="Seller C",
             group=self.group,
-            summary_data={"total_sales": "50,000,000"},
+            summary_data={"total_sales": "50,000,000", "successful_sales": "50,000,000"},
         )
         self.group.leader_bonus = Decimal("1000000.00")  # Matches 50m * 0.02 exactly
         await self.group.asave()
