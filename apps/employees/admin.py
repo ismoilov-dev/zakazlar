@@ -66,6 +66,7 @@ class EmployeeAdmin(admin.ModelAdmin):
     list_filter = ("is_active", "group")
     search_fields = ("employee_id", "full_name")
     list_select_related = ("group",)
+    autocomplete_fields = ("group",)
     ordering = ("employee_id",)
     fields = (
         "employee_id",
@@ -129,6 +130,7 @@ class EmployeeMonthlyStatAdmin(admin.ModelAdmin):
     list_display = ("employee", "period", "is_closed", "closed_at", "closed_by", "source_spreadsheet_id", "updated_at")
     list_filter = ("is_closed", "period", "employee__group")
     search_fields = ("employee__employee_id", "employee__full_name")
+    autocomplete_fields = ("employee",)
     actions = [close_selected_monthly_stats, reopen_selected_monthly_stats]
     readonly_fields = ("closed_at", "closed_by")
 
@@ -155,5 +157,6 @@ class RopCredentialAdmin(admin.ModelAdmin):
     form = RopCredentialAdminForm
     list_display = ("employee", "updated_at")
     search_fields = ("employee__employee_id", "employee__full_name")
+    autocomplete_fields = ("employee",)
     actions = [reset_rop_password_action]
     exclude = ("password",)

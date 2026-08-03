@@ -21,6 +21,7 @@ class TelegramAccountAdmin(admin.ModelAdmin):
     list_filter = ("bound_at", "employee__group")
     search_fields = ("telegram_id", "employee__employee_id", "employee__full_name", "username")
     list_select_related = ("employee",)
+    autocomplete_fields = ("employee",)
     readonly_fields = ("bound_at", "created_at", "updated_at")
     actions = ["delete_selected"]
 
