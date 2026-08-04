@@ -165,3 +165,27 @@ class XizmatlarMenuTest(TestCase):
         self.assertIn("Oy: <b>Iyun 2026</b>", text)
         self.assertIn("Shaxsiy oylik: <b>4,800,000 so'm</b>", text)
 
+    @patch("apps.telegram_bot.routers.ensure_fresh_data_and_get_timestamp", return_value=("31.07.2026 14:00:00", False))
+    async def test_half_month_salary_buttons_and_card_rendering(self, _mock_ts):
+        self.emp.summary_data["earned_salary_1_15"] = "2500000.00"
+        self.emp.summary_data["earned_salary_16_31"] = "2500000.00"
+        await self.emp.asave()
+
+        callback = MagicMock()
+        callback.from_user.id = 12345678
+        callback.data = "xm_card:salary_1_15"
+        callback.message.edit_text = AsyncMock()
+        callback.answer = AsyncMock()
+
+        await handle_xizmatlar_callback(callback)
+        callback.message.edit_text.assert_called_once()
+        text = callback.message.edit_text.call_args[0][0]
+        self.assertIn("1 - 15 kunlik oylik hisoboti", text)
+        self.assertIn("1-15 kunlik oylik: <b>2,500,000 so'm</b>", text)
+
+        reply_markup = callback.message.edit_text.call_args[1]["reply_markup"]
+        button_texts = [b.text for row in reply_markup.inline_keyboard for b in row]
+        self.assertIn("📅 1-15 kunlik oylik", button_texts)
+        self.assertIn("📅 16-31 kunlik oylik", button_texts)
+        self.assertIn("💵 Jami oylik", button_texts)
+

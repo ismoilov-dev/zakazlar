@@ -1031,7 +1031,7 @@ async def handle_xizmatlar_callback(callback: CallbackQuery, state: FSMContext |
             fallback_salary=fallback_salary,
         )
         text = body + footer
-        reply_markup = card_keyboard(period_iso, src=src)
+        reply_markup = card_keyboard(period_iso, src=src, card_type=card_type)
 
     elif action == "xm_months":
         try:

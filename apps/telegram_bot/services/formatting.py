@@ -112,16 +112,41 @@ def card_text(
         lines.append("Bu oy uchun ma'lumot saqlanmagan.")
         return "\n".join(lines)
 
-    if card_type == "earned_salary":
+    if card_type in ("earned_salary", "salary_1_15", "salary_16_31"):
         raw_sal = data.get("earned_salary")
         sal = _parse_decimal_val(raw_sal)
         if sal is None and fallback_salary is not None and not period_label:
             sal = fallback_salary
 
-        if sal is not None:
-            lines.append(f"💵 Shaxsiy oylik: <b>{sal:,.0f} so'm</b>")
-        else:
-            lines.append(MISSING_VALUE_TEXT)
+        sal_1_15 = _parse_decimal_val(data.get("earned_salary_1_15") or data.get("salary_1_15"))
+        sal_16_31 = _parse_decimal_val(data.get("earned_salary_16_31") or data.get("salary_16_31"))
+
+        if sal_1_15 is None and sal_16_31 is not None and sal is not None:
+            sal_1_15 = max(Decimal("0"), sal - sal_16_31)
+        elif sal_16_31 is None and sal_1_15 is not None and sal is not None:
+            sal_16_31 = max(Decimal("0"), sal - sal_1_15)
+
+        if card_type == "earned_salary":
+            if sal is not None:
+                lines.append(f"💵 Shaxsiy oylik: <b>{sal:,.0f} so'm</b>")
+            else:
+                lines.append(MISSING_VALUE_TEXT)
+
+        elif card_type == "salary_1_15":
+            lines.append("🗓 <b>1 - 15 kunlik oylik hisoboti</b>\n")
+            if sal_1_15 is not None:
+                lines.append(f"💵 1-15 kunlik oylik: <b>{sal_1_15:,.0f} so'm</b>")
+            elif sal is not None:
+                lines.append(f"💵 1-15 kunlik oylik: <b>{sal:,.0f} so'm</b>")
+            else:
+                lines.append(f"💵 1-15 kunlik oylik: {MISSING_VALUE_TEXT}")
+
+        elif card_type == "salary_16_31":
+            lines.append("🗓 <b>16 - 31 kunlik oylik hisoboti</b>\n")
+            if sal_16_31 is not None:
+                lines.append(f"💵 16-31 kunlik oylik: <b>{sal_16_31:,.0f} so'm</b>")
+            else:
+                lines.append(f"💵 16-31 kunlik oylik: {MISSING_VALUE_TEXT}")
 
     elif card_type == "total_sales":
         ts = _parse_decimal_val(data.get("total_sales"))
@@ -185,18 +210,44 @@ def card_text(
     return "\n".join(lines)
 
 
-def card_keyboard(period_iso: str | None = None, src: str | None = None) -> InlineKeyboardMarkup:
+def card_keyboard(
+    period_iso: str | None = None,
+    src: str | None = None,
+    card_type: str | None = None,
+) -> InlineKeyboardMarkup:
     """Render inline keyboard for focused card navigation."""
     builder = InlineKeyboardBuilder()
+    suffix = f":{period_iso}" if period_iso else ""
     src_suffix = f":src={src}" if src else ""
+
+    if card_type in ("earned_salary", "salary_1_15", "salary_16_31"):
+        builder.button(text="📅 1-15 kunlik oylik", callback_data=f"xm_card:salary_1_15{suffix}{src_suffix}")
+        builder.button(text="📅 16-31 kunlik oylik", callback_data=f"xm_card:salary_16_31{suffix}{src_suffix}")
+        if card_type != "earned_salary":
+            builder.button(text="💵 Jami oylik", callback_data=f"xm_card:earned_salary{suffix}{src_suffix}")
+
     back_target = f"xm_menu:{period_iso}{src_suffix}" if period_iso else f"xm_menu{src_suffix}"
     builder.button(text="⬅️ Xizmatlarga qaytish", callback_data=back_target)
 
     if period_iso:
         builder.button(text="⬅️ Oylarni tanlash", callback_data=f"xm_months{src_suffix}")
-        builder.adjust(1, 1)
+
+    if card_type in ("earned_salary", "salary_1_15", "salary_16_31"):
+        if period_iso:
+            if card_type != "earned_salary":
+                builder.adjust(2, 1, 1, 1)
+            else:
+                builder.adjust(2, 1, 1)
+        else:
+            if card_type != "earned_salary":
+                builder.adjust(2, 1, 1)
+            else:
+                builder.adjust(2, 1)
     else:
-        builder.adjust(1)
+        if period_iso:
+            builder.adjust(1, 1)
+        else:
+            builder.adjust(1)
 
     return builder.as_markup()
 

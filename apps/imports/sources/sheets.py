@@ -604,6 +604,51 @@ class SheetsSource(BaseSource):
             required=False,
         )
 
+        salary_1_15_idx = self._find_single_column_index(
+            headings,
+            candidates=[
+                "1-15 kunlik ish haqi",
+                "1-15 ish haqi",
+                "1-15 oylik",
+                "1-15 kunlik oylik",
+                "1-15 kunlik",
+                "1-15",
+                "Ish haqi 1-15",
+                "Oylik 1-15",
+                "1-15 (12%)",
+                "1-15 oylik (12%)",
+                "1-15 kun",
+                "1-15 ish haqi 12%",
+                "1-15 oylik ish haqi",
+            ],
+            name="salary_1_15",
+            required=False,
+        )
+
+        salary_16_31_idx = self._find_single_column_index(
+            headings,
+            candidates=[
+                "16-31 kunlik ish haqi",
+                "16-31 ish haqi",
+                "16-31 oylik",
+                "16-31 kunlik oylik",
+                "16-31 kunlik",
+                "16-31",
+                "Ish haqi 16-31",
+                "Oylik 16-31",
+                "16-31 (12%)",
+                "16-31 oylik (12%)",
+                "16-31 kun",
+                "16-oxiri",
+                "16-30",
+                "16-30 kunlik",
+                "16-31 ish haqi 12%",
+                "16-31 oylik ish haqi",
+            ],
+            name="salary_16_31",
+            required=False,
+        )
+
         payroll: list[PayrollDTO] = []
         for row_idx, row in enumerate(raw_rows[header_row_idx + 1:], start=header_row_idx + 2):
             if not any(str(cell).strip() for cell in row):
@@ -651,6 +696,8 @@ class SheetsSource(BaseSource):
                 _process_payroll_col(otkaz_sales_idx, "Otkaz", "otkaz_sales", lambda v: str(self._parse_money(v, sheet_name=title, row_idx=row_idx)))
                 _process_payroll_col(v_proc_sales_idx, "В процесс", "v_proc_sales", lambda v: str(self._parse_money(v, sheet_name=title, row_idx=row_idx)))
                 _process_payroll_col(upakovka_idx, "Upakovka soni", "successful_orders", lambda v: int(float(v.replace(",", "."))))
+                _process_payroll_col(salary_1_15_idx, "1-15 kunlik ish haqi", "earned_salary_1_15", lambda v: str(self._parse_money(v, sheet_name=title, row_idx=row_idx)))
+                _process_payroll_col(salary_16_31_idx, "16-31 kunlik ish haqi", "earned_salary_16_31", lambda v: str(self._parse_money(v, sheet_name=title, row_idx=row_idx)))
 
                 def _parse_conv(v: str) -> float | None:
                     raw_c = v.replace("%", "").replace(",", ".").strip()
