@@ -12,7 +12,8 @@ from apps.telegram_bot.routers import (
     handle_bare_text_message,
     handle_xizmatlar_callback,
 )
-from apps.telegram_bot.services.formatting import card_text, format_uzbek_period
+from apps.telegram_bot.services import formatting
+from apps.telegram_bot.services.formatting import MISSING_VALUE_TEXT, card_text, format_uzbek_period, money
 
 
 class XizmatlarMenuTest(TestCase):
@@ -58,25 +59,43 @@ class XizmatlarMenuTest(TestCase):
         self.assertEqual(format_uzbek_period(date(2026, 6, 1)), "Iyun 2026")
         self.assertEqual(format_uzbek_period(date(2026, 7, 1)), "Iyul 2026")
 
+    def test_money_large_sum(self):
+        self.assertEqual(money(Decimal("92570000")), "<b>92\u00a0570\u00a0000 so'm</b>")
+        self.assertEqual(money(Decimal("92570000"), bold=False), "92\u00a0570\u00a0000 so'm")
+
+    def test_money_zero(self):
+        self.assertEqual(money(Decimal("0")), "<b>0 so'm</b>")
+        self.assertEqual(money(Decimal("0"), bold=False), "0 so'm")
+
+    def test_money_none(self):
+        self.assertEqual(money(None), MISSING_VALUE_TEXT)
+        self.assertEqual(money(None, bold=False), MISSING_VALUE_TEXT)
+
+    def test_no_inline_money_formatting_remaining(self):
+        import inspect
+
+        source = inspect.getsource(formatting)
+        self.assertNotIn(":,.0f", source)
+
     def test_card_text_earned_salary(self):
         text = card_text("earned_salary", "Amir Karimov", "A", self.emp.summary_data)
         self.assertIn("Amir Karimov", text)
         self.assertIn("Bo'lim: <b>A</b>", text)
-        self.assertIn("Shaxsiy oylik: <b>5,000,000 so'm</b>", text)
+        self.assertIn("Shaxsiy oylik: <b>5\u00a0000\u00a0000 so'm</b>", text)
 
     def test_card_text_total_sales(self):
         text = card_text("total_sales", "Amir Karimov", "A", self.emp.summary_data)
-        self.assertIn("Jami savdo: <b>92,570,000 so'm</b>", text)
+        self.assertIn("Jami savdo: <b>92\u00a0570\u00a0000 so'm</b>", text)
 
     def test_card_text_uspeshka(self):
         text = card_text("uspeshka", "Amir Karimov", "A", self.emp.summary_data)
-        self.assertIn("Uspeshka summasi: <b>41,000,000 so'm</b>", text)
+        self.assertIn("Uspeshka summasi: <b>41\u00a0000\u00a0000 so'm</b>", text)
         self.assertIn("Upakovka soni: <b>47 ta</b>", text)
         self.assertIn("Konversiya: <b>44.29%</b>", text)
 
     def test_card_text_otkaz(self):
         text = card_text("otkaz", "Amir Karimov", "A", self.emp.summary_data)
-        self.assertIn("Otkaz summasi: <b>52,755,000 so'm</b>", text)
+        self.assertIn("Otkaz summasi: <b>52\u00a0755\u00a0000 so'm</b>", text)
 
     def test_card_text_v_proc(self):
         text = card_text("v_proc", "Amir Karimov", "A", self.emp.summary_data)
@@ -135,7 +154,7 @@ class XizmatlarMenuTest(TestCase):
         await handle_xizmatlar_callback(callback)
         callback.message.edit_text.assert_called_once()
         text = callback.message.edit_text.call_args[0][0]
-        self.assertIn("Shaxsiy oylik: <b>5,000,000 so'm</b>", text)
+        self.assertIn("Shaxsiy oylik: <b>5\u00a0000\u00a0000 so'm</b>", text)
         callback.answer.assert_called_once()
 
     @patch("apps.telegram_bot.routers.ensure_fresh_data_and_get_timestamp", return_value=("31.07.2026 14:00:00", False))
@@ -163,7 +182,7 @@ class XizmatlarMenuTest(TestCase):
         callback.message.edit_text.assert_called_once()
         text = callback.message.edit_text.call_args[0][0]
         self.assertIn("Oy: <b>Iyun 2026</b>", text)
-        self.assertIn("Shaxsiy oylik: <b>4,800,000 so'm</b>", text)
+        self.assertIn("Shaxsiy oylik: <b>4\u00a0800\u00a0000 so'm</b>", text)
 
     @patch("apps.telegram_bot.routers.ensure_fresh_data_and_get_timestamp", return_value=("31.07.2026 14:00:00", False))
     async def test_half_month_salary_buttons_and_card_rendering(self, _mock_ts):
@@ -181,11 +200,12 @@ class XizmatlarMenuTest(TestCase):
         callback.message.edit_text.assert_called_once()
         text = callback.message.edit_text.call_args[0][0]
         self.assertIn("1 - 15 kunlik oylik hisoboti", text)
-        self.assertIn("1-15 kunlik oylik: <b>2,500,000 so'm</b>", text)
+        self.assertIn("1-15 kunlik oylik: <b>2\u00a0500\u00a0000 so'm</b>", text)
 
         reply_markup = callback.message.edit_text.call_args[1]["reply_markup"]
         button_texts = [b.text for row in reply_markup.inline_keyboard for b in row]
         self.assertIn("📅 1-15 kunlik oylik", button_texts)
         self.assertIn("📅 16-31 kunlik oylik", button_texts)
         self.assertIn("💵 Jami oylik", button_texts)
+
 

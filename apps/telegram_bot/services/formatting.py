@@ -93,6 +93,18 @@ def _parse_decimal_val(raw: Any) -> Decimal | None:
         return None
 
 
+def money(value: Decimal | None, *, bold: bool = True) -> str:
+    """Render a sum for Telegram. Returns the missing-value text for None."""
+    if value is None:
+        return MISSING_VALUE_TEXT
+    val_int = int(round(value))
+    formatted = f"{val_int:,}".replace(",", "\u00A0")
+    formatted_str = f"{formatted} so'm"
+    if bold:
+        return f"<b>{formatted_str}</b>"
+    return formatted_str
+
+
 def card_text(
     card_type: str,
     full_name: str,
@@ -127,33 +139,20 @@ def card_text(
             sal_16_31 = max(Decimal("0"), sal - sal_1_15)
 
         if card_type == "earned_salary":
-            if sal is not None:
-                lines.append(f"💵 Shaxsiy oylik: <b>{sal:,.0f} so'm</b>")
-            else:
-                lines.append(MISSING_VALUE_TEXT)
+            lines.append(f"💵 Shaxsiy oylik: {money(sal)}")
 
         elif card_type == "salary_1_15":
             lines.append("🗓 <b>1 - 15 kunlik oylik hisoboti</b>\n")
-            if sal_1_15 is not None:
-                lines.append(f"💵 1-15 kunlik oylik: <b>{sal_1_15:,.0f} so'm</b>")
-            elif sal is not None:
-                lines.append(f"💵 1-15 kunlik oylik: <b>{sal:,.0f} so'm</b>")
-            else:
-                lines.append(f"💵 1-15 kunlik oylik: {MISSING_VALUE_TEXT}")
+            val = sal_1_15 if sal_1_15 is not None else sal
+            lines.append(f"💵 1-15 kunlik oylik: {money(val)}")
 
         elif card_type == "salary_16_31":
             lines.append("🗓 <b>16 - 31 kunlik oylik hisoboti</b>\n")
-            if sal_16_31 is not None:
-                lines.append(f"💵 16-31 kunlik oylik: <b>{sal_16_31:,.0f} so'm</b>")
-            else:
-                lines.append(f"💵 16-31 kunlik oylik: {MISSING_VALUE_TEXT}")
+            lines.append(f"💵 16-31 kunlik oylik: {money(sal_16_31)}")
 
     elif card_type == "total_sales":
         ts = _parse_decimal_val(data.get("total_sales"))
-        if ts is not None:
-            lines.append(f"📊 Jami savdo: <b>{ts:,.0f} so'm</b>")
-        else:
-            lines.append(MISSING_VALUE_TEXT)
+        lines.append(f"📊 Jami savdo: {money(ts)}")
 
     elif card_type == "uspeshka":
         ss = _parse_decimal_val(data.get("successful_sales") or data.get("perv_sales"))
@@ -161,10 +160,7 @@ def card_text(
         conv_raw = data.get("conversion_rate")
         rconv_raw = data.get("real_conversion_rate")
 
-        if ss is not None:
-            lines.append(f"✅ Uspeshka summasi: <b>{ss:,.0f} so'm</b>")
-        else:
-            lines.append(f"✅ Uspeshka summasi: {MISSING_VALUE_TEXT}")
+        lines.append(f"✅ Uspeshka summasi: {money(ss)}")
 
         if so_raw is not None and str(so_raw).strip() != "":
             try:
@@ -195,17 +191,11 @@ def card_text(
 
     elif card_type == "otkaz":
         otkaz = _parse_decimal_val(data.get("otkaz_sales"))
-        if otkaz is not None:
-            lines.append(f"❌ Otkaz summasi: <b>{otkaz:,.0f} so'm</b>")
-        else:
-            lines.append(MISSING_VALUE_TEXT)
+        lines.append(f"❌ Otkaz summasi: {money(otkaz)}")
 
     elif card_type == "v_proc":
         vp = _parse_decimal_val(data.get("v_proc_sales"))
-        if vp is not None:
-            lines.append(f"⏳ Jarayondagi summa: <b>{vp:,.0f} so'm</b>")
-        else:
-            lines.append(MISSING_VALUE_TEXT)
+        lines.append(f"⏳ Jarayondagi summa: {money(vp)}")
 
     return "\n".join(lines)
 
@@ -269,16 +259,13 @@ def period_selector_keyboard(periods: list[tuple[date, str]], src: str | None = 
 def group_dashboard_text(dashboard: GroupDashboard) -> str:
     """Render a group-leader dashboard without performing calculations."""
     month_str = dashboard.month_str or timezone.localtime().strftime("%m.%Y")
-    total_sales_text = f"<b>{dashboard.total_sales:,.0f} so'm</b>"
-    profit_text = f"<b>{dashboard.total_profit:,.0f} so'm</b>"
-    bonus_text = f"<b>{dashboard.leader_bonus:,.0f} so'm</b>"
 
     return (
         f"👥 <b>Guruh ko'rsatkichlari: {dashboard.group_name} ({dashboard.group_code})</b>\n"
         f"📅 Oy: <b>{month_str}</b>\n\n"
-        f"📦 Guruh umumiy zakaz summasi: {total_sales_text}\n"
-        f"💰 Guruh foydasi (Muvaffaqiyatli): {profit_text}\n"
-        f"💵 Rahbar bonusi (2%): {bonus_text}"
+        f"📊 Guruh umumiy zakaz summasi: {money(dashboard.total_sales)}\n"
+        f"💰 Guruh foydasi (Muvaffaqiyatli): {money(dashboard.total_profit)}\n"
+        f"💰 Rahbar bonusi (2%): {money(dashboard.leader_bonus)}"
     )
 
 
@@ -381,7 +368,7 @@ def rop_employee_list_card_text(
             elif filter_key == "no_sales" and (sales_val is None or sales_val == Decimal("0")):
                 pass
             elif sales_val is not None and sales_val > Decimal("0"):
-                sales_str = f"{sales_val:,.0f} so'm"
+                sales_str = money(sales_val, bold=False)
                 if orders_val is not None:
                     orders_str = f"📦 {orders_val} ta"
                 else:
@@ -412,10 +399,7 @@ def rop_group_sales_card_text(group_code: str, totals: dict[str, Decimal | None]
         ("⏳ Jarayonda", "v_proc_sales"),
     ]:
         val = totals.get(key)
-        if val is not None:
-            lines.append(f"{label}: <b>{val:,.0f} so'm</b>")
-        else:
-            lines.append(f"{label}: {MISSING_VALUE_TEXT}")
+        lines.append(f"{label}: {money(val)}")
     return "\n".join(lines)
 
 
@@ -435,23 +419,13 @@ def rop_group_stats_card_text(group_code: str, stats: dict[str, int | None]) -> 
 
 def rop_salary_card_text(group_code: str, salary_info: dict[str, Any]) -> str:
     """Render ROP OYLIK card text with inputs, calculated salary, and mismatch warning if present."""
-    lines = [f"🏢 <b>{group_code} guruh</b>\n"]
-    if salary_info.get("group_total_sales") is not None:
-        lines.append(f"📊 Guruh jami savdosi: <b>{salary_info['group_total_sales']:,.0f} so'm</b>")
-    else:
-        lines.append(f"📊 Guruh jami savdosi: {MISSING_VALUE_TEXT}")
-
-    if salary_info.get("group_successful_sales") is not None:
-        lines.append(f"✅ Guruh uspeshka summasi: <b>{salary_info['group_successful_sales']:,.0f} so'm</b>")
-    else:
-        lines.append(f"✅ Guruh uspeshka summasi: {MISSING_VALUE_TEXT}")
-
-    lines.append(f"📐 Foiz: <b>{salary_info['rate_pct_str']}</b>")
-
-    if salary_info.get("computed_salary") is not None:
-        lines.append(f"💵 ROP oyligi: <b>{salary_info['computed_salary']:,.0f} so'm</b>")
-    else:
-        lines.append(f"💵 ROP oyligi: {MISSING_VALUE_TEXT}")
+    lines = [
+        f"🏢 <b>{group_code} guruh</b>\n",
+        f"📊 Guruh jami savdosi: {money(salary_info.get('group_total_sales'))}",
+        f"✅ Guruh uspeshka summasi: {money(salary_info.get('group_successful_sales'))}",
+        f"📐 Foiz: <b>{salary_info['rate_pct_str']}</b>",
+        f"💵 ROP oyligi: {money(salary_info.get('computed_salary'))}",
+    ]
 
     uncalc_count = salary_info.get("uncalculated_uspeshka_count", 0)
     if uncalc_count > 0:

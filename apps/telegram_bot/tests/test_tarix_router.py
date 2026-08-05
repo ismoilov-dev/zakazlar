@@ -136,8 +136,8 @@ class TarixRouterTest(TestCase):
 
         await handle_xizmatlar_callback(callback)
         text = callback.message.edit_text.call_args[0][0]
-        self.assertIn("52,755,000", text)
-        self.assertNotIn("60,000,000", text)
+        self.assertIn("52\u00a0755\u00a0000", text)
+        self.assertNotIn("60\u00a0000\u00a0000", text)
 
     @patch("apps.telegram_bot.routers.ensure_fresh_data_and_get_timestamp", return_value=("30.07.2026 12:00:00", False))
     async def test_missing_snapshot_renders_not_saved_message(self, _mock_ts):

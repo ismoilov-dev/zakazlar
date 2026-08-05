@@ -37,10 +37,10 @@ class RopServiceSalaryBasisTest(TestCase):
         self.assertEqual(salary_info["uncalculated_uspeshka_count"], 0)
 
         card_text = rop_salary_card_text(group_a.code, salary_info)
-        self.assertIn("📊 Guruh jami savdosi: <b>92,500,000 so'm</b>", card_text)
-        self.assertIn("✅ Guruh uspeshka summasi: <b>39,815,000 so'm</b>", card_text)
+        self.assertIn("📊 Guruh jami savdosi: <b>92\u00a0500\u00a0000 so'm</b>", card_text)
+        self.assertIn("✅ Guruh uspeshka summasi: <b>39\u00a0815\u00a0000 so'm</b>", card_text)
         self.assertIn("📐 Foiz: <b>2%</b>", card_text)
-        self.assertIn("💵 ROP oyligi: <b>796,300 so'm</b>", card_text)
+        self.assertIn("💵 ROP oyligi: <b>796\u00a0300 so'm</b>", card_text)
 
     def test_calculate_rop_salary_missing_uspeshka_column(self):
         """When Uspeshka column is missing, salary line shows missing warning and logs WARNING."""
@@ -91,5 +91,5 @@ class RopServiceSalaryBasisTest(TestCase):
         self.assertEqual(salary_info["uncalculated_uspeshka_count"], 2)
 
         card_text = rop_salary_card_text(group_c.code, salary_info)
-        self.assertIn("💵 ROP oyligi: <b>200,000 so'm</b>", card_text)
+        self.assertIn("💵 ROP oyligi: <b>200\u00a0000 so'm</b>", card_text)
         self.assertIn("⚠️ 2 ta xodimning uspeshka summasi hisoblanmagan.", card_text)

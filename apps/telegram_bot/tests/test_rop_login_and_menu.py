@@ -271,7 +271,7 @@ class RopPartATestCase(TestCase):
         callback.message.edit_text.assert_called_once()
         text = callback.message.edit_text.call_args[0][0]
         self.assertIn(f"👤 <b>{self.leader.full_name.strip()}</b>", text)
-        self.assertIn("💵 Shaxsiy oylik: <b>5,000,000 so'm</b>", text)
+        self.assertIn("💵 Shaxsiy oylik: <b>5\u00a0000\u00a0000 so'm</b>", text)
 
     @patch("apps.telegram_bot.routers.ensure_fresh_data_and_get_timestamp", return_value=("31.07.2026 14:00:00", False))
     async def test_rop_callback_mop_salary_missing_value_renders_warning(self, _mock_ts):

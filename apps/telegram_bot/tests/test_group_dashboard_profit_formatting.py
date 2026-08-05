@@ -24,8 +24,8 @@ class GroupDashboardProfitFormattingTest(TestCase):
 
 
         text = group_dashboard_text(dashboard)
-        self.assertIn("10,000,000 so'm", text)
-        self.assertIn("200,000 so'm", text)
+        self.assertIn("10\u00a0000\u00a0000 so'm", text)
+        self.assertIn("200\u00a0000 so'm", text)
         self.assertIn("Rahbar bonusi", text)
 
     def test_absent_guruhlar_sheet_raises_validation_error(self):
