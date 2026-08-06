@@ -221,6 +221,24 @@ class DataImporterTest(TestCase):
         self.assertEqual(sales[2].client_name, "")
         self.assertIsNone(sales[2].quantity)
 
+    def test_duplicate_kolvo1_headers_resolves_quantity_after_tovar1(self) -> None:
+        from unittest.mock import MagicMock
+        from apps.imports.sources.sheets import SheetsSource
+
+        source = object.__new__(SheetsSource)
+        source.last_dropped_rows = []
+
+        mock_ws = MagicMock()
+        mock_ws.get_all_values.return_value = [
+            ["ID", "Zakaz №", "Ответственный", "Сумма", "Дата Заказа", "статус", "guruh", "manba", "Ф.И.О.", "Товар1", "кол-во1", "Товар2", "кол-vo1"],
+            ["0191", "1001", "Amir", "750000", "2026-07-01 10:00:00", "Успешно", "A", "База", "maqsuda", "Bioflex pro", "5", "Second Item", "99"],
+        ]
+
+        orders = source._parse_orders(mock_ws, valid_employee_ids={"0191"})
+        self.assertEqual(len(orders), 1)
+        self.assertEqual(orders[0].product_name, "Bioflex pro")
+        self.assertEqual(orders[0].quantity, 5)  # Must be 5 from column after Товар1, not 99 from column after Товар2
+
     def test_normalize_source_mapping(self) -> None:
         from apps.imports.sources.sheets import SheetsSource
         self.assertEqual(SheetsSource._normalize_source("Первичный Заказ"), ("Pervichka", None))

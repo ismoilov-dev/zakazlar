@@ -323,9 +323,12 @@ class SheetsSource(BaseSource):
         source_candidates = ["Столбец 2", "Контакт", "Источник", "manba", "Manba"]
         source_idx = self._find_single_column_index(headings, candidates=source_candidates, name="manba", required=False)
 
-        client_idx = self._find_single_column_index(headings, candidates=["Ф.И.О.", "ФИО клиента", "Mijoz F.I.O", "Mijoz ismi", "Mijoz FIO", "Ф.И.О"], name="client_name", required=False)
-        product_idx = self._find_single_column_index(headings, candidates=["Товар1", "Товар", "Mahsulot", "Mahsulot1", "Tovar"], name="product_name", required=False)
-        qty_idx = self._find_single_column_index(headings, candidates=["кол-во1", "кол-во", "колво1", "колво", "Soni", "Soni1", "Kolichestvo"], name="quantity", required=False)
+        client_idx = self._find_single_column_index(headings, candidates=["Ф.И.О.", "ФИО клиента", "Mijoz F.I.O", "Mijoz ismi", "Mijoz FIO", "Ф.И.О", "ФИО", "Ф. И. О."], name="client_name", required=False)
+        product_idx = self._find_single_column_index(headings, candidates=["Товар1", "Товар 1", "Товар", "Mahsulot1", "Mahsulot", "Tovar1", "Tovar"], name="product_name", required=False)
+        if product_idx is not None and product_idx + 1 < len(headings):
+            qty_idx = product_idx + 1
+        else:
+            qty_idx = self._find_single_column_index(headings, candidates=["кол-во1", "кол-во 1", "кол-во", "колво1", "колво", "Soni1", "Soni", "Kolichestvo"], name="quantity", required=False)
 
         if source_idx is None:
             logger.error("List1 varog'ida manba ustuni topilmadi. Qidirilgan nomlar: %s | Mavjud sarlavhalar: %s", source_candidates, headings)
@@ -875,9 +878,23 @@ class SheetsSource(BaseSource):
     def _find_single_column_index(
         headings: list[str], candidates: list[str], name: str, required: bool = True
     ) -> int | None:
+        def _norm(s: object) -> str:
+            return re.sub(r"[\s\.\_\-]+", "", str(s or "").strip().lower())
+
         for candidate in candidates:
+            cand_norm = _norm(candidate)
             for idx, col_name in enumerate(headings):
-                if str(col_name).strip() == candidate.strip():
+                col_norm = _norm(col_name)
+                if col_norm and col_norm == cand_norm:
+                    return idx
+
+        for candidate in candidates:
+            cand_norm = _norm(candidate)
+            if not cand_norm:
+                continue
+            for idx, col_name in enumerate(headings):
+                col_norm = _norm(col_name)
+                if col_norm and (cand_norm in col_norm or col_norm in cand_norm):
                     return idx
 
         if required:
