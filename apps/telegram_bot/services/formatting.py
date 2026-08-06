@@ -56,6 +56,7 @@ def xizmatlar_menu_keyboard(
     builder.button(text="✅ Uspeshka", callback_data=f"xm_card:uspeshka{suffix}{src_suffix}")
     builder.button(text="❌ Otkaz", callback_data=f"xm_card:otkaz{suffix}{src_suffix}")
     builder.button(text="⏳ Jarayonda", callback_data=f"xm_card:v_proc{suffix}{src_suffix}")
+    builder.button(text="📋 ZAKAZLAR", callback_data=f"xm_orders{suffix}{src_suffix}")
     builder.button(text="🗓 AVVALGI OYLIKLAR", callback_data=f"xm_months{src_suffix}")
 
     if show_rop_switch:
@@ -64,15 +65,126 @@ def xizmatlar_menu_keyboard(
     if period_iso:
         builder.button(text="⬅️ Oylarni tanlash", callback_data=f"xm_months{src_suffix}")
         if show_rop_switch:
+            builder.adjust(1, 1, 3, 1, 1, 1, 1)
+        else:
+            builder.adjust(1, 1, 3, 1, 1, 1)
+    else:
+        if show_rop_switch:
             builder.adjust(1, 1, 3, 1, 1, 1)
         else:
             builder.adjust(1, 1, 3, 1, 1)
-    else:
-        if show_rop_switch:
-            builder.adjust(1, 1, 3, 1, 1)
-        else:
-            builder.adjust(1, 1, 3, 1)
 
+    return builder.as_markup()
+
+
+STATUS_EMOJI_MAP = {
+    "successful": "✅ Muvaffaqiyatli",
+    "cancelled": "❌ Otkaz",
+    "pending": "⏳ Jarayonda",
+}
+
+
+def order_status_picker_text() -> str:
+    return "📋 <b>Zakazlar</b>"
+
+
+def order_status_picker_keyboard(
+    counts: dict[str, int] | None = None,
+    period_iso: str | None = None,
+    src: str | None = None,
+) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    counts = counts or {}
+
+    succ_cnt = counts.get("successful")
+    canc_cnt = counts.get("cancelled")
+    pend_cnt = counts.get("pending")
+
+    succ_text = f"✅ Muvaffaqiyatli ({succ_cnt})" if succ_cnt is not None else "✅ Muvaffaqiyatli"
+    canc_text = f"❌ Otkaz ({canc_cnt})" if canc_cnt is not None else "❌ Otkaz"
+    pend_text = f"⏳ Jarayonda ({pend_cnt})" if pend_cnt is not None else "⏳ Jarayonda"
+
+    suffix = f":{period_iso}" if period_iso else ""
+    src_suffix = f":src={src}" if src else ""
+
+    builder.button(text=succ_text, callback_data=f"ord_status:successful{suffix}{src_suffix}")
+    builder.button(text=canc_text, callback_data=f"ord_status:cancelled{suffix}{src_suffix}")
+    builder.button(text=pend_text, callback_data=f"ord_status:pending{suffix}{src_suffix}")
+
+    back_target = f"xm_back{suffix}{src_suffix}" if (period_iso or src) else "xizmatlar"
+    builder.button(text="⬅️ Xizmatlarga qaytish", callback_data=back_target)
+
+    builder.adjust(2, 1, 1)
+    return builder.as_markup()
+
+
+def order_list_text(
+    orders: list[Any],
+    status: str,
+    total_count: int,
+    page: int,
+    total_pages: int,
+    period_label: str,
+) -> str:
+    if total_count == 0 or not orders:
+        return "Bu holatda zakazlar yo'q."
+
+    status_title = STATUS_EMOJI_MAP.get(status, status)
+    header = f"{status_title} — {total_count} ta\n📅 {period_label}"
+
+    offset = (page - 1) * 10
+    items = []
+
+    for idx, sale in enumerate(orders, start=offset + 1):
+        c_name = sale.client_name.strip() if getattr(sale, "client_name", None) else "—"
+        dt_str = timezone.localtime(sale.ordered_at).strftime("%d.%m.%Y") if getattr(sale, "ordered_at", None) else "—"
+        p_name = sale.product_name.strip() if getattr(sale, "product_name", None) else "—"
+        qty_val = getattr(sale, "quantity", None)
+        qty_str = f"{qty_val} ta" if qty_val is not None else "—"
+        amt_str = money(sale.sale_amount, bold=False)
+
+        item = (
+            f"{idx}. {c_name}\n"
+            f"   📅 {dt_str} · 💊 {p_name} · {qty_str}\n"
+            f"   📊 {amt_str}"
+        )
+        items.append(item)
+
+    return header + "\n\n" + "\n\n".join(items)
+
+
+def order_list_keyboard(
+    status: str,
+    page: int,
+    total_pages: int,
+    period_iso: str | None = None,
+    src: str | None = None,
+) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    suffix = f":{period_iso}" if period_iso else ""
+    src_suffix = f":src={src}" if src else ""
+
+    nav_count = 0
+    if page > 1:
+        builder.button(text="⬅️ Oldingi", callback_data=f"ord_list:{status}:p={page - 1}{suffix}{src_suffix}")
+        nav_count += 1
+    if page < total_pages:
+        builder.button(text="Keyingi ➡️", callback_data=f"ord_list:{status}:p={page + 1}{suffix}{src_suffix}")
+        nav_count += 1
+
+    picker_target = f"xm_orders{suffix}{src_suffix}"
+    builder.button(text="⬅️ Zakaz holatlariga qaytish", callback_data=picker_target)
+
+    back_target = f"xm_back{suffix}{src_suffix}" if (period_iso or src) else "xizmatlar"
+    builder.button(text="⬅️ Xizmatlarga qaytish", callback_data=back_target)
+
+    adjust_spec = []
+    if nav_count > 0:
+        adjust_spec.append(nav_count)
+    adjust_spec.append(1)
+    adjust_spec.append(1)
+
+    builder.adjust(*adjust_spec)
     return builder.as_markup()
 
 

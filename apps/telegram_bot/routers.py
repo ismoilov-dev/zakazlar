@@ -56,6 +56,10 @@ from apps.telegram_bot.services.formatting import (
     rop_menu_keyboard,
     rop_menu_text,
     rop_salary_card_text,
+    order_list_keyboard,
+    order_list_text,
+    order_status_picker_keyboard,
+    order_status_picker_text,
     xizmatlar_menu_keyboard,
     xizmatlar_menu_text,
 )
@@ -1033,6 +1037,15 @@ async def handle_xizmatlar_callback(callback: CallbackQuery, state: FSMContext |
         text = body + footer
         reply_markup = card_keyboard(period_iso, src=src, card_type=card_type)
 
+    elif action == "xm_orders":
+        from apps.imports.models import SpreadsheetPeriod
+        active_sp = await sync_to_async(lambda: SpreadsheetPeriod.objects.filter(is_active=True).first())()
+        p_date = period_date or (active_sp.period if active_sp else timezone.localtime().date())
+
+        counts = await sync_to_async(get_order_status_counts)(employee.id, p_date.year, p_date.month)
+        text = order_status_picker_text()
+        reply_markup = order_status_picker_keyboard(counts=counts, period_iso=period_iso, src=src)
+
     elif action == "xm_months":
         try:
             periods = await sync_to_async(StatisticsService().available_periods_for_telegram)(telegram_id)
@@ -1057,6 +1070,118 @@ async def handle_xizmatlar_callback(callback: CallbackQuery, state: FSMContext |
                 pass
             else:
                 logger.warning("Callback edit error: %s", exc)
+
+    await callback.answer()
+
+
+def get_order_status_counts(employee_id: int, year: int, month: int) -> dict[str, int]:
+    from django.db.models import Count
+    from apps.sales.models import Sale
+    res = Sale.objects.filter(employee_id=employee_id, ordered_at__year=year, ordered_at__month=month).values("status").annotate(cnt=Count("id"))
+    return {r["status"]: r["cnt"] for r in res}
+
+
+def get_paginated_orders(
+    employee_id: int, status: str, year: int, month: int, page: int
+) -> tuple[list[Any], int, int]:
+    from apps.sales.models import Sale
+    qs = Sale.objects.filter(
+        employee_id=employee_id,
+        status=status,
+        ordered_at__year=year,
+        ordered_at__month=month,
+    ).select_related("employee").order_by("-ordered_at")
+
+    total_count = qs.count()
+    if total_count == 0:
+        return [], 0, 1
+
+    total_pages = math.ceil(total_count / 10)
+    if page > total_pages:
+        page = total_pages
+    if page < 1:
+        page = 1
+
+    offset = (page - 1) * 10
+    orders = list(qs[offset : offset + 10])
+    return orders, total_count, total_pages
+
+
+@router.callback_query(F.data.startswith("ord_status:") | F.data.startswith("ord_list:"))
+async def handle_order_list_callbacks(callback: CallbackQuery) -> None:
+    """Handle status selection and pagination for operator's own orders list."""
+    if callback.from_user is None or callback.data is None:
+        return
+
+    telegram_id = callback.from_user.id
+    account = await sync_to_async(
+        lambda: TelegramAccount.objects.select_related("employee").filter(telegram_id=telegram_id).first()
+    )()
+    if not account or not account.employee:
+        await callback.answer("Avval Employee ID orqali profilingizni bog'lang.", show_alert=True)
+        return
+
+    employee = account.employee
+    parts = callback.data.split(":")
+    status = parts[1] if len(parts) > 1 else "successful"
+    page = 1
+    period_iso = None
+    src = None
+
+    for p in parts[2:]:
+        if p.startswith("p="):
+            try:
+                page = int(p.split("=")[1])
+            except ValueError:
+                page = 1
+        elif p.startswith("src="):
+            src = p.split("=")[1]
+        elif "-" in p and len(p) == 7:
+            period_iso = p
+
+    from apps.imports.models import SpreadsheetPeriod
+    active_sp = await sync_to_async(lambda: SpreadsheetPeriod.objects.filter(is_active=True).first())()
+
+    if period_iso:
+        try:
+            p_date = date.fromisoformat(period_iso)
+        except Exception:
+            p_date = active_sp.period if active_sp else timezone.localtime().date()
+    else:
+        p_date = active_sp.period if active_sp else timezone.localtime().date()
+
+    period_label = format_uzbek_period(p_date)
+
+    orders, total_count, total_pages = await sync_to_async(get_paginated_orders)(
+        employee_id=employee.id,
+        status=status,
+        year=p_date.year,
+        month=p_date.month,
+        page=page,
+    )
+
+    text = order_list_text(
+        orders=orders,
+        status=status,
+        total_count=total_count,
+        page=page,
+        total_pages=total_pages,
+        period_label=period_label,
+    )
+    reply_markup = order_list_keyboard(
+        status=status,
+        page=page,
+        total_pages=total_pages,
+        period_iso=period_iso,
+        src=src,
+    )
+
+    if text and callback.message:
+        try:
+            await callback.message.edit_text(text, reply_markup=reply_markup)
+        except TelegramBadRequest as exc:
+            if "message is not modified" not in str(exc).lower():
+                logger.warning("Order list callback edit error: %s", exc)
 
     await callback.answer()
 
