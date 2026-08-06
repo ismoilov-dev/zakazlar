@@ -207,7 +207,7 @@ async def _send_or_edit_registration_prompt(
     text: str,
     reply_markup: InlineKeyboardMarkup | None = None,
 ) -> None:
-    """Edit single registration bot message in place, or send new one if not available."""
+    """Edit single registration bot message in place, or send a new one if editing fails or is unavailable."""
     data = await state.get_data()
     bot_message_id = data.get("bot_message_id")
 
@@ -218,48 +218,68 @@ async def _send_or_edit_registration_prompt(
             return await res
         return res
 
+    edited = False
+
     if is_callback:
         cb = target
-        if getattr(cb, "message", None):
+        cb_msg = getattr(cb, "message", None)
+        if cb_msg:
             try:
-                res = cb.message.edit_text(text, reply_markup=reply_markup)
-                await _maybe_await(res)
-                if getattr(cb.message, "message_id", None):
-                    await state.update_data(bot_message_id=cb.message.message_id)
+                res = cb_msg.edit_text(text, reply_markup=reply_markup)
+                edited_msg = await _maybe_await(res)
+                edited = True
+                new_id = getattr(edited_msg, "message_id", None)
+                orig_id = getattr(cb_msg, "message_id", None)
+                msg_id = new_id if isinstance(new_id, int) else (orig_id if isinstance(orig_id, int) else bot_message_id)
+                if msg_id:
+                    await state.update_data(bot_message_id=msg_id)
                 return
             except TelegramBadRequest as exc:
-                if "message is not modified" in str(exc).lower():
+                logger.warning("TelegramBadRequest while editing callback message: %s", exc)
+            except Exception as exc:
+                logger.warning("Error editing callback message: %s", exc)
+
+            if hasattr(cb_msg, "answer"):
+                try:
+                    res = cb_msg.answer(text, reply_markup=reply_markup)
+                    new_msg = await _maybe_await(res)
+                    new_id = getattr(new_msg, "message_id", None)
+                    if isinstance(new_id, int):
+                        await state.update_data(bot_message_id=new_id)
                     return
-            except Exception:
-                pass
-            if hasattr(cb.message, "answer"):
-                res = cb.message.answer(text, reply_markup=reply_markup)
-                new_msg = await _maybe_await(res)
-                if getattr(new_msg, "message_id", None):
-                    await state.update_data(bot_message_id=getattr(new_msg, "message_id", None))
+                except Exception as exc:
+                    logger.warning("Error sending fallback answer for callback query: %s", exc)
     else:
         msg = target
         bot = getattr(msg, "bot", None)
         chat = getattr(msg, "chat", None)
         chat_id = getattr(chat, "id", None) if chat else (getattr(msg.from_user, "id", None) if getattr(msg, "from_user", None) else None)
-        edited = False
+
         if bot and chat_id and bot_message_id:
             try:
                 res = bot.edit_message_text(chat_id=chat_id, message_id=bot_message_id, text=text, reply_markup=reply_markup)
-                await _maybe_await(res)
+                edited_msg = await _maybe_await(res)
                 edited = True
+                new_id = getattr(edited_msg, "message_id", None)
+                msg_id = new_id if isinstance(new_id, int) else bot_message_id
+                if msg_id:
+                    await state.update_data(bot_message_id=msg_id)
+                return
             except TelegramBadRequest as exc:
-                if "message is not modified" in str(exc).lower():
-                    edited = True
-            except Exception:
-                pass
+                logger.warning("TelegramBadRequest while editing message %s in chat %s: %s", bot_message_id, chat_id, exc)
+            except Exception as exc:
+                logger.warning("Error editing message %s in chat %s: %s", bot_message_id, chat_id, exc)
 
         if not edited:
             if hasattr(msg, "answer"):
-                res = msg.answer(text, reply_markup=reply_markup)
-                new_msg = await _maybe_await(res)
-                if getattr(new_msg, "message_id", None):
-                    await state.update_data(bot_message_id=getattr(new_msg, "message_id", None))
+                try:
+                    res = msg.answer(text, reply_markup=reply_markup)
+                    new_msg = await _maybe_await(res)
+                    new_id = getattr(new_msg, "message_id", None)
+                    if isinstance(new_id, int):
+                        await state.update_data(bot_message_id=new_id)
+                except Exception as exc:
+                    logger.warning("Error sending new registration message: %s", exc)
 
 
 @router.message(CommandStart())
@@ -317,8 +337,7 @@ async def start(message: Message, state: FSMContext) -> None:
         "👤 <b>M.O.P</b> — Sotuv operatori"
     )
     await state.set_state(RegistrationStates.select_role)
-    res = await message.answer(text, reply_markup=builder.as_markup())
-    await state.update_data(bot_message_id=res.message_id)
+    await _send_or_edit_registration_prompt(message, state, text, reply_markup=builder.as_markup())
 
 
 @router.callback_query(F.data.in_({"role_ROP", "role_MOP"}))

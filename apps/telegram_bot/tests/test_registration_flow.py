@@ -49,6 +49,7 @@ class RegistrationFlowTestCase(TestCase):
     async def test_start_unbound_user_shows_role_buttons(self) -> None:
         message = AsyncMock()
         message.from_user.id = 10001
+        message.answer.return_value.message_id = 999
         state = self._get_fsm_context(10001)
 
         await start(message, state)
@@ -57,6 +58,26 @@ class RegistrationFlowTestCase(TestCase):
         message.answer.assert_called_once()
         args, _ = message.answer.call_args
         self.assertIn("rolingizni tanlang", args[0])
+        self.assertEqual((await state.get_data()).get("bot_message_id"), 999)
+
+    async def test_edit_failure_logs_warning_and_falls_back_to_new_message(self) -> None:
+        from unittest.mock import patch
+        state = self._get_fsm_context(10002)
+        await state.update_data(bot_message_id=123)
+        await state.set_state(RegistrationStates.enter_id)
+
+        msg = AsyncMock()
+        msg.from_user.id = 10002
+        msg.text = "0001"
+        msg.chat.id = 10002
+        msg.bot.edit_message_text.side_effect = Exception("Message to edit not found")
+        msg.answer.return_value.message_id = 456
+
+        with patch("apps.telegram_bot.routers.logger.warning") as mock_warn:
+            await process_employee_id(msg, state)
+            mock_warn.assert_called_once()
+            msg.answer.assert_called_once()
+            self.assertEqual((await state.get_data()).get("bot_message_id"), 456)
 
     async def test_start_already_bound_user_shows_existing_info(self) -> None:
         await sync_to_async(TelegramAccount.objects.create)(
@@ -142,6 +163,8 @@ class RegistrationFlowTestCase(TestCase):
             msg = AsyncMock()
             msg.from_user.id = user_id
             msg.text = f"Wrong Name {i}"
+            msg.chat.id = user_id
+            msg.answer.return_value.message_id = 100 + i
             await state.set_state(RegistrationStates.enter_name)
             await process_name(msg, state)
 
