@@ -323,6 +323,10 @@ class SheetsSource(BaseSource):
         source_candidates = ["Столбец 2", "Контакт", "Источник", "manba", "Manba"]
         source_idx = self._find_single_column_index(headings, candidates=source_candidates, name="manba", required=False)
 
+        client_idx = self._find_single_column_index(headings, candidates=["Ф.И.О.", "ФИО клиента", "Mijoz F.I.O", "Mijoz ismi", "Mijoz FIO", "Ф.И.О"], name="client_name", required=False)
+        product_idx = self._find_single_column_index(headings, candidates=["Товар1", "Товар", "Mahsulot", "Mahsulot1", "Tovar"], name="product_name", required=False)
+        qty_idx = self._find_single_column_index(headings, candidates=["кол-во1", "кол-во", "колво1", "колво", "Soni", "Soni1", "Kolichestvo"], name="quantity", required=False)
+
         if source_idx is None:
             logger.error("List1 varog'ida manba ustuni topilmadi. Qidirilgan nomlar: %s | Mavjud sarlavhalar: %s", source_candidates, headings)
             raise ValidationError(
@@ -512,6 +516,17 @@ class SheetsSource(BaseSource):
             if unrecognized_src:
                 unrecognized_sources_count[unrecognized_src] += 1
 
+            client_name = self._get_cell(row, client_idx).strip() if client_idx is not None else ""
+            product_name = self._get_cell(row, product_idx).strip() if product_idx is not None else ""
+            raw_qty = self._get_cell(row, qty_idx) if qty_idx is not None else ""
+            quantity: int | None = None
+            if raw_qty:
+                try:
+                    val_flt = float(raw_qty.replace(",", "."))
+                    quantity = int(val_flt)
+                except Exception:
+                    quantity = None
+
             try:
                 clean_ord = normalize_order_id(ord_raw)
                 ord_id = f"{ordered_at:%Y%m}_{emp_id}_{clean_ord}"
@@ -534,6 +549,9 @@ class SheetsSource(BaseSource):
                     sale_amount=sale_amount,
                     ordered_at=ordered_at,
                     has_sheet_error=has_sheet_error,
+                    client_name=client_name,
+                    product_name=product_name,
+                    quantity=quantity,
                 )
             )
             parsed_rows_count += 1

@@ -52,6 +52,9 @@ class OrderDTO:
     sale_amount: Decimal | None
     ordered_at: datetime
     has_sheet_error: bool = False
+    client_name: str = ""
+    product_name: str = ""
+    quantity: int | None = None
 
 
 @dataclass(frozen=True, slots=True)

@@ -221,6 +221,9 @@ class DataImporter:
                     and existing_sale.sale_amount == row.sale_amount
                     and existing_sale.has_sheet_error == row.has_sheet_error
                     and existing_sale.ordered_at == row.ordered_at
+                    and existing_sale.client_name == row.client_name
+                    and existing_sale.product_name == row.product_name
+                    and existing_sale.quantity == row.quantity
                 ):
                     continue
 
@@ -235,6 +238,9 @@ class DataImporter:
                         has_sheet_error=row.has_sheet_error,
                         profit_amount=Decimal("0"),
                         ordered_at=row.ordered_at,
+                        client_name=row.client_name,
+                        product_name=row.product_name,
+                        quantity=row.quantity,
                     )
                 )
 

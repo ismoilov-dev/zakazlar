@@ -35,6 +35,9 @@ class Sale(TimeStampedModel):
     has_sheet_error = models.BooleanField(default=False)
     profit_amount = models.DecimalField(max_digits=16, decimal_places=2, default=Decimal("0"))
     ordered_at = models.DateTimeField()
+    client_name = models.CharField(max_length=255, blank=True, default="")
+    product_name = models.CharField(max_length=255, blank=True, default="")
+    quantity = models.IntegerField(null=True, blank=True)
 
     class Meta:
         db_table = "sales"
