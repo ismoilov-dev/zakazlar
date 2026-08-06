@@ -12,3 +12,7 @@ class RouterHandlersTest(TestCase):
         self.assertIn("process_employee_id", handler_names)
         self.assertIn("process_name", handler_names)
         self.assertIn("start", handler_names)
+
+        # Assert no duplicate handlers (e.g. exactly 1 start handler registered on router)
+        self.assertEqual(handler_names.count("start"), 1)
+        self.assertEqual(len(handler_names), len(set(handler_names)), f"Duplicate handlers found: {handler_names}")
