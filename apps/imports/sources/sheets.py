@@ -312,10 +312,13 @@ class SheetsSource(BaseSource):
         date_idx = self._find_single_column_index(headings, candidates=["Дата Заказа", "Дата", "Sana", "Zakaz sanasi", "Sana/vaqt"], name="Дата Заказа", required=False)
         status_idx = self._find_single_column_index(headings, candidates=["статус", "Статус", "Status", "Holat", "Holati"], name="статус", required=False)
 
-        # Find group index: check exact " " (single space), or candidates "Guruhi", "Bo'lim "
-        group_idx = next((i for i, h in enumerate(headings) if h == " "), None)
-        if group_idx is None:
-            group_idx = self._find_single_column_index(headings, candidates=["Guruhi", "Bo'lim ", "Guruh"], name="guruh", required=False)
+        # Find group index: check candidates "Bo'lim", "Guruhi", "Guruh", etc.
+        group_idx = self._find_single_column_index(
+            headings,
+            candidates=["Bo'lim", "Guruhi", "Guruh", "Bo'lim ", "Guruhlar", "Guruh nomi", "Bo'lim nomi"],
+            name="guruh",
+            required=False,
+        )
 
         source_candidates = ["Столбец 2", "Контакт", "Источник", "manba", "Manba"]
         source_idx = self._find_single_column_index(headings, candidates=source_candidates, name="manba", required=False)
@@ -359,6 +362,7 @@ class SheetsSource(BaseSource):
         last_seen_emp_name: str | None = None
         from collections import Counter
         unrecognized_sources_count = Counter()
+        unrecognized_groups_count = Counter()
 
         for row_idx, row in enumerate(raw_rows[header_row_idx + 1:], start=header_row_idx + 2):
 
@@ -437,9 +441,14 @@ class SheetsSource(BaseSource):
             if not emp_name:
                 emp_name = "Noma'lum"
 
-            grp_code = (self._get_cell(row, group_idx) or "A").strip().upper() if group_idx is not None else "A"
-            if not grp_code:
-                grp_code = "A"
+            raw_grp = self._get_cell(row, group_idx).strip() if group_idx is not None else ""
+            if not raw_grp:
+                grp_code = "UNKNOWN"
+                unrecognized_groups_count["[BO'SH]"] += 1
+            else:
+                grp_code = raw_grp.upper()
+                if grp_code not in ["A", "B", "C", "D", "BAZA", "PERVICHKA", "UNKNOWN"]:
+                    unrecognized_groups_count[raw_grp] += 1
 
             date_raw = self._get_cell(row, date_idx) if date_idx is not None else ""
             try:
@@ -528,6 +537,8 @@ class SheetsSource(BaseSource):
 
         if unrecognized_sources_count:
             logger.debug("List1 noma'lum manba (source) qiymatlari agregatsiyasi: %s", dict(unrecognized_sources_count))
+        if unrecognized_groups_count:
+            logger.debug("List1 noma'lum guruh (Bo'lim) qiymatlari agregatsiyasi: %s", dict(unrecognized_groups_count))
 
         dropped_count = len(dropped_rows)
         self.last_dropped_rows = dropped_rows
@@ -579,7 +590,12 @@ class SheetsSource(BaseSource):
         # Check header formats for 'Ish haqi', 'Xodimlar maoshi', or 'List2'
         id_idx = self._find_single_column_index(headings, candidates=["Tabel raqami", "ID"], name="ID")
         name_idx = self._find_single_column_index(headings, candidates=["FISH", "XODIMLAR ISMLARI", "Оператор"], name="xodim ismi")
-        group_idx = self._find_single_column_index(headings, candidates=["Guruhi", "Bo'lim "], name="guruh", required=False)
+        group_idx = self._find_single_column_index(
+            headings,
+            candidates=["Bo'lim", "Guruhi", "Guruh", "Bo'lim ", "Guruhlar", "Guruh nomi", "Bo'lim nomi"],
+            name="guruh",
+            required=False,
+        )
         salary_idx = self._find_single_column_index(
             headings,
             candidates=["Ish haqi", "Oylik ish haqi", "OYLIK MOASH", "OYLIK MAOSH", "Oylik maosh", "Oylik maoshi 12%", "Oylik", "Maosh", "Зарплата", "Оклад"],
@@ -661,7 +677,8 @@ class SheetsSource(BaseSource):
 
                 emp_id = normalize_employee_id(id_val)
                 emp_name = self._require_text(self._get_cell(row, name_idx), "Xodim ismi")
-                grp_code = (self._get_cell(row, group_idx) or "A").strip().upper()
+                raw_grp = self._get_cell(row, group_idx).strip() if group_idx is not None else ""
+                grp_code = raw_grp.upper() if raw_grp else "UNKNOWN"
                 salary_str = self._get_cell(row, salary_idx) if salary_idx is not None else ""
                 salary = self._parse_money(salary_str) if salary_str else Decimal("0.00")
 

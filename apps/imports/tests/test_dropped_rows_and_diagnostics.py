@@ -177,3 +177,40 @@ class DroppedRowsAndDiagnosticsTest(TestCase):
         self.assertEqual(orders[1].employee_id, "0079")
         self.assertEqual(len(source.last_dropped_rows), 0)
 
+    def test_unknown_or_empty_group_imported_as_unknown_not_dropped(self):
+        """Unknown or empty Bo'lim (Group) cell does not drop the order; group_code is set to UNKNOWN."""
+        raw_data = [
+            ["№", "ID", "Ответственный", "Сумма", "Дата Заказа", "статус", "Bo'lim", "Источник"],
+            ["1", "0191", "Amir Karimov", "100,000", "28.07.2026", "успешно", "", "Baza"],
+            ["2", "0079", "Bekzod Alimov", "150,000", "28.07.2026", "успешно", "CustomGroupX", "Baza"],
+        ]
+
+        source = SheetsSource.__new__(SheetsSource)
+        mock_worksheet = MagicMock()
+        mock_worksheet.get_all_values.return_value = raw_data
+
+        with self.assertLogs("apps.imports.sources.sheets", level="DEBUG") as cm:
+            orders = source._parse_orders(mock_worksheet)
+
+        self.assertEqual(len(orders), 2)
+        self.assertEqual(orders[0].group_code, "UNKNOWN")
+        self.assertEqual(orders[1].group_code, "CUSTOMGROUPX")
+        self.assertEqual(len(source.last_dropped_rows), 0)
+        self.assertEqual(source.last_parse_summary["dropped_count"], 0)
+        self.assertTrue(any("noma'lum guruh (Bo'lim) qiymatlari agregatsiyasi" in log for log in cm.output))
+
+    def test_single_space_header_not_picked_as_group_idx(self):
+        """A single space ' ' header column must not be selected as group_idx if explicit Bo'lim column exists."""
+        raw_data = [
+            ["№", "ID", "Ответственный", "Сумма", "Дата Заказа", "статус", " ", "Bo'lim", "Источник"],
+            ["1", "0191", "Amir Karimov", "100,000", "28.07.2026", "успешно", "U", "B", "Baza"],
+        ]
+
+        source = SheetsSource.__new__(SheetsSource)
+        mock_worksheet = MagicMock()
+        mock_worksheet.get_all_values.return_value = raw_data
+
+        orders = source._parse_orders(mock_worksheet)
+        self.assertEqual(len(orders), 1)
+        self.assertEqual(orders[0].group_code, "B")
+
