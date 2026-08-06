@@ -194,7 +194,7 @@ class DroppedRowsAndDiagnosticsTest(TestCase):
 
         self.assertEqual(len(orders), 2)
         self.assertEqual(orders[0].group_code, "UNKNOWN")
-        self.assertEqual(orders[1].group_code, "CUSTOMGROUPX")
+        self.assertEqual(orders[1].group_code, "UNKNOWN")
         self.assertEqual(len(source.last_dropped_rows), 0)
         self.assertEqual(source.last_parse_summary["dropped_count"], 0)
         self.assertTrue(any("noma'lum guruh (Bo'lim) qiymatlari agregatsiyasi" in log for log in cm.output))

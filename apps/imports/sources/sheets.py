@@ -444,12 +444,13 @@ class SheetsSource(BaseSource):
                 emp_name = "Noma'lum"
 
             raw_grp = self._get_cell(row, group_idx).strip() if group_idx is not None else ""
-            if not raw_grp:
+            if not raw_grp or "topilmadi" in raw_grp.lower():
                 grp_code = "UNKNOWN"
-                unrecognized_groups_count["[BO'SH]"] += 1
+                unrecognized_groups_count[raw_grp or "[BO'SH]"] += 1
             else:
                 grp_code = raw_grp.upper()
-                if grp_code not in ["A", "B", "C", "D", "BAZA", "PERVICHKA", "UNKNOWN"]:
+                if grp_code not in ["A", "B", "C", "D", "E", "BAZA", "PERVICHKA", "UNKNOWN"]:
+                    grp_code = "UNKNOWN"
                     unrecognized_groups_count[raw_grp] += 1
 
             date_raw = self._get_cell(row, date_idx) if date_idx is not None else ""
