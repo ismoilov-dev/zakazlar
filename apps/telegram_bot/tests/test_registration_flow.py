@@ -148,11 +148,12 @@ class RegistrationFlowTestCase(TestCase):
         msg4 = AsyncMock()
         msg4.from_user.id = user_id
         msg4.text = "Wrong Name 4"
+        msg4.chat.id = user_id
         await process_name(msg4, state)
 
-        msg4.answer.assert_called_once()
-        args, _ = msg4.answer.call_args
-        self.assertIn("Administrator bilan bog'laning", args[0])
+        msg4.bot.edit_message_text.assert_called_once()
+        _, edit_kwargs = msg4.bot.edit_message_text.call_args
+        self.assertIn("Administrator bilan bog'laning", edit_kwargs.get("text"))
         self.assertIsNone(await state.get_state())
 
     async def test_confirm_no_leaves_no_binding(self) -> None:
@@ -228,3 +229,95 @@ class RegistrationFlowTestCase(TestCase):
         message.answer.assert_called_once()
         args, _ = message.answer.call_args
         self.assertIn("rolingizni tanlang", args[0])
+
+    async def test_registration_lifecycle_single_message_and_user_deletion(self) -> None:
+        user_id = 90001
+        state = self._get_fsm_context(user_id)
+
+        # 1. /start
+        msg_start = AsyncMock()
+        msg_start.from_user.id = user_id
+        msg_start.answer.return_value.message_id = 555
+        await start(msg_start, state)
+        self.assertEqual((await state.get_data()).get("bot_message_id"), 555)
+
+        # 2. role_selected
+        cb_role = AsyncMock()
+        cb_role.from_user.id = user_id
+        cb_role.data = "role_MOP"
+        cb_role.message.message_id = 555
+        await role_selected(cb_role, state)
+        cb_role.message.edit_text.assert_called_once()
+
+        # 3. process_employee_id (valid ID 0002)
+        msg_id = AsyncMock()
+        msg_id.from_user.id = user_id
+        msg_id.text = "0002"
+        msg_id.chat.id = user_id
+        await process_employee_id(msg_id, state)
+        msg_id.delete.assert_called_once()
+        msg_id.bot.edit_message_text.assert_called_once()
+        edit_args, edit_kwargs = msg_id.bot.edit_message_text.call_args
+        self.assertEqual(edit_kwargs.get("message_id"), 555)
+        self.assertIn("ism va familiyangizni kiriting", edit_kwargs.get("text"))
+
+        # 4. process_name (matching Shuhrat Karimov)
+        msg_name = AsyncMock()
+        msg_name.from_user.id = user_id
+        msg_name.text = "Shuhrat Karimov"
+        msg_name.chat.id = user_id
+        await process_name(msg_name, state)
+        msg_name.delete.assert_called_once()
+        msg_name.bot.edit_message_text.assert_called_once()
+        edit_args2, edit_kwargs2 = msg_name.bot.edit_message_text.call_args
+        self.assertEqual(edit_kwargs2.get("message_id"), 555)
+        self.assertIn("Ma'lumotlar to'g'rimi", edit_kwargs2.get("text"))
+
+        # 5. confirm_yes
+        cb_confirm = AsyncMock()
+        cb_confirm.from_user.id = user_id
+        cb_confirm.from_user.username = "shuhrat_k"
+        cb_confirm.data = "confirm_yes"
+        cb_confirm.message.message_id = 555
+        await confirm_yes(cb_confirm, state)
+        cb_confirm.message.edit_text.assert_called_once()
+        c_args, c_kwargs = cb_confirm.message.edit_text.call_args
+        self.assertIn("Muvaffaqiyatli bog'landi", c_args[0])
+
+        acct = await sync_to_async(TelegramAccount.objects.get)(telegram_id=user_id)
+        self.assertEqual(acct.employee_id, self.employee2.id)
+
+    async def test_failing_delete_message_does_not_break_flow(self) -> None:
+        user_id = 90002
+        state = self._get_fsm_context(user_id)
+        await state.update_data(bot_message_id=777)
+        await state.set_state(RegistrationStates.enter_id)
+
+        msg_id = AsyncMock()
+        msg_id.from_user.id = user_id
+        msg_id.text = "0001"
+        msg_id.chat.id = user_id
+        msg_id.delete.side_effect = Exception("Telegram API Error: message cannot be deleted")
+
+        await process_employee_id(msg_id, state)
+        self.assertEqual(await state.get_state(), RegistrationStates.enter_name.state)
+        msg_id.bot.edit_message_text.assert_called_once()
+
+    async def test_failed_name_attempt_edits_existing_message(self) -> None:
+        user_id = 90003
+        state = self._get_fsm_context(user_id)
+        await state.update_data(bot_message_id=888, employee_id="0001", sheet_name="Elbek Xaydarov")
+        await state.set_state(RegistrationStates.enter_name)
+
+        msg_name = AsyncMock()
+        msg_name.from_user.id = user_id
+        msg_name.text = "Wrong Person"
+        msg_name.chat.id = user_id
+
+        await process_name(msg_name, state)
+        msg_name.delete.assert_called_once()
+        msg_name.bot.edit_message_text.assert_called_once()
+        _, edit_kwargs = msg_name.bot.edit_message_text.call_args
+        self.assertIn("mos kelmadi", edit_kwargs.get("text"))
+        self.assertEqual(await state.get_state(), RegistrationStates.enter_id.state)
+

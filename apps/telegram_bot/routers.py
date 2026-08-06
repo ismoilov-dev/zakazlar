@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
 import math
+import typing
 from datetime import date
 
 from django.conf import settings
@@ -191,6 +193,119 @@ async def start(message: Message, state: FSMContext) -> None:
 
 
 
+async def _safe_delete_user_message(message: Message) -> None:
+    """Safely delete user message without raising exceptions."""
+    try:
+        await message.delete()
+    except Exception:
+        pass
+
+
+async def _send_or_edit_registration_prompt(
+    target: Message | CallbackQuery,
+    state: FSMContext,
+    text: str,
+    reply_markup: InlineKeyboardMarkup | None = None,
+) -> None:
+    """Edit single registration bot message in place, or send new one if not available."""
+    data = await state.get_data()
+    bot_message_id = data.get("bot_message_id")
+
+    is_callback = isinstance(target, CallbackQuery) or isinstance(getattr(target, "data", None), str)
+
+    async def _maybe_await(res: typing.Any) -> typing.Any:
+        if inspect.isawaitable(res):
+            return await res
+        return res
+
+    if is_callback:
+        cb = target
+        if getattr(cb, "message", None):
+            try:
+                res = cb.message.edit_text(text, reply_markup=reply_markup)
+                await _maybe_await(res)
+                if getattr(cb.message, "message_id", None):
+                    await state.update_data(bot_message_id=cb.message.message_id)
+                return
+            except TelegramBadRequest as exc:
+                if "message is not modified" in str(exc).lower():
+                    return
+            except Exception:
+                pass
+            if hasattr(cb.message, "answer"):
+                res = cb.message.answer(text, reply_markup=reply_markup)
+                new_msg = await _maybe_await(res)
+                if getattr(new_msg, "message_id", None):
+                    await state.update_data(bot_message_id=getattr(new_msg, "message_id", None))
+    else:
+        msg = target
+        bot = getattr(msg, "bot", None)
+        chat = getattr(msg, "chat", None)
+        chat_id = getattr(chat, "id", None) if chat else (getattr(msg.from_user, "id", None) if getattr(msg, "from_user", None) else None)
+        edited = False
+        if bot and chat_id and bot_message_id:
+            try:
+                res = bot.edit_message_text(chat_id=chat_id, message_id=bot_message_id, text=text, reply_markup=reply_markup)
+                await _maybe_await(res)
+                edited = True
+            except TelegramBadRequest as exc:
+                if "message is not modified" in str(exc).lower():
+                    edited = True
+            except Exception:
+                pass
+
+        if not edited:
+            if hasattr(msg, "answer"):
+                res = msg.answer(text, reply_markup=reply_markup)
+                new_msg = await _maybe_await(res)
+                if getattr(new_msg, "message_id", None):
+                    await state.update_data(bot_message_id=getattr(new_msg, "message_id", None))
+
+
+@router.message(CommandStart())
+async def start(message: Message, state: FSMContext) -> None:
+    """Handle /start command.
+
+    If already bound, inform user and list commands.
+    If unbound, present role selection keyboard.
+    """
+    await state.clear()
+
+    if message.from_user is None:
+        return
+
+    account = await sync_to_async(
+        lambda: TelegramAccount.objects.select_related("employee").filter(telegram_id=message.from_user.id).first()
+    )()
+
+    if account:
+        await ensure_fresh_data_and_get_timestamp()
+        info_prefix = f"Siz allaqachon <b>{account.employee.full_name}</b> (<code>{account.employee.employee_id}</code>) sifatida ro'yxatdan o'tgansiz.\n\n"
+
+        is_leader = await sync_to_async(is_group_leader)(account.employee)
+
+        if account.role == "ROP" and is_leader:
+            if not require_rop_session(account):
+                await state.update_data(employee_id=account.employee.employee_id)
+                await state.set_state(RegistrationStates.enter_password)
+                res = await message.answer("Sessiyangiz eskirgan. Qayta kirish uchun parolingizni kiriting:")
+                await state.update_data(bot_message_id=res.message_id)
+                return
+
+            groups = await sync_to_async(
+                lambda: list(SalesGroup.objects.filter(leader=account.employee, is_active=True))
+            )()
+            group = groups[0]
+            text = info_prefix + rop_menu_text(account.employee.full_name, group.code, account.employee.employee_id)
+            reply_markup = rop_menu_keyboard()
+            await message.answer(text, reply_markup=reply_markup)
+            return
+
+        text = info_prefix + xizmatlar_menu_text()
+        reply_markup = xizmatlar_menu_keyboard(show_rop_switch=is_leader)
+        await message.answer(text, reply_markup=reply_markup)
+        return
+
     builder = InlineKeyboardBuilder()
     builder.button(text="👔 R.O.P", callback_data="role_ROP")
     builder.button(text="👤 M.O.P", callback_data="role_MOP")
@@ -202,7 +317,8 @@ async def start(message: Message, state: FSMContext) -> None:
         "👤 <b>M.O.P</b> — Sotuv operatori"
     )
     await state.set_state(RegistrationStates.select_role)
-    await message.answer(text, reply_markup=builder.as_markup())
+    res = await message.answer(text, reply_markup=builder.as_markup())
+    await state.update_data(bot_message_id=res.message_id)
 
 
 @router.callback_query(F.data.in_({"role_ROP", "role_MOP"}))
@@ -212,6 +328,9 @@ async def role_selected(callback: CallbackQuery, state: FSMContext) -> None:
         return
 
     if await sync_to_async(is_rate_limited)(callback.from_user.id):
+        await _send_or_edit_registration_prompt(
+            callback, state, "Siz juda ko'p Noto'g'ri urinish qildingiz. Administrator bilan bog'laning."
+        )
         await callback.answer("Siz juda ko'p Noto'g'ri urinish qildingiz. Administrator bilan bog'laning.", show_alert=True)
         await state.clear()
         return
@@ -221,8 +340,7 @@ async def role_selected(callback: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(RegistrationStates.enter_id)
 
     text = "Employee ID raqamingizni yuboring. Masalan: <code>0191</code>"
-    if callback.message:
-        await callback.message.answer(text)
+    await _send_or_edit_registration_prompt(callback, state, text)
     await callback.answer()
 
 
@@ -233,14 +351,16 @@ async def retry_registration(callback: CallbackQuery, state: FSMContext) -> None
         return
 
     if await sync_to_async(is_rate_limited)(callback.from_user.id):
+        await _send_or_edit_registration_prompt(
+            callback, state, "Siz juda ko'p Noto'g'ri urinish qildingiz. Administrator bilan bog'laning."
+        )
         await callback.answer("Siz juda ko'p Noto'g'ri urinish qildingiz. Administrator bilan bog'laning.", show_alert=True)
         await state.clear()
         return
 
     await state.set_state(RegistrationStates.enter_id)
     text = "Employee ID raqamingizni yuboring. Masalan: <code>0191</code>"
-    if callback.message:
-        await callback.message.answer(text)
+    await _send_or_edit_registration_prompt(callback, state, text)
     await callback.answer()
 
 
@@ -250,27 +370,34 @@ async def process_employee_id(message: Message, state: FSMContext) -> None:
     if message.from_user is None or message.text is None:
         return
 
+    await _safe_delete_user_message(message)
+
     if await sync_to_async(is_rate_limited)(message.from_user.id):
-        await message.answer("Siz juda ko'p Noto'g'ri urinish qildingiz. Administrator bilan bog'laning.")
+        await _send_or_edit_registration_prompt(
+            message, state, "Siz juda ko'p Noto'g'ri urinish qildingiz. Administrator bilan bog'laning."
+        )
         await state.clear()
         return
+
+    retry_builder = InlineKeyboardBuilder()
+    retry_builder.button(text="🔄 Qayta urinish", callback_data="retry_registration")
 
     try:
         user_id = normalize_employee_id(message.text)
     except DomainError as exc:
-        await message.answer(str(exc))
+        await _send_or_edit_registration_prompt(message, state, str(exc), reply_markup=retry_builder.as_markup())
         return
     except Exception:
-        await message.answer("ID formatida xatolik mavjud. Iltimos tekshirib qayta yuboring.")
+        await _send_or_edit_registration_prompt(
+            message, state, "ID formatida xatolik mavjud. Iltimos tekshirib qayta yuboring.", reply_markup=retry_builder.as_markup()
+        )
         return
 
     try:
         employee = await sync_to_async(EmployeeRepository().get_active_by_employee_id)(user_id)
     except Employee.DoesNotExist:
-        builder = InlineKeyboardBuilder()
-        builder.button(text="🔄 Qayta urinish", callback_data="retry_registration")
         text = "Joriy oy ro'yxatida bunday IDga ega xodim topilmadi. Rahbaringiz bilan tekshiring."
-        await message.answer(text, reply_markup=builder.as_markup())
+        await _send_or_edit_registration_prompt(message, state, text, reply_markup=retry_builder.as_markup())
         return
 
     existing_binding = await sync_to_async(
@@ -278,13 +405,13 @@ async def process_employee_id(message: Message, state: FSMContext) -> None:
     )()
     if existing_binding and existing_binding.telegram_id != message.from_user.id:
         text = "Bu Employee ID allaqachon boshqa Telegram profiliga bog'langan. Administratsiyaga murojaat qiling."
-        await message.answer(text)
+        await _send_or_edit_registration_prompt(message, state, text, reply_markup=retry_builder.as_markup())
         await state.clear()
         return
 
     await state.update_data(employee_id=user_id, sheet_name=employee.full_name)
     await state.set_state(RegistrationStates.enter_name)
-    await message.answer("Iltimos, ism va familiyangizni kiriting:")
+    await _send_or_edit_registration_prompt(message, state, "Iltimos, ism va familiyangizni kiriting:")
 
 
 def is_group_leader(employee: Employee | None) -> bool:
@@ -328,16 +455,17 @@ async def process_password(message: Message, state: FSMContext) -> None:
         return
 
     telegram_id = message.from_user.id
-
-    try:
-        await message.delete()
-    except Exception:
-        pass
+    await _safe_delete_user_message(message)
 
     if await sync_to_async(is_rate_limited)(telegram_id):
-        await message.answer("Siz juda ko'p Noto'g'ri urinish qildingiz. Administrator bilan bog'laning.")
+        await _send_or_edit_registration_prompt(
+            message, state, "Siz juda ko'p Noto'g'ri urinish qildingiz. Administrator bilan bog'laning."
+        )
         await state.clear()
         return
+
+    retry_builder = InlineKeyboardBuilder()
+    retry_builder.button(text="🔄 Qayta urinish", callback_data="retry_registration")
 
     data = await state.get_data()
     employee_id = data.get("employee_id", "")
@@ -349,7 +477,9 @@ async def process_password(message: Message, state: FSMContext) -> None:
             employee_id = account.employee.employee_id
             await state.update_data(employee_id=employee_id)
         else:
-            await message.answer("Sessiya eskirgan. Qayta boshlash uchun /start bosing.")
+            await _send_or_edit_registration_prompt(
+                message, state, "Sessiya eskirgan. Qayta boshlash uchun /start bosing.", reply_markup=retry_builder.as_markup()
+            )
             await state.clear()
             return
 
@@ -358,7 +488,9 @@ async def process_password(message: Message, state: FSMContext) -> None:
     async def fail_login(reason: str, custom_msg: str | None = None):
         await sync_to_async(record_failed_attempt)(telegram_id, employee_id, "[FAILED_ROP_PASSWORD]")
         logger.warning("ROP login failed for telegram_id %s, employee_id %s: %s", telegram_id, employee_id, reason)
-        await message.answer(custom_msg or "ID yoki parol noto'g'ri.")
+        await _send_or_edit_registration_prompt(
+            message, state, custom_msg or "ID yoki parol noto'g'ri.", reply_markup=retry_builder.as_markup()
+        )
 
     ok, error_code, employee = await sync_to_async(verify_rop_credentials)(employee_id, raw_password)
     if not ok or not employee:
@@ -388,7 +520,7 @@ async def process_password(message: Message, state: FSMContext) -> None:
         group_code = groups[0].code if groups else (employee.group.code if employee.group else "-")
         text = success_text + rop_menu_text(employee.full_name, group_code, employee.employee_id)
         reply_markup = rop_menu_keyboard()
-        await message.answer(text, reply_markup=reply_markup)
+        await _send_or_edit_registration_prompt(message, state, text, reply_markup=reply_markup)
         return
 
     # Registration path: no binding exists, create binding via bind()
@@ -400,12 +532,14 @@ async def process_password(message: Message, state: FSMContext) -> None:
             role="ROP",
         )
     except DomainError as exc:
-        await message.answer(str(exc))
+        await _send_or_edit_registration_prompt(message, state, str(exc), reply_markup=retry_builder.as_markup())
         await state.clear()
         return
     except Exception as exc:
         logger.exception("ROP binding error: %s", exc)
-        await message.answer("Bog'lanishda xatolik yuz berdi. Administratsiyaga murojaat qiling.")
+        await _send_or_edit_registration_prompt(
+            message, state, "Bog'lanishda xatolik yuz berdi. Administratsiyaga murojaat qiling.", reply_markup=retry_builder.as_markup()
+        )
         await state.clear()
         return
 
@@ -423,7 +557,7 @@ async def process_password(message: Message, state: FSMContext) -> None:
     welcome_prefix = f"Muvaffaqiyatli bog'landi! Xush kelibsiz, <b>{employee.full_name}</b>!\n\n"
     text = welcome_prefix + success_text + rop_menu_text(employee.full_name, group_code, employee.employee_id)
     reply_markup = rop_menu_keyboard()
-    await message.answer(text, reply_markup=reply_markup)
+    await _send_or_edit_registration_prompt(message, state, text, reply_markup=reply_markup)
 
 
 @router.message(RegistrationStates.enter_name)
@@ -433,26 +567,33 @@ async def process_name(message: Message, state: FSMContext) -> None:
         return
 
     telegram_id = message.from_user.id
+    await _safe_delete_user_message(message)
+
     if await sync_to_async(is_rate_limited)(telegram_id):
-        await message.answer("Siz juda ko'p Noto'g'ri urinish qildingiz. Administrator bilan bog'laning.")
+        await _send_or_edit_registration_prompt(
+            message, state, "Siz juda ko'p Noto'g'ri urinish qildingiz. Administrator bilan bog'laning."
+        )
         await state.clear()
         return
+
+    retry_builder = InlineKeyboardBuilder()
+    retry_builder.button(text="🔄 Qayta urinish", callback_data="retry_registration")
 
     data = await state.get_data()
     employee_id = data.get("employee_id", "")
     sheet_name = data.get("sheet_name", "")
 
     if not employee_id or not sheet_name:
-        await message.answer("Sessiya eskirgan. Qayta boshlash uchun /start bosing.")
+        await _send_or_edit_registration_prompt(
+            message, state, "Sessiya eskirgan. Qayta boshlash uchun /start bosing.", reply_markup=retry_builder.as_markup()
+        )
         await state.clear()
         return
 
     if not names_match(message.text, sheet_name):
         await sync_to_async(record_failed_attempt)(telegram_id, employee_id, message.text)
-        builder = InlineKeyboardBuilder()
-        builder.button(text="🔄 Qayta urinish", callback_data="retry_registration")
         text = "Kiritilgan ism-familiya ushbu ID ma'lumotlariga mos kelmadi."
-        await message.answer(text, reply_markup=builder.as_markup())
+        await _send_or_edit_registration_prompt(message, state, text, reply_markup=retry_builder.as_markup())
         await state.set_state(RegistrationStates.enter_id)
         return
 
@@ -470,7 +611,7 @@ async def process_name(message: Message, state: FSMContext) -> None:
         "barcha urinishlar administratorga ko'rinadi.\n\n"
         "Ma'lumotlar to'g'rimi?"
     )
-    await message.answer(text, reply_markup=builder.as_markup())
+    await _send_or_edit_registration_prompt(message, state, text, reply_markup=builder.as_markup())
 
 
 @router.callback_query(F.data == "confirm_no")
@@ -493,8 +634,7 @@ async def confirm_no(callback: CallbackQuery, state: FSMContext) -> None:
         "Bu ma'lumot boshqa shaxsga tegishli. Boshqa xodimning ID raqamidan "
         "foydalanish taqiqlanadi va bu urinish saqlandi."
     )
-    if callback.message:
-        await callback.message.answer(text, reply_markup=builder.as_markup())
+    await _send_or_edit_registration_prompt(callback, state, text, reply_markup=builder.as_markup())
     await callback.answer()
 
 
@@ -514,6 +654,9 @@ async def confirm_yes(callback: CallbackQuery, state: FSMContext) -> None:
     employee_id = data.get("employee_id", "")
     role = data.get("role", "MOP")
 
+    retry_builder = InlineKeyboardBuilder()
+    retry_builder.button(text="🔄 Qayta urinish", callback_data="retry_registration")
+
     if not employee_id:
         await callback.answer("Sessiya eskirgan. /start bosing.", show_alert=True)
         await state.clear()
@@ -521,8 +664,7 @@ async def confirm_yes(callback: CallbackQuery, state: FSMContext) -> None:
 
     if role == "ROP":
         await state.set_state(RegistrationStates.enter_password)
-        if callback.message:
-            await callback.message.answer("Parolingizni kiriting:")
+        await _send_or_edit_registration_prompt(callback, state, "Parolingizni kiriting:")
         await callback.answer()
         return
 
@@ -534,15 +676,15 @@ async def confirm_yes(callback: CallbackQuery, state: FSMContext) -> None:
             role=role,
         )
     except DomainError as exc:
-        if callback.message:
-            await callback.message.answer(str(exc))
+        await _send_or_edit_registration_prompt(callback, state, str(exc), reply_markup=retry_builder.as_markup())
         await state.clear()
         await callback.answer()
         return
     except Exception as exc:
         logger.exception("Binding error: %s", exc)
-        if callback.message:
-            await callback.message.answer("Bog'lanishda xatolik yuz berdi. Iltimos administratsiyaga murojaat qiling.")
+        await _send_or_edit_registration_prompt(
+            callback, state, "Bog'lanishda xatolik yuz berdi. Iltimos administratsiyaga murojaat qiling.", reply_markup=retry_builder.as_markup()
+        )
         await state.clear()
         await callback.answer()
         return
@@ -555,8 +697,7 @@ async def confirm_yes(callback: CallbackQuery, state: FSMContext) -> None:
     is_leader = await sync_to_async(is_group_leader)(employee)
     keyboard = xizmatlar_menu_keyboard(show_rop_switch=is_leader)
 
-    if callback.message:
-        await callback.message.answer(text, reply_markup=keyboard)
+    await _send_or_edit_registration_prompt(callback, state, text, reply_markup=keyboard)
     await callback.answer()
 
 

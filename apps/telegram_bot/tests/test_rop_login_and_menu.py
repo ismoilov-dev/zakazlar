@@ -97,7 +97,7 @@ class RopPartATestCase(TestCase):
         await process_password(message, state)
 
         message.delete.assert_called_once()
-        message.answer.assert_called_once_with("ID yoki parol noto'g'ri.")
+        self.assertEqual(message.answer.call_args[0][0], "ID yoki parol noto'g'ri.")
         mock_warn.assert_called_once()
 
     async def test_process_employee_id_rop_without_password_denies_access(self):
@@ -114,7 +114,7 @@ class RopPartATestCase(TestCase):
 
         await process_employee_id(message, state)
 
-        message.answer.assert_called_once_with("Iltimos, ism va familiyangizni kiriting:")
+        self.assertEqual(message.answer.call_args[0][0], "Iltimos, ism va familiyangizni kiriting:")
         state.set_state.assert_called_once_with(RegistrationStates.enter_name)
 
         # Password step denies access for leader without password credential
@@ -149,7 +149,7 @@ class RopPartATestCase(TestCase):
         await process_password(message, state)
 
         message.delete.assert_called_once()
-        message.answer.assert_called_once_with("ID yoki parol noto'g'ri.")
+        self.assertEqual(message.answer.call_args[0][0], "ID yoki parol noto'g'ri.")
         mock_warn.assert_called_once()
 
     async def test_rop_logout_clears_session(self):
