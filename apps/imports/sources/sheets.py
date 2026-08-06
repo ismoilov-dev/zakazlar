@@ -379,8 +379,17 @@ class SheetsSource(BaseSource):
             stat_raw = self._get_cell(row, status_idx) if status_idx is not None else ""
             has_meaningful_content = bool(ord_raw.strip() or amount_str.strip() or stat_raw.strip())
 
-            # Secondary check: if both employee ID and employee name are empty, treat as empty template row
-            if not id_val and not raw_emp_name:
+            mapped_id = name_map.get(raw_emp_name.strip().lower()) if raw_emp_name else None
+            names_match = (
+                name_idx is not None
+                and last_seen_emp_name is not None
+                and bool(raw_emp_name)
+                and raw_emp_name.lower() == last_seen_emp_name.lower()
+            )
+            is_name_error = self._is_sheet_error(raw_emp_name) or "topilmadi" in raw_emp_name.lower()
+
+            # Secondary check: if employee ID is empty and row is an unmapped/error template or lacks order content, treat as empty template row
+            if not id_val and (not raw_emp_name or is_name_error or (not has_meaningful_content and not mapped_id and not names_match)):
                 empty_rows_skipped += 1
                 continue
 
@@ -400,13 +409,6 @@ class SheetsSource(BaseSource):
                     logger.warning("List1 %s-qator tashlandi: %s | Birinchi 6 katak: %s", row_idx, reason, first_6)
                     continue
             else:
-                mapped_id = name_map.get(raw_emp_name.strip().lower()) if raw_emp_name else None
-                names_match = (
-                    name_idx is not None
-                    and last_seen_emp_name is not None
-                    and bool(raw_emp_name)
-                    and raw_emp_name.lower() == last_seen_emp_name.lower()
-                )
                 if mapped_id:
                     emp_id = mapped_id
                     last_seen_emp_id = emp_id

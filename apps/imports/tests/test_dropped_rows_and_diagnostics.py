@@ -214,3 +214,22 @@ class DroppedRowsAndDiagnosticsTest(TestCase):
         self.assertEqual(len(orders), 1)
         self.assertEqual(orders[0].group_code, "B")
 
+    def test_formula_error_name_template_rows_skipped_as_empty(self):
+        """Rows with empty ID and formula error names like 'Kerkali BO'LIM topilmadi' are skipped as empty, not dropped."""
+        raw_data = [
+            ["№", "ID", "Ответственный", "Сумма", "Дата Заказа", "статус", "Источник"],
+            ["1", "0191", "Amir Karimov", "100,000", "28.07.2026", "успешно", "Baza"],
+            ["", "", "Kerkali BO'LIM topilmadi", "", "", "", ""],
+            ["", "", "Kerakli BO'LIM topilmadi", "", "", "", ""],
+        ]
+
+        source = SheetsSource.__new__(SheetsSource)
+        mock_worksheet = MagicMock()
+        mock_worksheet.get_all_values.return_value = raw_data
+
+        orders = source._parse_orders(mock_worksheet)
+        self.assertEqual(len(orders), 1)
+        self.assertEqual(source.last_parse_summary["empty_rows_skipped"], 2)
+        self.assertEqual(source.last_parse_summary["dropped_count"], 0)
+        self.assertEqual(len(source.last_dropped_rows), 0)
+
