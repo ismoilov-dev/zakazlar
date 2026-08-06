@@ -242,55 +242,64 @@ async def start(message: Message, state: FSMContext) -> None:
     If already bound, inform user and list commands.
     If unbound, present role selection keyboard.
     """
-    await state.clear()
+    try:
+        await state.clear()
 
-    if message.from_user is None:
-        return
+        if message.from_user is None:
+            return
 
-    account = await sync_to_async(
-        lambda: TelegramAccount.objects.select_related("employee").filter(telegram_id=message.from_user.id).first()
-    )()
+        account = await sync_to_async(
+            lambda: TelegramAccount.objects.select_related("employee").filter(telegram_id=message.from_user.id).first()
+        )()
 
-    if account:
-        await ensure_fresh_data_and_get_timestamp()
-        info_prefix = f"Siz allaqachon <b>{account.employee.full_name}</b> (<code>{account.employee.employee_id}</code>) sifatida ro'yxatdan o'tgansiz.\n\n"
+        if account:
+            try:
+                await ensure_fresh_data_and_get_timestamp()
+            except Exception as exc:
+                logger.warning("ensure_fresh_data_and_get_timestamp failed in start: %s", exc)
 
-        is_leader = await sync_to_async(is_group_leader)(account.employee)
+            info_prefix = f"Siz allaqachon <b>{account.employee.full_name}</b> (<code>{account.employee.employee_id}</code>) sifatida ro'yxatdan o'tgansiz.\n\n"
 
-        if account.role == "ROP" and is_leader:
-            if not require_rop_session(account):
-                await state.update_data(employee_id=account.employee.employee_id)
-                await state.set_state(RegistrationStates.enter_password)
-                res = await message.answer("Sessiyangiz eskirgan. Qayta kirish uchun parolingizni kiriting:")
-                await state.update_data(bot_message_id=res.message_id)
-                return
+            is_leader = await sync_to_async(is_group_leader)(account.employee)
 
-            groups = await sync_to_async(
-                lambda: list(SalesGroup.objects.filter(leader=account.employee, is_active=True))
-            )()
-            group = groups[0]
-            text = info_prefix + rop_menu_text(account.employee.full_name, group.code, account.employee.employee_id)
-            reply_markup = rop_menu_keyboard()
+            if account.role == "ROP" and is_leader:
+                if not require_rop_session(account):
+                    await state.update_data(employee_id=account.employee.employee_id)
+                    await state.set_state(RegistrationStates.enter_password)
+                    res = await message.answer("Sessiyangiz eskirgan. Qayta kirish uchun parolingizni kiriting:")
+                    await state.update_data(bot_message_id=res.message_id)
+                    return
+
+                groups = await sync_to_async(
+                    lambda: list(SalesGroup.objects.filter(leader=account.employee, is_active=True))
+                )()
+                if groups:
+                    group = groups[0]
+                    text = info_prefix + rop_menu_text(account.employee.full_name, group.code, account.employee.employee_id)
+                    reply_markup = rop_menu_keyboard()
+                    await message.answer(text, reply_markup=reply_markup)
+                    return
+
+            text = info_prefix + xizmatlar_menu_text()
+            reply_markup = xizmatlar_menu_keyboard(show_rop_switch=is_leader)
             await message.answer(text, reply_markup=reply_markup)
             return
 
-        text = info_prefix + xizmatlar_menu_text()
-        reply_markup = xizmatlar_menu_keyboard(show_rop_switch=is_leader)
-        await message.answer(text, reply_markup=reply_markup)
-        return
+        builder = InlineKeyboardBuilder()
+        builder.button(text="👔 R.O.P", callback_data="role_ROP")
+        builder.button(text="👤 M.O.P", callback_data="role_MOP")
+        builder.adjust(2)
 
-    builder = InlineKeyboardBuilder()
-    builder.button(text="👔 R.O.P", callback_data="role_ROP")
-    builder.button(text="👤 M.O.P", callback_data="role_MOP")
-    builder.adjust(2)
-
-    text = (
-        "Xush kelibsiz! Botdan foydalanish uchun rolingizni tanlang:\n\n"
-        "👔 <b>R.O.P</b> — Bo'lim boshlig'i\n"
-        "👤 <b>M.O.P</b> — Sotuv operatori"
-    )
-    await state.set_state(RegistrationStates.select_role)
-    await _send_or_edit_registration_prompt(message, state, text, reply_markup=builder.as_markup())
+        text = (
+            "Xush kelibsiz! Botdan foydalanish uchun rolingizni tanlang:\n\n"
+            "👔 <b>R.O.P</b> — Bo'lim boshlig'i\n"
+            "👤 <b>M.O.P</b> — Sotuv operatori"
+        )
+        await state.set_state(RegistrationStates.select_role)
+        await _send_or_edit_registration_prompt(message, state, text, reply_markup=builder.as_markup())
+    except Exception as exc:
+        logger.exception("Error in /start handler: %s", exc)
+        await message.answer("Xatolik yuz berdi. Iltimos, /start tugmasini qayta bosing.")
 
 
 @router.callback_query(F.data.in_({"role_ROP", "role_MOP"}))
