@@ -253,6 +253,12 @@ async def start(message: Message, state: FSMContext) -> None:
         )()
 
         if account:
+            if not account.employee:
+                logger.warning("Deleting orphaned TelegramAccount without employee for telegram_id=%s", message.from_user.id)
+                await sync_to_async(account.delete)()
+                account = None
+
+        if account:
             try:
                 await ensure_fresh_data_and_get_timestamp()
             except Exception as exc:
@@ -273,12 +279,11 @@ async def start(message: Message, state: FSMContext) -> None:
                 groups = await sync_to_async(
                     lambda: list(SalesGroup.objects.filter(leader=account.employee, is_active=True))
                 )()
-                if groups:
-                    group = groups[0]
-                    text = info_prefix + rop_menu_text(account.employee.full_name, group.code, account.employee.employee_id)
-                    reply_markup = rop_menu_keyboard()
-                    await message.answer(text, reply_markup=reply_markup)
-                    return
+                group_code = groups[0].code if groups else (account.employee.group.code if account.employee.group else "A")
+                text = info_prefix + rop_menu_text(account.employee.full_name, group_code, account.employee.employee_id)
+                reply_markup = rop_menu_keyboard()
+                await message.answer(text, reply_markup=reply_markup)
+                return
 
             text = info_prefix + xizmatlar_menu_text()
             reply_markup = xizmatlar_menu_keyboard(show_rop_switch=is_leader)
