@@ -347,13 +347,25 @@ class SheetsSource(BaseSource):
             "статус": status_idx,
             "guruh": group_idx,
             "manba": source_idx,
+            "client_name": client_idx,
+            "product_name": product_idx,
+            "quantity": qty_idx,
         }
 
         logger.info(
-            "List1 sarlavha qatori indeksi: %s, ID ustuni indeksi: %s, Headings: %s",
+            "List1 sarlavha indeksi: %s | Ustunlar: ID=%s, №=%s, Xodim=%s, Summa=%s, Sana=%s, Status=%s, Guruh=%s, Manba=%s, Client=%s, Product=%s, Qty=%s",
             header_row_idx,
             id_idx,
-            headings,
+            ord_idx,
+            name_idx,
+            amount_idx,
+            date_idx,
+            status_idx,
+            group_idx,
+            source_idx,
+            client_idx,
+            product_idx,
+            qty_idx,
         )
 
         orders: list[OrderDTO] = []
@@ -886,6 +898,7 @@ class SheetsSource(BaseSource):
             for idx, col_name in enumerate(headings):
                 col_norm = _norm(col_name)
                 if col_norm and col_norm == cand_norm:
+                    logger.info("List1 ustun topildi ('%s'): indeks %s ('%s')", name, idx, col_name)
                     return idx
 
         for candidate in candidates:
@@ -895,10 +908,12 @@ class SheetsSource(BaseSource):
             for idx, col_name in enumerate(headings):
                 col_norm = _norm(col_name)
                 if col_norm and (cand_norm in col_norm or col_norm in cand_norm):
+                    logger.info("List1 ustun qisman moslik bilan topildi ('%s'): indeks %s ('%s')", name, idx, col_name)
                     return idx
 
         if required:
             raise ValidationError(f"Ustun topilmadi ('{name}'): mos nomlar {candidates}")
+        logger.info("List1 ustun topilmadi ('%s'): qidirilgan nomlar %s | Natija: None", name, candidates)
         return None
 
     @staticmethod

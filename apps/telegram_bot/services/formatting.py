@@ -143,8 +143,20 @@ def order_list_text(
         qty_str = f"{qty_val} ta" if qty_val is not None else "—"
         amt_str = money(sale.sale_amount, bold=False)
 
+        raw_ord_id = getattr(sale, "external_order_id", "") or ""
+        if raw_ord_id:
+            parts = str(raw_ord_id).split("_")
+            order_num = parts[-1] if len(parts) >= 3 else str(raw_ord_id)
+        else:
+            order_num = ""
+
+        if order_num:
+            title_line = f"{idx}. №{order_num} · {c_name}"
+        else:
+            title_line = f"{idx}. {c_name}"
+
         item = (
-            f"{idx}. {c_name}\n"
+            f"{title_line}\n"
             f"   📅 {dt_str} · 💊 {p_name} · {qty_str}\n"
             f"   📊 {amt_str}"
         )

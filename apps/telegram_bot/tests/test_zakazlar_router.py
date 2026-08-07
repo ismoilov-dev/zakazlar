@@ -142,10 +142,21 @@ class ZakazlarRouterTest(TestCase):
             period_label="Iyul 2026",
         )
         self.assertIn("⏳ Jarayonda — 1 ta", text)
-        self.assertIn("1. —", text)
+        self.assertIn("1. №1004 · —", text)
         self.assertIn("💊 — · —", text)
         self.assertIn(MISSING_VALUE_TEXT, text)
         self.assertNotIn("0 so'm", text)
+
+    def test_order_list_text_includes_order_number(self):
+        text = order_list_text(
+            orders=[self.sale_succ1],
+            status="successful",
+            total_count=1,
+            page=1,
+            total_pages=1,
+            period_label="Iyul 2026",
+        )
+        self.assertIn("1. №1001 · maqsuda", text)
 
     def test_pagination_boundaries(self):
         # Create 15 orders for emp1 to test pagination
