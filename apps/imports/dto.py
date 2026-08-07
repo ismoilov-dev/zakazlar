@@ -55,6 +55,8 @@ class OrderDTO:
     client_name: str = ""
     product_name: str = ""
     quantity: int | None = None
+    product_name_2: str = ""
+    quantity_2: int | None = None
 
 
 @dataclass(frozen=True, slots=True)

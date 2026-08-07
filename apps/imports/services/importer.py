@@ -224,6 +224,8 @@ class DataImporter:
                     and existing_sale.client_name == row.client_name
                     and existing_sale.product_name == row.product_name
                     and existing_sale.quantity == row.quantity
+                    and existing_sale.product_name_2 == row.product_name_2
+                    and existing_sale.quantity_2 == row.quantity_2
                 ):
                     continue
 
@@ -241,6 +243,8 @@ class DataImporter:
                         client_name=row.client_name,
                         product_name=row.product_name,
                         quantity=row.quantity,
+                        product_name_2=row.product_name_2,
+                        quantity_2=row.quantity_2,
                     )
                 )
 

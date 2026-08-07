@@ -38,6 +38,8 @@ class Sale(TimeStampedModel):
     client_name = models.CharField(max_length=255, blank=True, default="")
     product_name = models.CharField(max_length=255, blank=True, default="")
     quantity = models.IntegerField(null=True, blank=True)
+    product_name_2 = models.CharField(max_length=255, blank=True, default="")
+    quantity_2 = models.IntegerField(null=True, blank=True)
 
     class Meta:
         db_table = "sales"

@@ -323,12 +323,47 @@ class SheetsSource(BaseSource):
         source_candidates = ["Столбец 2", "Контакт", "Источник", "manba", "Manba"]
         source_idx = self._find_single_column_index(headings, candidates=source_candidates, name="manba", required=False)
 
-        client_idx = self._find_single_column_index(headings, candidates=["Ф.И.О.", "ФИО клиента", "Mijoz F.I.O", "Mijoz ismi", "Mijoz FIO", "Ф.И.О", "ФИО", "Ф. И. О."], name="client_name", required=False)
-        product_idx = self._find_single_column_index(headings, candidates=["Товар1", "Товар 1", "Товар", "Mahsulot1", "Mahsulot", "Tovar1", "Tovar"], name="product_name", required=False)
-        if product_idx is not None and product_idx + 1 < len(headings):
-            qty_idx = product_idx + 1
-        else:
-            qty_idx = self._find_single_column_index(headings, candidates=["кол-во1", "кол-во 1", "кол-во", "колво1", "колво", "Soni1", "Soni", "Kolichestvo"], name="quantity", required=False)
+        client_idx = self._find_single_column_index(
+            headings,
+            candidates=["Ф.И.О.", "ФИО клиента", "Mijoz F.I.O", "Mijoz ismi", "Mijoz FIO", "Ф.И.О", "ФИО", "Ф. И. О.", "ФИО Клиента", "Клиент"],
+            name="client_name",
+            required=False,
+        )
+        product_idx = self._find_single_column_index(
+            headings,
+            candidates=["Товар1", "Товар 1", "Товар", "Mahsulot1", "Mahsulot", "Tovar1", "Tovar"],
+            name="product_name",
+            required=False,
+        )
+        qty_idx = product_idx + 1 if (product_idx is not None and product_idx + 1 < len(headings)) else None
+
+        product_idx_2 = self._find_single_column_index(
+            headings,
+            candidates=["Товар2", "Товар 2", "Mahsulot2", "Tovar2"],
+            name="product_name_2",
+            required=False,
+        )
+        qty_idx_2 = product_idx_2 + 1 if (product_idx_2 is not None and product_idx_2 + 1 < len(headings)) else None
+
+        logger.info(
+            "List1 ustunlar: client=%s, product=%s, qty=%s, product2=%s, qty2=%s",
+            client_idx,
+            product_idx,
+            qty_idx,
+            product_idx_2,
+            qty_idx_2,
+        )
+
+        if None in (client_idx, product_idx, qty_idx, product_idx_2, qty_idx_2):
+            logger.warning(
+                "List1 ba'zi ixtiyoriy ustunlar topilmadi (client=%s, product=%s, qty=%s, product2=%s, qty2=%s) | Full headings: %s",
+                client_idx,
+                product_idx,
+                qty_idx,
+                product_idx_2,
+                qty_idx_2,
+                headings,
+            )
 
         if source_idx is None:
             logger.error("List1 varog'ida manba ustuni topilmadi. Qidirilgan nomlar: %s | Mavjud sarlavhalar: %s", source_candidates, headings)
@@ -350,6 +385,8 @@ class SheetsSource(BaseSource):
             "client_name": client_idx,
             "product_name": product_idx,
             "quantity": qty_idx,
+            "product_name_2": product_idx_2,
+            "quantity_2": qty_idx_2,
         }
 
         logger.info(
@@ -542,6 +579,16 @@ class SheetsSource(BaseSource):
                 except Exception:
                     quantity = None
 
+            product_name_2 = self._get_cell(row, product_idx_2).strip() if product_idx_2 is not None else ""
+            raw_qty_2 = self._get_cell(row, qty_idx_2) if qty_idx_2 is not None else ""
+            quantity_2: int | None = None
+            if raw_qty_2:
+                try:
+                    val_flt_2 = float(raw_qty_2.replace(",", "."))
+                    quantity_2 = int(val_flt_2)
+                except Exception:
+                    quantity_2 = None
+
             try:
                 clean_ord = normalize_order_id(ord_raw)
                 ord_id = f"{ordered_at:%Y%m}_{emp_id}_{clean_ord}"
@@ -567,6 +614,8 @@ class SheetsSource(BaseSource):
                     client_name=client_name,
                     product_name=product_name,
                     quantity=quantity,
+                    product_name_2=product_name_2,
+                    quantity_2=quantity_2,
                 )
             )
             parsed_rows_count += 1
