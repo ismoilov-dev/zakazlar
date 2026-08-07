@@ -1144,7 +1144,7 @@ async def handle_xizmatlar_callback(callback: CallbackQuery, state: FSMContext |
             await callback.answer()
             return
 
-    if action in ("xm_menu", "xm_period"):
+    if action in ("xm_menu", "xm_period", "xm_back"):
         text = xizmatlar_menu_text(period_label)
         if period_iso and (summary_data is None or not summary_data):
             text += "\n\nBu oy uchun ma'lumot saqlanmagan."

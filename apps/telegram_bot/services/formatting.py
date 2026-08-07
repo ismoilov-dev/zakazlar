@@ -111,7 +111,7 @@ def order_status_picker_keyboard(
     builder.button(text=canc_text, callback_data=f"ord_status:cancelled{suffix}{src_suffix}")
     builder.button(text=pend_text, callback_data=f"ord_status:pending{suffix}{src_suffix}")
 
-    back_target = f"xm_back{suffix}{src_suffix}" if (period_iso or src) else "xizmatlar"
+    back_target = f"xm_menu{suffix}{src_suffix}"
     builder.button(text="⬅️ Xizmatlarga qaytish", callback_data=back_target)
 
     builder.adjust(2, 1, 1)
@@ -205,7 +205,7 @@ def order_list_keyboard(
     picker_target = f"xm_orders{suffix}{src_suffix}"
     builder.button(text="⬅️ Zakaz holatlariga qaytish", callback_data=picker_target)
 
-    back_target = f"xm_back{suffix}{src_suffix}" if (period_iso or src) else "xizmatlar"
+    back_target = f"xm_menu{suffix}{src_suffix}"
     builder.button(text="⬅️ Xizmatlarga qaytish", callback_data=back_target)
 
     adjust_spec = []
