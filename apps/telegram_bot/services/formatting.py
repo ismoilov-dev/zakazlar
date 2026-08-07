@@ -132,16 +132,11 @@ def order_list_text(
     status_title = STATUS_EMOJI_MAP.get(status, status)
     header = f"{status_title} — {total_count} ta\n📅 {period_label}"
 
-    offset = (page - 1) * 10
+    offset = (page - 1) * 5
     items = []
 
     for idx, sale in enumerate(orders, start=offset + 1):
-        c_name = sale.client_name.strip() if getattr(sale, "client_name", None) else "—"
-        dt_str = timezone.localtime(sale.ordered_at).strftime("%d.%m.%Y") if getattr(sale, "ordered_at", None) else "—"
-        p_name = sale.product_name.strip() if getattr(sale, "product_name", None) else "—"
-        qty_val = getattr(sale, "quantity", None)
-        qty_str = f"{qty_val} ta" if qty_val is not None else "—"
-        amt_str = money(sale.sale_amount, bold=False)
+        lines = [f"{idx})"]
 
         raw_ord_id = getattr(sale, "external_order_id", "") or ""
         if raw_ord_id:
@@ -151,16 +146,39 @@ def order_list_text(
             order_num = ""
 
         if order_num:
-            title_line = f"{idx}. №{order_num} · {c_name}"
-        else:
-            title_line = f"{idx}. {c_name}"
+            lines.append(f"🆔 Raqam: {order_num}")
 
-        item = (
-            f"{title_line}\n"
-            f"   📅 {dt_str} · 💊 {p_name} · {qty_str}\n"
-            f"   📊 {amt_str}"
-        )
-        items.append(item)
+        c_name = sale.client_name.strip() if getattr(sale, "client_name", None) else ""
+        if c_name:
+            lines.append(f"👤 Mijoz: {c_name}")
+
+        amt_str = money(getattr(sale, "sale_amount", None), bold=False)
+        lines.append(f"💰 Narxi: {amt_str}")
+
+        p_name_1 = sale.product_name.strip() if getattr(sale, "product_name", None) else ""
+        qty_val_1 = getattr(sale, "quantity", None)
+        if p_name_1 and qty_val_1 is not None:
+            lines.append(f"💊 Tovar: {p_name_1} — {qty_val_1} ta")
+        elif p_name_1:
+            lines.append(f"💊 Tovar: {p_name_1}")
+        elif qty_val_1 is not None:
+            lines.append(f"💊 Tovar: {qty_val_1} ta")
+
+        p_name_2 = sale.product_name_2.strip() if getattr(sale, "product_name_2", None) else ""
+        qty_val_2 = getattr(sale, "quantity_2", None)
+        if p_name_2 and qty_val_2 is not None:
+            lines.append(f"💊 Tovar 2: {p_name_2} — {qty_val_2} ta")
+        elif p_name_2:
+            lines.append(f"💊 Tovar 2: {p_name_2}")
+        elif qty_val_2 is not None:
+            lines.append(f"💊 Tovar 2: {qty_val_2} ta")
+
+        dt = getattr(sale, "ordered_at", None)
+        if dt:
+            dt_str = timezone.localtime(dt).strftime("%d.%m.%Y")
+            lines.append(f"📅 Vaqti: {dt_str}")
+
+        items.append("\n".join(lines))
 
     return header + "\n\n" + "\n\n".join(items)
 

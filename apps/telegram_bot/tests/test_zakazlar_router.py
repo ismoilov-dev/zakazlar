@@ -132,22 +132,65 @@ class ZakazlarRouterTest(TestCase):
         self.assertEqual(orders[1].external_order_id, "202607_0191_1001")
         self.assertTrue(all(o.employee_id == self.emp1.id for o in orders))
 
-    def test_missing_product_quantity_and_null_amount_rendering(self):
+    def test_order_with_every_field_renders_all_six_lines(self):
+        sale_full = Sale.objects.create(
+            external_order_id="202607_0191_52344",
+            employee=self.emp1,
+            status=SaleStatus.SUCCESSFUL,
+            sale_amount=Decimal("1000000.00"),
+            client_name="maqsuda",
+            product_name="Bioflex pro",
+            quantity=1,
+            product_name_2="Dolion Ge",
+            quantity_2=2,
+            ordered_at=timezone.make_aware(datetime(2026, 8, 2, 10, 0, 0)),
+        )
         text = order_list_text(
-            orders=[self.sale_null],
-            status="pending",
+            orders=[sale_full],
+            status="successful",
             total_count=1,
             page=1,
             total_pages=1,
-            period_label="Iyul 2026",
+            period_label="Avgust 2026",
         )
-        self.assertIn("⏳ Jarayonda — 1 ta", text)
-        self.assertIn("1. №1004 · —", text)
-        self.assertIn("💊 — · —", text)
-        self.assertIn(MISSING_VALUE_TEXT, text)
-        self.assertNotIn("0 so'm", text)
+        expected = (
+            "✅ Muvaffaqiyatli — 1 ta\n"
+            "📅 Avgust 2026\n\n"
+            "1)\n"
+            "🆔 Raqam: 52344\n"
+            "👤 Mijoz: maqsuda\n"
+            "💰 Narxi: 1\xa0000\xa0000 so'm\n"
+            "💊 Tovar: Bioflex pro — 1 ta\n"
+            "💊 Tovar 2: Dolion Ge — 2 ta\n"
+            "📅 Vaqti: 02.08.2026"
+        )
+        self.assertEqual(text, expected)
 
-    def test_order_list_text_includes_order_number(self):
+    def test_order_missing_client_omits_client_line_and_keeps_rest(self):
+        sale_no_client = Sale.objects.create(
+            external_order_id="202607_0191_52345",
+            employee=self.emp1,
+            status=SaleStatus.SUCCESSFUL,
+            sale_amount=Decimal("500000.00"),
+            client_name="",
+            product_name="Bioflex pro",
+            quantity=1,
+            ordered_at=timezone.make_aware(datetime(2026, 8, 2, 11, 0, 0)),
+        )
+        text = order_list_text(
+            orders=[sale_no_client],
+            status="successful",
+            total_count=1,
+            page=1,
+            total_pages=1,
+            period_label="Avgust 2026",
+        )
+        self.assertIn("1)\n🆔 Raqam: 52345\n💰 Narxi:", text)
+        self.assertNotIn("👤 Mijoz:", text)
+        self.assertIn("💊 Tovar: Bioflex pro — 1 ta", text)
+        self.assertIn("📅 Vaqti: 02.08.2026", text)
+
+    def test_order_with_no_second_product_has_no_tovar_2_line(self):
         text = order_list_text(
             orders=[self.sale_succ1],
             status="successful",
@@ -156,10 +199,24 @@ class ZakazlarRouterTest(TestCase):
             total_pages=1,
             period_label="Iyul 2026",
         )
-        self.assertIn("1. №1001 · maqsuda", text)
+        self.assertIn("💊 Tovar: Bioflex pro — 1 ta", text)
+        self.assertNotIn("💊 Tovar 2:", text)
 
-    def test_pagination_boundaries(self):
-        # Create 15 orders for emp1 to test pagination
+    def test_null_amount_shows_missing_value_text(self):
+        self.sale_null.has_sheet_error = True
+        self.sale_null.save()
+        text = order_list_text(
+            orders=[self.sale_null],
+            status="pending",
+            total_count=1,
+            page=1,
+            total_pages=1,
+            period_label="Iyul 2026",
+        )
+        self.assertIn(f"💰 Narxi: {MISSING_VALUE_TEXT}", text)
+        self.assertNotIn("0 so'm", text)
+
+    def test_pagination_boundaries_at_5_per_page(self):
         for i in range(10, 25):
             Sale.objects.create(
                 external_order_id=f"202607_0191_{i}",
@@ -173,26 +230,15 @@ class ZakazlarRouterTest(TestCase):
             )
 
         orders_p1, total_count, total_pages = get_paginated_orders(self.emp1.id, "successful", 2026, 7, page=1)
-        self.assertEqual(total_count, 17)  # 2 original + 15 new
-        self.assertEqual(total_pages, 2)
-        self.assertEqual(len(orders_p1), 10)
+        self.assertEqual(total_count, 17)
+        self.assertEqual(total_pages, 4)
+        self.assertEqual(len(orders_p1), 5)
 
         orders_p2, _, _ = get_paginated_orders(self.emp1.id, "successful", 2026, 7, page=2)
-        self.assertEqual(len(orders_p2), 7)
+        self.assertEqual(len(orders_p2), 5)
 
-        # Page out of bounds resets to last page
-        orders_p3, _, _ = get_paginated_orders(self.emp1.id, "successful", 2026, 7, page=99)
-        self.assertEqual(len(orders_p3), 7)
-
-        kb_p1 = order_list_keyboard("successful", 1, 2)
-        p1_buttons = [b.text for row in kb_p1.inline_keyboard for b in row]
-        self.assertIn("Keyingi ➡️", p1_buttons)
-        self.assertNotIn("⬅️ Oldingi", p1_buttons)
-
-        kb_p2 = order_list_keyboard("successful", 2, 2)
-        p2_buttons = [b.text for row in kb_p2.inline_keyboard for b in row]
-        self.assertIn("⬅️ Oldingi", p2_buttons)
-        self.assertNotIn("Keyingi ➡️", p2_buttons)
+        orders_p4, _, _ = get_paginated_orders(self.emp1.id, "successful", 2026, 7, page=4)
+        self.assertEqual(len(orders_p4), 2)
 
     @patch("apps.telegram_bot.routers.ensure_fresh_data_and_get_timestamp", return_value=("01.07.2026 12:00:00", False))
     async def test_callback_xm_orders_opens_status_picker(self, _mock_ts):

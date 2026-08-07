@@ -1223,14 +1223,14 @@ def get_paginated_orders(
     if total_count == 0:
         return [], 0, 1
 
-    total_pages = math.ceil(total_count / 10)
+    total_pages = math.ceil(total_count / 5)
     if page > total_pages:
         page = total_pages
     if page < 1:
         page = 1
 
-    offset = (page - 1) * 10
-    orders = list(qs[offset : offset + 10])
+    offset = (page - 1) * 5
+    orders = list(qs[offset : offset + 5])
     return orders, total_count, total_pages
 
 
