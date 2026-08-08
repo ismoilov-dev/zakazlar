@@ -59,3 +59,35 @@ class PayrollParsingTest(TestCase):
         self.assertEqual(dropped_item["row_idx"], 3)
         self.assertIn("Noto'g'ri pul summasi formati", dropped_item["reason"])
 
+    def test_successful_sales_not_matched_to_uspeshka_foizi(self) -> None:
+        source = SheetsSource.__new__(SheetsSource)
+        source.last_dropped_payroll_rows = []
+
+        mock_ws = MagicMock()
+        mock_ws.title = "List2"
+        mock_ws.get_all_values.return_value = [
+            ["Guruh", "Tabel raqami", "FISH", "Oylik ish haqi", "успешка фоизи"],
+            ["A", "0191", "Amir Karimov", "5000000", "85%"],
+        ]
+
+        with self.assertLogs("apps.imports.sources.sheets", level="WARNING") as cm:
+            parsed = source._parse_payroll(mock_ws)
+            self.assertEqual(len(parsed), 1)
+            dto = parsed[0]
+            self.assertIsNone(dto.summary_data.get("successful_sales"))
+            self.assertTrue(any("successful_sales" in log for log in cm.output))
+
+    def test_duplicate_column_collision_sets_both_to_none_and_logs_error(self) -> None:
+        source = SheetsSource.__new__(SheetsSource)
+        raw = {
+            "salary_1_15": 3,
+            "salary_16_31": 3,
+            "total_sales": 4,
+        }
+        with self.assertLogs("apps.imports.sources.sheets", level="ERROR") as cm:
+            cleaned = source._check_column_collisions(raw)
+            self.assertIsNone(cleaned["salary_1_15"])
+            self.assertIsNone(cleaned["salary_16_31"])
+            self.assertEqual(cleaned["total_sales"], 4)
+            self.assertTrue(any("collision" in log.lower() for log in cm.output))
+

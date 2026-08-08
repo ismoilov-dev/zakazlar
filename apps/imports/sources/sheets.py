@@ -17,6 +17,7 @@ from apps.common.services.exceptions import ValidationError as DomainValidationE
 
 PARSE_ERRORS = (ValidationError, DomainValidationError)
 import gspread
+from collections import Counter, defaultdict
 from django.utils import timezone
 from django.utils.dateparse import parse_date as parse_iso_date
 from google.oauth2.service_account import Credentials
@@ -328,12 +329,14 @@ class SheetsSource(BaseSource):
             candidates=["Ф.И.О.", "ФИО клиента", "Mijoz F.I.O", "Mijoz ismi", "Mijoz FIO", "Ф.И.О", "ФИО", "Ф. И. О.", "ФИО Клиента", "Клиент"],
             name="client_name",
             required=False,
+            exact_only=False,
         )
         product_idx = self._find_single_column_index(
             headings,
             candidates=["Товар1", "Товар 1", "Товар", "Mahsulot1", "Mahsulot", "Tovar1", "Tovar"],
             name="product_name",
             required=False,
+            exact_only=False,
         )
         qty_idx = product_idx + 1 if (product_idx is not None and product_idx + 1 < len(headings)) else None
 
@@ -342,8 +345,38 @@ class SheetsSource(BaseSource):
             candidates=["Товар2", "Товар 2", "Mahsulot2", "Tovar2"],
             name="product_name_2",
             required=False,
+            exact_only=False,
         )
         qty_idx_2 = product_idx_2 + 1 if (product_idx_2 is not None and product_idx_2 + 1 < len(headings)) else None
+
+        cleaned_order_map = self._check_column_collisions({
+            "ID": id_idx,
+            "№": ord_idx,
+            "Ответственный": name_idx,
+            "Сумма": amount_idx,
+            "Дата Заказа": date_idx,
+            "статус": status_idx,
+            "guruh": group_idx,
+            "manba": source_idx,
+            "client_name": client_idx,
+            "product_name": product_idx,
+            "quantity": qty_idx,
+            "product_name_2": product_idx_2,
+            "quantity_2": qty_idx_2,
+        })
+        id_idx = cleaned_order_map["ID"]
+        ord_idx = cleaned_order_map["№"]
+        name_idx = cleaned_order_map["Ответственный"]
+        amount_idx = cleaned_order_map["Сумма"]
+        date_idx = cleaned_order_map["Дата Заказа"]
+        status_idx = cleaned_order_map["статус"]
+        group_idx = cleaned_order_map["guruh"]
+        source_idx = cleaned_order_map["manba"]
+        client_idx = cleaned_order_map["client_name"]
+        product_idx = cleaned_order_map["product_name"]
+        qty_idx = cleaned_order_map["quantity"]
+        product_idx_2 = cleaned_order_map["product_name_2"]
+        qty_idx_2 = cleaned_order_map["quantity_2"]
 
         logger.info(
             "List1 ustunlar: client=%s, product=%s, qty=%s, product2=%s, qty2=%s",
@@ -700,9 +733,10 @@ class SheetsSource(BaseSource):
 
         successful_sales_idx = self._find_single_column_index(
             headings,
-            candidates=["Uspeshka summasi", "Uspeshka", "Успешка summasi", "Успешка", "Первичный Заказ", "Первичка"],
+            candidates=["Uspeshka summasi", "Uspeshka", "Успешка summasi", "Успешка"],
             name="successful_sales",
             required=False,
+            exact_only=True,
         )
 
         salary_1_15_idx = self._find_single_column_index(
@@ -749,6 +783,39 @@ class SheetsSource(BaseSource):
             name="salary_16_31",
             required=False,
         )
+
+        cleaned_payroll_map = self._check_column_collisions({
+            "ID": id_idx,
+            "xodim ismi": name_idx,
+            "guruh": group_idx,
+            "ish haqi": salary_idx,
+            "total_sales": total_sales_idx,
+            "perv_sales": perv_sales_idx,
+            "baza_sales": baza_sales_idx,
+            "otkaz_sales": otkaz_sales_idx,
+            "v_proc_sales": v_proc_sales_idx,
+            "upakovka": upakovka_idx,
+            "conversion": conv_idx,
+            "real_conversion": real_conv_idx,
+            "successful_sales": successful_sales_idx,
+            "salary_1_15": salary_1_15_idx,
+            "salary_16_31": salary_16_31_idx,
+        })
+        id_idx = cleaned_payroll_map["ID"]
+        name_idx = cleaned_payroll_map["xodim ismi"]
+        group_idx = cleaned_payroll_map["guruh"]
+        salary_idx = cleaned_payroll_map["ish haqi"]
+        total_sales_idx = cleaned_payroll_map["total_sales"]
+        perv_sales_idx = cleaned_payroll_map["perv_sales"]
+        baza_sales_idx = cleaned_payroll_map["baza_sales"]
+        otkaz_sales_idx = cleaned_payroll_map["otkaz_sales"]
+        v_proc_sales_idx = cleaned_payroll_map["v_proc_sales"]
+        upakovka_idx = cleaned_payroll_map["upakovka"]
+        conv_idx = cleaned_payroll_map["conversion"]
+        real_conv_idx = cleaned_payroll_map["real_conversion"]
+        successful_sales_idx = cleaned_payroll_map["successful_sales"]
+        salary_1_15_idx = cleaned_payroll_map["salary_1_15"]
+        salary_16_31_idx = cleaned_payroll_map["salary_16_31"]
 
         payroll: list[PayrollDTO] = []
         for row_idx, row in enumerate(raw_rows[header_row_idx + 1:], start=header_row_idx + 2):
@@ -936,8 +1003,37 @@ class SheetsSource(BaseSource):
         return found
 
     @staticmethod
+    def _check_column_collisions(resolved_indexes: dict[str, int | None]) -> dict[str, int | None]:
+        """Verify that no two fields point to the exact same column index.
+
+        If a collision occurs (two or more fields sharing the same non-None index),
+        log an ERROR and set all colliding fields to None.
+        """
+        index_to_fields: dict[int, list[str]] = defaultdict(list)
+        for field_name, idx in resolved_indexes.items():
+            if idx is not None:
+                index_to_fields[idx].append(field_name)
+
+        cleaned = dict(resolved_indexes)
+        for idx, field_names in index_to_fields.items():
+            if len(field_names) > 1:
+                logger.error(
+                    "Ustun indekslarida to'qnashuv (collision) aniqlandi: %s maydonlari bitta %s-ustunga bog'langan! Barcha to'qnashgan maydonlar None ga o'tkazildi.",
+                    field_names,
+                    idx,
+                )
+                for f in field_names:
+                    cleaned[f] = None
+
+        return cleaned
+
+    @staticmethod
     def _find_single_column_index(
-        headings: list[str], candidates: list[str], name: str, required: bool = True
+        headings: list[str],
+        candidates: list[str],
+        name: str,
+        required: bool = True,
+        exact_only: bool = True,
     ) -> int | None:
         def _norm(s: object) -> str:
             return re.sub(r"[\s\.\_\-]+", "", str(s or "").strip().lower())
@@ -947,22 +1043,23 @@ class SheetsSource(BaseSource):
             for idx, col_name in enumerate(headings):
                 col_norm = _norm(col_name)
                 if col_norm and col_norm == cand_norm:
-                    logger.info("List1 ustun topildi ('%s'): indeks %s ('%s')", name, idx, col_name)
+                    logger.info("Sheet ustun topildi ('%s'): indeks %s ('%s')", name, idx, col_name)
                     return idx
 
-        for candidate in candidates:
-            cand_norm = _norm(candidate)
-            if not cand_norm:
-                continue
-            for idx, col_name in enumerate(headings):
-                col_norm = _norm(col_name)
-                if col_norm and (cand_norm in col_norm or col_norm in cand_norm):
-                    logger.info("List1 ustun qisman moslik bilan topildi ('%s'): indeks %s ('%s')", name, idx, col_name)
-                    return idx
+        if not exact_only:
+            for candidate in candidates:
+                cand_norm = _norm(candidate)
+                if not cand_norm:
+                    continue
+                for idx, col_name in enumerate(headings):
+                    col_norm = _norm(col_name)
+                    if col_norm and (cand_norm in col_norm or col_norm in cand_norm):
+                        logger.info("Sheet ustun qisman moslik bilan topildi ('%s'): indeks %s ('%s')", name, idx, col_name)
+                        return idx
 
         if required:
             raise ValidationError(f"Ustun topilmadi ('{name}'): mos nomlar {candidates}")
-        logger.info("List1 ustun topilmadi ('%s'): qidirilgan nomlar %s | Natija: None", name, candidates)
+        logger.warning("Sheet ustun topilmadi ('%s'): qidirilgan nomlar %s | Natija: None", name, candidates)
         return None
 
     @staticmethod
