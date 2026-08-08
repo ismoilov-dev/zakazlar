@@ -20,7 +20,9 @@ STATUS_MAP = {
     "успешно": SaleStatus.SUCCESSFUL,
     "отказ": SaleStatus.CANCELLED,
     "в процесс": SaleStatus.PENDING,
-    "у курьера": SaleStatus.PENDING,
+    "у курьера": SaleStatus.SUCCESSFUL,
+    "курьер": SaleStatus.SUCCESSFUL,
+    "kuryerda": SaleStatus.SUCCESSFUL,
 }
 
 

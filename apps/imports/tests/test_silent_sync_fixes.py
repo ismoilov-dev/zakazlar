@@ -110,3 +110,28 @@ class SilentSyncFixesTest(TestCase):
         payroll = source._parse_payroll(mock_worksheet)
         self.assertEqual(len(payroll), 1)
         self.assertEqual(payroll[0].employee_id, "0192")
+
+    def test_courier_status_parses_as_successful_and_fixture_aggregation(self):
+        """Courier status strings map to 'successful', 'В процесс' stays 'pending', 'Отказ' stays 'cancelled'."""
+        source = SheetsSource.__new__(SheetsSource)
+        self.assertEqual(source._parse_status("У курьера"), "successful")
+        self.assertEqual(source._parse_status("курьер"), "successful")
+        self.assertEqual(source._parse_status("kuryerda"), "successful")
+        self.assertEqual(source._parse_status("В процесс"), "pending")
+        self.assertEqual(source._parse_status("Отказ"), "cancelled")
+
+        raw_data = [
+            ["№", "ID", "Ответственный", "Сумма", "Дата Заказа", "статус", "Источник"],
+            ["1", "0191", "Amir Karimov", "100000", "28.07.2026", "Успешно", "Baza"],
+            ["2", "0191", "Amir Karimov", "100000", "28.07.2026", "Успешно", "Baza"],
+            ["3", "0191", "Amir Karimov", "100000", "28.07.2026", "Успешно", "Baza"],
+            ["4", "0191", "Amir Karimov", "100000", "28.07.2026", "У курьера", "Baza"],
+            ["5", "0191", "Amir Karimov", "100000", "28.07.2026", "У курьера", "Baza"],
+        ]
+        mock_worksheet = MagicMock()
+        mock_worksheet.get_all_values.return_value = raw_data
+
+        orders = source._parse_orders(mock_worksheet)
+        self.assertEqual(len(orders), 5)
+        successful_count = sum(1 for o in orders if o.status == "successful")
+        self.assertEqual(successful_count, 5)

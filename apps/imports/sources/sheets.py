@@ -69,9 +69,9 @@ STATUS_MAP = {
     "v protsess": "pending",
     "v process": "pending",
     "jarayonda": "pending",
-    "у курьера": "pending",
-    "курьер": "pending",
-    "kuryerda": "pending",
+    "у курьера": "successful",
+    "курьер": "successful",
+    "kuryerda": "successful",
     "ожидание": "pending",
 }
 
@@ -1159,7 +1159,9 @@ class SheetsSource(BaseSource):
             return STATUS_MAP[raw]
         if any(term in raw for term in ["отказ", "возврат", "otkaz", "bekor"]):
             return "cancelled"
-        if any(term in raw for term in ["процесс", "курьер", "ожидан", "protsess", "process", "jarayon", "kuryer"]):
+        if any(term in raw for term in ["курьер", "kuryer"]):
+            return "successful"
+        if any(term in raw for term in ["процесс", "ожидан", "protsess", "process", "jarayon"]):
             return "pending"
         raise ValidationError(f"Noma'lum status: '{val}'")
 
