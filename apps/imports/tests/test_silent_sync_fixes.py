@@ -135,3 +135,53 @@ class SilentSyncFixesTest(TestCase):
         self.assertEqual(len(orders), 5)
         successful_count = sum(1 for o in orders if o.status == "successful")
         self.assertEqual(successful_count, 5)
+
+    def test_id_structural_fallback_when_header_is_blank(self):
+        """When ID header is blank (''), column immediately before 'Ответственный' is validated and used."""
+        raw_data = [
+            ["№", "Ф.И.О.", "Сумма", "статус", "Дата Заказа", "Источник", "", "Ответственный", "Bo'lim"],
+            ["1", "Maqsuda", "100000", "Успешно", "01.08.2026", "Baza", "0191", "Amir Karimov", "A"],
+            ["2", "Maqsuda 2", "200000", "Успешно", "01.08.2026", "Baza", "0192", "Sardor", "A"],
+        ]
+        source = SheetsSource.__new__(SheetsSource)
+        mock_worksheet = MagicMock()
+        mock_worksheet.get_all_values.return_value = raw_data
+
+        with self.assertLogs("apps.imports.sources.sheets", level="WARNING") as cm:
+            orders = source._parse_orders(mock_worksheet)
+            self.assertEqual(len(orders), 2)
+            self.assertEqual(orders[0].employee_id, "0191")
+            self.assertEqual(orders[1].employee_id, "0192")
+            self.assertTrue(any("Strukturaviy fallback" in log for log in cm.output))
+
+    def test_id_structural_fallback_fails_validation_when_data_is_not_digit_id(self):
+        """When fallback column contains non-digit values (e.g. names), validation fails and raises ValidationError."""
+        raw_data = [
+            ["", "", "№", "Ф.И.О.", "Контактный номер", "Дата Заказа", "Источник", "Amir Karimov", "Ответственный", "Булим", "Товар1"],
+            ["", "", "1", "Maqsuda", "123456789", "01.08.2026", "Baza", "Amir Karimov", "Amir Karimov", "A", "Bioflex"],
+        ]
+        source = SheetsSource.__new__(SheetsSource)
+        mock_worksheet = MagicMock()
+        mock_worksheet.get_all_values.return_value = raw_data
+
+        from django.core.exceptions import ValidationError
+        with self.assertRaises(ValidationError) as exc:
+            source._parse_orders(mock_worksheet)
+        self.assertIn("Ustun topilmadi ('ID')", str(exc.exception))
+
+    def test_proper_id_header_uses_exact_matching_without_fallback(self):
+        """A workbook with explicit 'ID' header resolves via exact match without calling fallback."""
+        raw_data = [
+            ["№", "ID", "Ответственный", "Сумма", "Дата Заказа", "статус", "Источник"],
+            ["1", "0191", "Amir Karimov", "100000", "28.07.2026", "Успешно", "Baza"],
+        ]
+        source = SheetsSource.__new__(SheetsSource)
+        mock_worksheet = MagicMock()
+        mock_worksheet.get_all_values.return_value = raw_data
+
+        with self.assertLogs("apps.imports.sources.sheets", level="INFO") as cm:
+            orders = source._parse_orders(mock_worksheet)
+            self.assertEqual(len(orders), 1)
+            self.assertEqual(orders[0].employee_id, "0191")
+            self.assertTrue(any("Sheet ustun topildi ('ID'): indeks 1 ('ID')" in log for log in cm.output))
+            self.assertFalse(any("Strukturaviy fallback" in log for log in cm.output))

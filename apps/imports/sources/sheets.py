@@ -306,9 +306,24 @@ class SheetsSource(BaseSource):
 
         headings = raw_rows[header_row_idx]
 
-        id_idx = self._find_single_column_index(headings, candidates=["ID", "Tabel raqami", "User ID", "Id", "id"], name="ID")
+        id_candidates = ["ID", "Tabel raqami", "User ID", "Id", "id"]
+        id_idx = self._find_single_column_index(headings, candidates=id_candidates, name="ID", required=False)
         ord_idx = self._find_single_column_index(headings, candidates=["№", "Zakaz №", "Order ID", "Номер", "No", "Nomer"], name="№", required=False)
         name_idx = self._find_single_column_index(headings, candidates=["Ответственный", "Xodim", "Menejer", "Operator", "ФИО", "FISH", "XODIMLAR ISMLARI", "Xodim ismi"], name="Ответственный", required=False)
+
+        if id_idx is None and name_idx is not None and name_idx > 0:
+            candidate_id_idx = name_idx - 1
+            logger.warning(
+                "ID sarlavhasi topilmadi (exact candidate match bo'lmadi). Strukturaviy fallback bo'yicha 'Ответственный' (indeks %s) dan oldingi %s-ustun tanlanmoqda. Sarlavhalar: %s",
+                name_idx,
+                candidate_id_idx,
+                headings,
+            )
+            if self._validate_id_column(raw_rows, header_row_idx, candidate_id_idx):
+                id_idx = candidate_id_idx
+
+        if id_idx is None:
+            raise ValidationError(f"Ustun topilmadi ('ID'): mos nomlar {id_candidates}")
         amount_idx = self._find_single_column_index(headings, candidates=["Сумма", "Summa", "Narxi", "Qiymati", "Summasi", "Obshiy summa"], name="Сумма", required=False)
         date_idx = self._find_single_column_index(headings, candidates=["Дата Заказа", "Дата", "Sana", "Zakaz sanasi", "Sana/vaqt"], name="Дата Заказа", required=False)
         status_idx = self._find_single_column_index(headings, candidates=["статус", "Статус", "Status", "Holat", "Holati"], name="статус", required=False)
@@ -705,9 +720,23 @@ class SheetsSource(BaseSource):
 
         headings = raw_rows[header_row_idx]
 
-        # Check header formats for 'Ish haqi', 'Xodimlar maoshi', or 'List2'
-        id_idx = self._find_single_column_index(headings, candidates=["Tabel raqami", "ID"], name="ID")
-        name_idx = self._find_single_column_index(headings, candidates=["FISH", "XODIMLAR ISMLARI", "Оператор"], name="xodim ismi")
+        id_candidates = ["Tabel raqami", "ID"]
+        id_idx = self._find_single_column_index(headings, candidates=id_candidates, name="ID", required=False)
+        name_idx = self._find_single_column_index(headings, candidates=["FISH", "XODIMLAR ISMLARI", "Оператор"], name="xodim ismi", required=False)
+
+        if id_idx is None and name_idx is not None and name_idx > 0:
+            candidate_id_idx = name_idx - 1
+            logger.warning(
+                "ID sarlavhasi topilmadi (exact candidate match bo'lmadi). Strukturaviy fallback bo'yicha 'xodim ismi' (indeks %s) dan oldingi %s-ustun tanlanmoqda. Sarlavhalar: %s",
+                name_idx,
+                candidate_id_idx,
+                headings,
+            )
+            if self._validate_id_column(raw_rows, header_row_idx, candidate_id_idx):
+                id_idx = candidate_id_idx
+
+        if id_idx is None:
+            raise ValidationError(f"Ustun topilmadi ('ID'): mos nomlar {id_candidates}")
         group_idx = self._find_single_column_index(
             headings,
             candidates=["Bo'lim", "Guruhi", "Guruh", "Bo'lim ", "Guruhlar", "Guruh nomi", "Bo'lim nomi"],
@@ -1026,6 +1055,52 @@ class SheetsSource(BaseSource):
                     cleaned[f] = None
 
         return cleaned
+
+    @staticmethod
+    def _validate_id_column(raw_rows: list[list[Any]], header_row_idx: int, candidate_idx: int) -> bool:
+        """Validate if candidate column contains valid employee IDs (^\d{4,32}$) in >=80% of sampled rows."""
+        sample_size = 0
+        valid_count = 0
+
+        for row in raw_rows[header_row_idx + 1:]:
+            if sample_size >= 50:
+                break
+            if not any(str(cell or "").strip() for cell in row):
+                continue
+
+            val = str(row[candidate_idx]).strip() if candidate_idx < len(row) else ""
+            if not val or SheetsSource._is_sheet_error(val):
+                continue
+
+            sample_size += 1
+            try:
+                norm_id = normalize_employee_id(val)
+                if re.match(r"^\d{4,32}$", norm_id):
+                    valid_count += 1
+            except Exception:
+                pass
+
+        ratio = (valid_count / sample_size) if sample_size > 0 else 0.0
+        passed = sample_size > 0 and ratio >= 0.8
+
+        if passed:
+            logger.info(
+                "ID ustuni strukturaviy fallback tekshiruvi MUVAFFAQIYATLI: sample_size=%s, valid_count=%s, ratio=%.2f, tanlangan_indeks=%s",
+                sample_size,
+                valid_count,
+                ratio,
+                candidate_idx,
+            )
+        else:
+            logger.warning(
+                "ID ustuni strukturaviy fallback tekshiruvi MUVAFFAQIYATSIZ: sample_size=%s, valid_count=%s, ratio=%.2f, tanlangan_indeks=%s rad etildi",
+                sample_size,
+                valid_count,
+                ratio,
+                candidate_idx,
+            )
+
+        return passed
 
     @staticmethod
     def _find_single_column_index(
