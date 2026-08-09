@@ -762,7 +762,7 @@ class SheetsSource(BaseSource):
 
         successful_sales_idx = self._find_single_column_index(
             headings,
-            candidates=["Uspeshka summasi", "Uspeshka", "Успешка summasi", "Успешка"],
+            candidates=["Uspeshka summasi", "Успешка суммаси", "Uspeshka", "Успешка summasi", "Успешка"],
             name="successful_sales",
             required=False,
             exact_only=True,
@@ -904,6 +904,29 @@ class SheetsSource(BaseSource):
 
                 _process_payroll_col(conv_idx, "Konversiya", "conversion_rate", _parse_conv)
                 _process_payroll_col(real_conv_idx, "Real konversiya", "real_conversion_rate", _parse_conv)
+
+                # Fallback: If successful_sales is missing from explicit column, derive from perv_sales + baza_sales
+                if "successful_sales" not in summary:
+                    if perv_sales_idx is not None and baza_sales_idx is not None:
+                        if perv_sales_idx < len(row) and baza_sales_idx < len(row):
+                            raw_perv = str(row[perv_sales_idx]).strip()
+                            raw_baza = str(row[baza_sales_idx]).strip()
+                            if raw_perv and not self._is_sheet_error(raw_perv) and raw_baza and not self._is_sheet_error(raw_baza):
+                                try:
+                                    perv_m = self._parse_money(raw_perv, sheet_name=title, row_idx=row_idx)
+                                    baza_m = self._parse_money(raw_baza, sheet_name=title, row_idx=row_idx)
+                                    uspeshka_derived = perv_m + baza_m
+                                    summary["successful_sales"] = str(uspeshka_derived)
+                                    logger.info(
+                                        "Payroll '%s' %s-qator uchun 'successful_sales' perv+baza orqali hisoblandi: %s + %s = %s",
+                                        title,
+                                        row_idx,
+                                        perv_m,
+                                        baza_m,
+                                        uspeshka_derived,
+                                    )
+                                except Exception:
+                                    pass
 
                 payroll.append(
                     PayrollDTO(
@@ -1116,9 +1139,20 @@ class SheetsSource(BaseSource):
         for candidate in candidates:
             cand_norm = _norm(candidate)
             for idx, col_name in enumerate(headings):
-                col_norm = _norm(col_name)
+                col_name_str = str(col_name or "").strip()
+                col_norm = _norm(col_name_str)
                 if col_norm and col_norm == cand_norm:
-                    logger.info("Sheet ustun topildi ('%s'): indeks %s ('%s')", name, idx, col_name)
+                    if name not in ("conversion", "real_conversion"):
+                        col_lower = col_name_str.lower()
+                        if any(p in col_lower for p in ["foiz", "фоиз", "%"]):
+                            logger.warning(
+                                "Ustun sarlavhasida foiz ko'rsatkichi bo'lgani sababli rad etildi ('%s'): name='%s', idx=%s",
+                                col_name_str,
+                                name,
+                                idx,
+                            )
+                            continue
+                    logger.info("Sheet ustun topildi ('%s'): indeks %s ('%s')", name, idx, col_name_str)
                     return idx
 
         if not exact_only:
@@ -1127,9 +1161,20 @@ class SheetsSource(BaseSource):
                 if not cand_norm:
                     continue
                 for idx, col_name in enumerate(headings):
-                    col_norm = _norm(col_name)
+                    col_name_str = str(col_name or "").strip()
+                    col_norm = _norm(col_name_str)
                     if col_norm and (cand_norm in col_norm or col_norm in cand_norm):
-                        logger.info("Sheet ustun qisman moslik bilan topildi ('%s'): indeks %s ('%s')", name, idx, col_name)
+                        if name not in ("conversion", "real_conversion"):
+                            col_lower = col_name_str.lower()
+                            if any(p in col_lower for p in ["foiz", "фоиз", "%"]):
+                                logger.warning(
+                                    "Ustun sarlavhasida foiz ko'rsatkichi bo'lgani sababli rad etildi ('%s'): name='%s', idx=%s",
+                                    col_name_str,
+                                    name,
+                                    idx,
+                                )
+                                continue
+                        logger.info("Sheet ustun qisman moslik bilan topildi ('%s'): indeks %s ('%s')", name, idx, col_name_str)
                         return idx
 
         if required:

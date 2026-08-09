@@ -91,3 +91,57 @@ class PayrollParsingTest(TestCase):
             self.assertEqual(cleaned["total_sales"], 4)
             self.assertTrue(any("collision" in log.lower() for log in cm.output))
 
+    def test_explicit_uspeshka_column_wins_over_derivation(self) -> None:
+        """When explicit Uspeshka column exists, its value is used instead of deriving perv+baza."""
+        source = SheetsSource.__new__(SheetsSource)
+        source.last_dropped_payroll_rows = []
+
+        mock_ws = MagicMock()
+        mock_ws.title = "List2"
+        mock_ws.get_all_values.return_value = [
+            ["Guruh", "Tabel raqami", "FISH", "Первичный Заказ", "База", "Uspeshka summasi"],
+            ["A", "0191", "Amir Karimov", "3100000", "500000", "4000000"],
+        ]
+
+        parsed = source._parse_payroll(mock_ws)
+        self.assertEqual(len(parsed), 1)
+        self.assertEqual(parsed[0].summary_data.get("successful_sales"), "4000000")
+
+    def test_successful_sales_derivation_from_perv_and_baza(self) -> None:
+        """When explicit Uspeshka column is missing, successful_sales is derived from perv + baza."""
+        source = SheetsSource.__new__(SheetsSource)
+        source.last_dropped_payroll_rows = []
+
+        mock_ws = MagicMock()
+        mock_ws.title = "List2"
+        mock_ws.get_all_values.return_value = [
+            ["Guruh", "Tabel raqami", "FISH", "Первичный Заказ", "База", "успешка фоизи"],
+            ["A", "0191", "Amir Karimov", "3 100 000", "0", "85%"],
+            ["A", "0192", "Sardor", "10 000 000", "5 000 000", "85%"],
+        ]
+
+        with self.assertLogs("apps.imports.sources.sheets", level="INFO") as cm:
+            parsed = source._parse_payroll(mock_ws)
+            self.assertEqual(len(parsed), 2)
+            self.assertEqual(parsed[0].summary_data.get("successful_sales"), "3100000")
+            self.assertEqual(parsed[1].summary_data.get("successful_sales"), "15000000")
+            self.assertTrue(any("perv+baza orqali hisoblandi" in log for log in cm.output))
+
+    def test_successful_sales_derivation_absent_on_formula_error(self) -> None:
+        """When perv or baza has a formula error (#N/A), successful_sales derivation is skipped and key remains absent."""
+        source = SheetsSource.__new__(SheetsSource)
+        source.last_dropped_payroll_rows = []
+
+        mock_ws = MagicMock()
+        mock_ws.title = "List2"
+        mock_ws.get_all_values.return_value = [
+            ["Guruh", "Tabel raqami", "FISH", "Первичный Заказ", "База"],
+            ["A", "0191", "Amir Karimov", "#N/A", "500000"],
+            ["A", "0192", "Sardor", "3100000", "#N/A"],
+        ]
+
+        parsed = source._parse_payroll(mock_ws)
+        self.assertEqual(len(parsed), 2)
+        self.assertIsNone(parsed[0].summary_data.get("successful_sales"))
+        self.assertIsNone(parsed[1].summary_data.get("successful_sales"))
+
