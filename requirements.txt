@@ -9,3 +9,4 @@ gunicorn
 whitenoise
 gspread>=6.0,<7.0
 google-auth>=2.0,<3.0
+
