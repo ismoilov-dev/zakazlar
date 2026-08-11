@@ -10,8 +10,29 @@ from aiogram.types import BotCommand
 from apps.telegram_bot.routers import router
 
 
+import logging
+import os
+import subprocess
+
+logger = logging.getLogger(__name__)
+
+
+def _get_git_commit() -> str:
+    try:
+        res = subprocess.run(["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True, timeout=2)
+        if res.returncode == 0 and res.stdout.strip():
+            return res.stdout.strip()
+    except Exception:
+        pass
+    return "unknown"
+
+
 async def run_polling(token: str) -> None:
     """Start long polling with the project's isolated router tree."""
+    commit_hash = _get_git_commit()
+    pid = os.getpid()
+    logger.info("Starting Telegram bot process (PID: %s, Commit: %s)", pid, commit_hash)
+
     bot = Bot(token=token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     dispatcher = Dispatcher()
     dispatcher.include_router(router)
