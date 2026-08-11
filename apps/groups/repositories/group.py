@@ -14,4 +14,7 @@ class SalesGroupRepository(DjangoRepository[SalesGroup]):
         return group
 
     def get_for_leader(self, *, leader_id: int) -> SalesGroup:
-        return self.model.objects.get(leader_id=leader_id, is_active=True)
+        group = self.model.objects.filter(leader_id=leader_id, is_active=True).first()
+        if not group:
+            raise SalesGroup.DoesNotExist("Guruh topilmadi.")
+        return group

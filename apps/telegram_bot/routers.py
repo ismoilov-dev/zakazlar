@@ -7,6 +7,7 @@ import inspect
 import logging
 import math
 import typing
+import uuid
 from datetime import date
 
 from django.conf import settings
@@ -222,8 +223,10 @@ async def _send_or_edit_registration_prompt(
             if "message is not modified" in str(exc).lower():
                 return
             logger.warning("Failed to edit message_id %s in chat %s: %s", bot_message_id, getattr(msg.chat, "id", None), exc)
+            await state.update_data(bot_message_id=None)
         except Exception as exc:
             logger.warning("Failed to edit message_id %s in chat %s: %s", bot_message_id, getattr(msg.chat, "id", None), exc)
+            await state.update_data(bot_message_id=None)
 
     if hasattr(msg, "answer"):
         try:
@@ -303,8 +306,10 @@ async def start(message: Message, state: FSMContext) -> None:
         await state.set_state(RegistrationStates.select_role)
         await _send_or_edit_registration_prompt(message, state, text, reply_markup=builder.as_markup())
     except Exception as exc:
-        logger.exception("Error in /start handler: %s", exc)
-        await message.answer("Xatolik yuz berdi. Iltimos, /start tugmasini qayta bosing.")
+        corr_id = uuid.uuid4().hex[:8]
+        logger.error("Error in /start handler [code: %s]: %s", corr_id, exc, exc_info=True)
+        await state.clear()
+        await message.answer(f"Xatolik yuz berdi (kod: {corr_id}). Iltimos, /start tugmasini qayta bosing.")
 
 
 @router.callback_query(F.data.in_({"role_ROP", "role_MOP"}))
