@@ -6,6 +6,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from asgiref.sync import sync_to_async
 from django.core.cache import cache
 from django.test import TestCase
+from django.utils import timezone
 
 from apps.accounts.models import TelegramAccount
 from apps.employees.models import Employee
@@ -343,4 +344,96 @@ class RegistrationFlowTestCase(TestCase):
         _, edit_kwargs = msg_name.bot.edit_message_text.call_args
         self.assertIn("mos kelmadi", edit_kwargs.get("text"))
         self.assertEqual(await state.get_state(), RegistrationStates.enter_id.state)
+
+    async def test_start_unbound_user_empty_fsm(self) -> None:
+        """/start from an unbound user with empty FSM displays role selection menu."""
+        message = AsyncMock()
+        message.from_user.id = 80001
+        message.answer.return_value.message_id = 101
+        state = self._get_fsm_context(80001)
+
+        await start(message, state)
+
+        self.assertEqual(await state.get_state(), RegistrationStates.select_role.state)
+        message.answer.assert_called_once()
+        text = message.answer.call_args[0][0]
+        self.assertIn("rolingizni tanlang", text)
+        self.assertNotIn("Xatolik yuz berdi", text)
+
+    async def test_start_bound_user(self) -> None:
+        """/start from a bound user displays already registered info and services menu."""
+        await sync_to_async(TelegramAccount.objects.create)(
+            employee=self.employee2, telegram_id=80002, username="shuhrat"
+        )
+        message = AsyncMock()
+        message.from_user.id = 80002
+        state = self._get_fsm_context(80002)
+
+        await start(message, state)
+
+        self.assertIsNone(await state.get_state())
+        message.answer.assert_called_once()
+        text = message.answer.call_args[0][0]
+        self.assertIn("Shuhrat Karimov", text)
+        self.assertIn("0002", text)
+        self.assertNotIn("Xatolik yuz berdi", text)
+
+    async def test_start_stale_message_id_in_fsm(self) -> None:
+        """/start with stale message_id in FSM state clears state and sends usable reply."""
+        state = self._get_fsm_context(80003)
+        await state.update_data(bot_message_id=99999)
+        await state.set_state(RegistrationStates.enter_id)
+
+        message = AsyncMock()
+        message.from_user.id = 80003
+        message.answer.return_value.message_id = 202
+
+        await start(message, state)
+
+        self.assertEqual(await state.get_state(), RegistrationStates.select_role.state)
+        message.answer.assert_called_once()
+        text = message.answer.call_args[0][0]
+        self.assertIn("rolingizni tanlang", text)
+        self.assertNotIn("Xatolik yuz berdi", text)
+
+    async def test_start_employee_leads_two_groups(self) -> None:
+        """/start for an employee who leads two active groups produces usable reply without error."""
+        emp = await sync_to_async(Employee.objects.create)(
+            employee_id="0099", full_name="Multi Group Leader", is_active=True
+        )
+        await sync_to_async(SalesGroup.objects.create)(code="GRP_A", name="Group A", leader=emp, is_active=True)
+        await sync_to_async(SalesGroup.objects.create)(code="GRP_B", name="Group B", leader=emp, is_active=True)
+        await sync_to_async(TelegramAccount.objects.create)(
+            employee=emp, telegram_id=80004, username="multileader", role="ROP", rop_authenticated_at=timezone.now()
+        )
+
+        message = AsyncMock()
+        message.from_user.id = 80004
+        state = self._get_fsm_context(80004)
+
+        await start(message, state)
+
+        message.answer.assert_called_once()
+        text = message.answer.call_args[0][0]
+        self.assertIn("Multi Group Leader", text)
+        self.assertNotIn("Xatolik yuz berdi", text)
+
+    async def test_start_error_includes_correlation_id_and_clears_state(self) -> None:
+        """When an unhandled exception occurs in /start, an 8-hex-char correlation ID is included and FSM is cleared."""
+        message = AsyncMock()
+        message.from_user.id = 80005
+        state = self._get_fsm_context(80005)
+        await state.set_state(RegistrationStates.enter_id)
+
+        from unittest.mock import patch
+        with patch("apps.telegram_bot.routers.sync_to_async", side_effect=RuntimeError("DB exploded")):
+            await start(message, state)
+
+        self.assertIsNone(await state.get_state())
+        message.answer.assert_called_once()
+        text = message.answer.call_args[0][0]
+        self.assertIn("Xatolik yuz berdi (kod: ", text)
+        import re
+        match = re.search(r"kod:\s*([0-9a-f]{8})\)", text)
+        self.assertIsNotNone(match)
 
