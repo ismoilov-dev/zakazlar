@@ -54,8 +54,8 @@ class Command(BaseCommand):
                 started_str = timezone.localtime(log.started_at).strftime("%d.%m.%Y %H:%M:%S")
                 self.stdout.write(st_color(f"   • [{started_str}] {log.sync_type.upper()} -> {log.status.upper()}"))
                 self.stdout.write(f"     Row count: {log.row_count} | Yangi: {log.created_sales} | Yangilandi: {log.updated_sales}")
-                if log.error_message:
-                    self.stdout.write(self.style.ERROR(f"     Xatolik: {log.error_message}"))
+                if log.error_text:
+                    self.stdout.write(self.style.ERROR(f"     Xatolik: {log.error_text}"))
 
         # 4. Summary Verdict
         self.stdout.write(self.style.MIGRATE_HEADING("\n=== DIAGNOSTIKA YAKUNI ==="))
