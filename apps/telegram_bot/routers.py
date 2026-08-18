@@ -113,12 +113,8 @@ async def ensure_fresh_data_and_get_timestamp() -> tuple[str, bool]:
                 _background_tasks.add(task)
                 task.add_done_callback(_background_tasks.discard)
                 _current_sync_task = task
-            sync_task = _current_sync_task
-
-        try:
-            await asyncio.wait_for(asyncio.shield(sync_task), timeout=SYNC_TIMEOUT_SECONDS)
-        except TimeoutError:
-            logger.warning("Sync timed out after %s seconds; serving existing snapshot", SYNC_TIMEOUT_SECONDS)
+        # Trigger background task asynchronously without blocking Telegram bot response thread
+        pass
 
     last_attempt = await sync_to_async(lambda: SyncLog.objects.filter(sync_type="payroll").order_by("-started_at").first())()
     last_successful = await sync_to_async(SyncLog.get_last_successful)(sync_type="payroll")
