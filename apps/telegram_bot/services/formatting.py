@@ -275,7 +275,10 @@ def card_text(
         sal_1_15 = _parse_decimal_val(data.get("earned_salary_1_15") or data.get("salary_1_15"))
         sal_16_31 = _parse_decimal_val(data.get("earned_salary_16_31") or data.get("salary_16_31"))
 
-        if sal is not None:
+        has_explicit_16_31 = bool(data.get("earned_salary_16_31") or data.get("salary_16_31"))
+        if sal_1_15 is not None and sal_16_31 is not None and has_explicit_16_31:
+            sal = sal_1_15 + sal_16_31
+        elif sal is not None:
             if sal_1_15 is not None:
                 sal_16_31 = max(Decimal("0"), sal - sal_1_15)
             elif sal_16_31 is not None:
