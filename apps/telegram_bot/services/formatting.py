@@ -272,11 +272,25 @@ def card_text(
         if sal is None and fallback_salary is not None and not period_label:
             sal = fallback_salary
 
+        perv = _parse_decimal_val(data.get("perv_sales"))
+        baza = _parse_decimal_val(data.get("baza_sales"))
+        if perv is not None or baza is not None:
+            p_val = perv or Decimal("0")
+            b_val = baza or Decimal("0")
+            grp_upper = (group_code or "").strip().upper()
+            if grp_upper == "BAZA":
+                calc_sal = (p_val * Decimal("0.12")) + (b_val * Decimal("0.12"))
+            else:
+                calc_sal = (p_val * Decimal("0.12")) + (b_val * Decimal("0.16"))
+
+            if calc_sal > Decimal("0") and (sal is None or calc_sal > sal):
+                sal = calc_sal
+
         sal_1_15 = _parse_decimal_val(data.get("earned_salary_1_15") or data.get("salary_1_15"))
         sal_16_31 = _parse_decimal_val(data.get("earned_salary_16_31") or data.get("salary_16_31"))
 
-        has_explicit_16_31 = bool(data.get("earned_salary_16_31") or data.get("salary_16_31"))
-        if sal_1_15 is not None and sal_16_31 is not None and has_explicit_16_31:
+        has_explicit_16_31 = sal_16_31 is not None and sal_16_31 > Decimal("0")
+        if sal_1_15 is not None and has_explicit_16_31:
             sal = sal_1_15 + sal_16_31
         elif sal is not None:
             if sal_1_15 is not None:

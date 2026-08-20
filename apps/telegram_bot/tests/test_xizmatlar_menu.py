@@ -220,4 +220,18 @@ class XizmatlarMenuTest(TestCase):
         self.assertIn("1-15 kunlik oylik: <b>2\u00a0000\u00a0000 so'm</b>", text_1_15)
         self.assertIn("16-31 kunlik oylik: <b>3\u00a0000\u00a0000 so'm</b>", text_16_31)
 
+    def test_salary_16_31_calculated_when_total_salary_equals_1_15_salary_but_sales_exist(self):
+        summary_data = {
+            "earned_salary": "1398000.00",
+            "earned_salary_1_15": "1398000.00",
+            "perv_sales": "10000000.00",
+            "baza_sales": "5000000.00",
+        }
+        # For group BAZA: 10M*0.12 + 5M*0.12 = 1.8M total salary. 1.8M - 1.398M = 402,000 for 16-31.
+        text_16_31 = card_text("salary_16_31", "Bektemir Turdialiyev", "BAZA", summary_data)
+        text_earned = card_text("earned_salary", "Bektemir Turdialiyev", "BAZA", summary_data)
+
+        self.assertIn("16-31 kunlik oylik: <b>402\u00a0000 so'm</b>", text_16_31)
+        self.assertIn("Shaxsiy oylik: <b>1\u00a0800\u00a0000 so'm</b>", text_earned)
+
 
