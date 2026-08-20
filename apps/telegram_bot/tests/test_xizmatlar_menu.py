@@ -208,4 +208,16 @@ class XizmatlarMenuTest(TestCase):
         self.assertIn("📅 16-31 kunlik oylik", button_texts)
         self.assertIn("💵 Jami oylik", button_texts)
 
+    def test_salary_16_31_calculated_by_subtracting_1_15_from_total(self):
+        summary_data = {
+            "earned_salary": "5000000.00",
+            "earned_salary_1_15": "2000000.00",
+            "earned_salary_16_31": "0.00",
+        }
+        text_1_15 = card_text("salary_1_15", "Amir Karimov", "A", summary_data)
+        text_16_31 = card_text("salary_16_31", "Amir Karimov", "A", summary_data)
+
+        self.assertIn("1-15 kunlik oylik: <b>2\u00a0000\u00a0000 so'm</b>", text_1_15)
+        self.assertIn("16-31 kunlik oylik: <b>3\u00a0000\u00a0000 so'm</b>", text_16_31)
+
 

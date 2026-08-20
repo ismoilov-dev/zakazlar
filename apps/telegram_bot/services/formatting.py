@@ -275,10 +275,14 @@ def card_text(
         sal_1_15 = _parse_decimal_val(data.get("earned_salary_1_15") or data.get("salary_1_15"))
         sal_16_31 = _parse_decimal_val(data.get("earned_salary_16_31") or data.get("salary_16_31"))
 
-        if sal_1_15 is None and sal_16_31 is not None and sal is not None:
-            sal_1_15 = max(Decimal("0"), sal - sal_16_31)
-        elif sal_16_31 is None and sal_1_15 is not None and sal is not None:
-            sal_16_31 = max(Decimal("0"), sal - sal_1_15)
+        if sal is not None:
+            if sal_1_15 is not None:
+                sal_16_31 = max(Decimal("0"), sal - sal_1_15)
+            elif sal_16_31 is not None:
+                sal_1_15 = max(Decimal("0"), sal - sal_16_31)
+            else:
+                sal_1_15 = sal
+                sal_16_31 = Decimal("0")
 
         if card_type == "earned_salary":
             lines.append(f"💵 Shaxsiy oylik: {money(sal)}")
