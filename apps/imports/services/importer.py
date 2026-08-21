@@ -41,7 +41,7 @@ class DataImporter:
         self.sales = SaleRepository()
 
     def update_group_sales_totals(self, period: date | None = None) -> None:
-        """Audit discrepancy and fallback update SalesGroup.group_total_sales if Sheets summary missing."""
+        """Audit discrepancy between Google Sheets group total sales and DB Sale aggregates."""
         from apps.groups.models import SalesGroup
         from apps.statistics.repositories.statistics import StatisticsRepository
 
@@ -60,13 +60,6 @@ class DataImporter:
                         db_ts,
                         diff,
                     )
-
-            # Fallback ONLY if Google Sheets summary value is missing/None or 0
-            if grp.group_total_sales is None or grp.group_total_sales == Decimal("0.00"):
-                if db_ts > Decimal("0.00"):
-                    grp.group_total_sales = db_ts
-                    grp.synced_at = timezone.now()
-                    grp.save(update_fields=["group_total_sales", "synced_at"])
 
     def import_payroll_only(
         self,
