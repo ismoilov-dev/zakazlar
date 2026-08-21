@@ -1,6 +1,7 @@
 """Telegram message rendering. Contains no business calculations."""
 
 import html
+import logging
 from datetime import date
 from decimal import Decimal
 from typing import Any
@@ -8,6 +9,8 @@ from typing import Any
 from aiogram.types import InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from django.utils import timezone
+
+logger = logging.getLogger(__name__)
 
 from apps.statistics.services.statistics import GroupDashboard
 
