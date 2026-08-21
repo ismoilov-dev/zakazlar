@@ -40,6 +40,21 @@ class DataImporter:
         self.employees = EmployeeRepository()
         self.sales = SaleRepository()
 
+    def update_group_sales_totals(self, period: date | None = None) -> None:
+        """Update active SalesGroup.group_total_sales from DB Sale aggregates."""
+        from apps.groups.models import SalesGroup
+        from apps.statistics.repositories.statistics import StatisticsRepository
+
+        stats_repo = StatisticsRepository()
+        for grp in SalesGroup.objects.filter(is_active=True):
+            db_tot = stats_repo.group_totals(grp.id, target_date=period)
+            if db_tot:
+                ts = db_tot.get("total_sales") or Decimal("0.00")
+                if grp.group_total_sales != ts:
+                    grp.group_total_sales = ts
+                    grp.synced_at = timezone.now()
+                    grp.save(update_fields=["group_total_sales", "synced_at"])
+
     def import_payroll_only(
         self,
         *,
@@ -164,6 +179,7 @@ class DataImporter:
                 monthly_salary=Decimal("0.00"),
             )
 
+            self.update_group_sales_totals(period=period)
             return len(payroll)
 
     def import_orders_only(
@@ -254,10 +270,12 @@ class DataImporter:
                     )
                 )
 
-            if not sales_to_upsert:
-                return (0, 0)
+            res = (0, 0)
+            if sales_to_upsert:
+                res = self.sales.bulk_upsert(sales_to_upsert)
 
-            return self.sales.bulk_upsert(sales_to_upsert)
+            self.update_group_sales_totals(period=period)
+            return res
 
     def import_dto_lists(
         self,
@@ -282,20 +300,7 @@ class DataImporter:
                 job=job,
                 period=period,
             )
-            # Update SalesGroup.group_total_sales with authoritative DB Sale aggregates
-            from apps.groups.models import SalesGroup
-            from apps.statistics.repositories.statistics import StatisticsRepository
-
-            stats_repo = StatisticsRepository()
-            for grp in SalesGroup.objects.filter(is_active=True):
-                db_tot = stats_repo.group_totals(grp.id, target_date=period)
-                if db_tot and db_tot.get("total_orders", 0) > 0:
-                    ts = db_tot.get("total_sales") or Decimal("0.00")
-                    if grp.group_total_sales != ts:
-                        grp.group_total_sales = ts
-                        grp.synced_at = timezone.now()
-                        grp.save(update_fields=["group_total_sales", "synced_at"])
-
+            self.update_group_sales_totals(period=period)
             return ImportResult(
                 processed_rows=len(orders),
                 created_sales=created,
