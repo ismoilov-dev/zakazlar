@@ -35,6 +35,9 @@ async def run_polling(token: str) -> None:
 
     bot = Bot(token=token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     dispatcher = Dispatcher()
+    
+    from apps.telegram_bot.services.error_handler import global_error_handler
+    dispatcher.error.register(global_error_handler)
     dispatcher.include_router(router)
     try:
         await bot.delete_webhook(drop_pending_updates=True)
