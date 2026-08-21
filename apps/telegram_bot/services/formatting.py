@@ -322,6 +322,42 @@ def card_text(
         lines.append("Bu oy uchun ma'lumot saqlanmagan.")
         return "\n".join(lines)
 
+    db_sales_total: Decimal | None = None
+    db_sales_successful: Decimal | None = None
+    db_sales_pending: Decimal | None = None
+    db_sales_cancelled: Decimal | None = None
+
+    if employee_id:
+        try:
+            from apps.sales.models import Sale, SaleStatus
+            from django.db.models import Sum
+            from apps.imports.models import SpreadsheetPeriod
+            from django.utils import timezone
+
+            p_date = period_date
+            if not p_date:
+                active_sp = SpreadsheetPeriod.objects.filter(is_active=True).first()
+                p_date = active_sp.period if active_sp else timezone.localtime().date()
+
+            qs = Sale.objects.filter(
+                employee__employee_id=employee_id,
+                ordered_at__year=p_date.year,
+                ordered_at__month=p_date.month,
+            )
+            if qs.exists():
+                db_sales_total = qs.aggregate(t=Sum("sale_amount")).get("t") or Decimal("0")
+                db_sales_successful = (
+                    qs.filter(status=SaleStatus.SUCCESSFUL).aggregate(t=Sum("sale_amount")).get("t") or Decimal("0")
+                )
+                db_sales_pending = (
+                    qs.filter(status=SaleStatus.PENDING).aggregate(t=Sum("sale_amount")).get("t") or Decimal("0")
+                )
+                db_sales_cancelled = (
+                    qs.filter(status=SaleStatus.CANCELLED).aggregate(t=Sum("sale_amount")).get("t") or Decimal("0")
+                )
+        except Exception as exc:
+            logger.warning("Could not calculate DB sale aggregation for employee %s: %s", employee_id, exc)
+
     if card_type in ("earned_salary", "salary_1_15", "salary_16_31"):
         raw_sal = data.get("earned_salary")
         sal = _parse_decimal_val(raw_sal)
@@ -374,46 +410,25 @@ def card_text(
             lines.append(f"💵 16-31 kunlik oylik: {money(sal_16_31)}")
 
     elif card_type == "total_sales":
-        ts = _parse_decimal_val(data.get("total_sales"))
-        perv = _parse_decimal_val(data.get("perv_sales")) or Decimal("0")
-        baza = _parse_decimal_val(data.get("baza_sales")) or Decimal("0")
-        otkaz = _parse_decimal_val(data.get("otkaz_sales")) or Decimal("0")
-        v_proc = _parse_decimal_val(data.get("v_proc_sales")) or Decimal("0")
-        calc_ts = perv + baza + otkaz + v_proc
-
-        if ts is None and calc_ts > Decimal("0"):
-            ts = calc_ts
-        elif ts is not None and calc_ts > Decimal("0") and abs(ts - calc_ts) > Decimal("0.01"):
-            logger.error(
-                "Discrepancy in total_sales for %s: summary_data=%s vs component_sum=%s",
-                full_name,
-                ts,
-                calc_ts,
-            )
-
+        l2_ts = _parse_decimal_val(data.get("total_sales"))
+        ts = db_sales_total if db_sales_total is not None else l2_ts
         lines.append(f"📊 Jami savdo: {money(ts)}")
 
-    elif card_type == "uspeshka":
-        ss = _parse_decimal_val(data.get("successful_sales"))
-        perv = _parse_decimal_val(data.get("perv_sales")) or Decimal("0")
-        baza = _parse_decimal_val(data.get("baza_sales")) or Decimal("0")
-        calc_ss = perv + baza
+        if l2_ts is not None and db_sales_total is not None and abs(l2_ts - db_sales_total) > Decimal("0.01"):
+            lines.append(f"\n⚠️ <i>List2 va zakazlar bo'yicha hisob mos kelmadi ({money(l2_ts)} vs {money(db_sales_total)})</i>")
 
-        if ss is None and calc_ss > Decimal("0"):
-            ss = calc_ss
-        elif ss is not None and calc_ss > Decimal("0") and abs(ss - calc_ss) > Decimal("0.01"):
-            logger.error(
-                "Discrepancy in successful_sales for %s: summary_data=%s vs perv+baza=%s",
-                full_name,
-                ss,
-                calc_ss,
-            )
+    elif card_type == "uspeshka":
+        l2_ss = _parse_decimal_val(data.get("successful_sales"))
+        ss = db_sales_successful if db_sales_successful is not None else l2_ss
 
         so_raw = data.get("successful_orders")
         conv_raw = data.get("conversion_rate")
         rconv_raw = data.get("real_conversion_rate")
 
         lines.append(f"✅ Uspeshka summasi: {money(ss)}")
+
+        if l2_ss is not None and db_sales_successful is not None and abs(l2_ss - db_sales_successful) > Decimal("0.01"):
+            lines.append(f"\n⚠️ <i>List2 va zakazlar bo'yicha hisob mos kelmadi ({money(l2_ss)} vs {money(db_sales_successful)})</i>")
 
         if so_raw is not None and str(so_raw).strip() != "":
             try:
@@ -443,6 +458,20 @@ def card_text(
             lines.append(f"📊 Real konversiya: {MISSING_VALUE_TEXT}")
 
     elif card_type == "otkaz":
+        l2_otkaz = _parse_decimal_val(data.get("otkaz_sales"))
+        otkaz = db_sales_cancelled if db_sales_cancelled is not None else l2_otkaz
+        lines.append(f"❌ Otkaz summasi: {money(otkaz)}")
+
+        if l2_otkaz is not None and db_sales_cancelled is not None and abs(l2_otkaz - db_sales_cancelled) > Decimal("0.01"):
+            lines.append(f"\n⚠️ <i>List2 va zakazlar bo'yicha hisob mos kelmadi ({money(l2_otkaz)} vs {money(db_sales_cancelled)})</i>")
+
+    elif card_type == "v_proc":
+        l2_vp = _parse_decimal_val(data.get("v_proc_sales"))
+        vp = db_sales_pending if db_sales_pending is not None else l2_vp
+        lines.append(f"⏳ В процесс summasi: {money(vp)}")
+
+        if l2_vp is not None and db_sales_pending is not None and abs(l2_vp - db_sales_pending) > Decimal("0.01"):
+            lines.append(f"\n⚠️ <i>List2 va zakazlar bo'yicha hisob mos kelmadi ({money(l2_vp)} vs {money(db_sales_pending)})</i>")
         otkaz = _parse_decimal_val(data.get("otkaz_sales"))
         lines.append(f"❌ Otkaz summasi: {money(otkaz)}")
 

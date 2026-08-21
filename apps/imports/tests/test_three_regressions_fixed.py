@@ -11,7 +11,7 @@ from apps.imports.dto import OrderDTO
 from apps.imports.models import SyncLog, SyncStatus
 from apps.imports.services.importer import DataImporter
 from apps.imports.sources.sheets import SheetsSource
-from apps.sales.models import Sale
+from apps.sales.models import Sale, SaleStatus
 from apps.telegram_bot.services.formatting import card_text
 
 
@@ -113,3 +113,50 @@ class ThreeRegressionsFixedTests(TestCase):
         self.assertNotIn("У КУРЬЕРА", parsed_codes)
         self.assertNotIn("JAMI:", parsed_codes)
         self.assertNotIn("JAMI", parsed_codes)
+
+    def test_6_card_text_shows_authoritative_sum_and_mismatch_warning(self):
+        """6. card_text uses DB Sale model aggregation as authoritative source and shows warning if List2 differs."""
+        now = timezone.now()
+        Sale.objects.create(
+            employee=self.emp_xumoyun,
+            external_order_id="TEST-1",
+            sale_amount=Decimal("42455000.00"),
+            status=SaleStatus.SUCCESSFUL,
+            ordered_at=now,
+        )
+        Sale.objects.create(
+            employee=self.emp_xumoyun,
+            external_order_id="TEST-2",
+            sale_amount=Decimal("19255000.00"),
+            status=SaleStatus.CANCELLED,
+            ordered_at=now,
+        )
+        Sale.objects.create(
+            employee=self.emp_xumoyun,
+            external_order_id="TEST-3",
+            sale_amount=Decimal("8000000.00"),
+            status=SaleStatus.PENDING,
+            ordered_at=now,
+        )
+
+        # List2 summary_data has old/flawed total (59 330 000)
+        summary_data = {
+            "total_sales": "59330000",
+            "successful_sales": "42455000",
+            "otkaz_sales": "19255000",
+            "v_proc_sales": "0",
+        }
+
+        text = card_text(
+            card_type="total_sales",
+            full_name=self.emp_xumoyun.full_name,
+            group_code=self.emp_xumoyun.group.code,
+            summary_data=summary_data,
+            employee_id=self.emp_xumoyun.employee_id,
+            period_date=now.date(),
+        )
+
+        # Assert authoritative DB Sale total (69 710 000) is displayed
+        self.assertIn("69\xa0710\xa0000 so'm", text)
+        # Assert warning badge is rendered for List2 vs DB Sale mismatch
+        self.assertIn("List2 va zakazlar bo'yicha hisob mos kelmadi", text)

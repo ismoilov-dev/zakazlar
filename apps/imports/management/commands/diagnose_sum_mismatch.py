@@ -179,7 +179,7 @@ class Command(BaseCommand):
                     f"      - '{reason}' -> {info['count']} qator, {info['sum']:,.2f} so'm | Miso: {', '.join(info['examples'])}"
                 )
 
-        # 4. DATABASE PERSISTED SALE RECORDS ANALYSIS
+        # 4. DATABASE PERSISTED SALE RECORDS ANALYSIS (SQL Aggregation)
         db_qs = Sale.objects.filter(
             ordered_at__year=target_date.year,
             ordered_at__month=target_date.month,
@@ -192,29 +192,37 @@ class Command(BaseCommand):
         db_successful_sum = (
             db_qs.filter(status=SaleStatus.SUCCESSFUL).aggregate(total=Sum("sale_amount")).get("total") or Decimal("0")
         )
+        db_pending_sum = (
+            db_qs.filter(status=SaleStatus.PENDING).aggregate(total=Sum("sale_amount")).get("total") or Decimal("0")
+        )
+        db_cancelled_sum = (
+            db_qs.filter(status=SaleStatus.CANCELLED).aggregate(total=Sum("sale_amount")).get("total") or Decimal("0")
+        )
 
-        self.stdout.write(f"\n4️⃣ Bazaga Yozilgan Sale Yozuvlari:")
-        self.stdout.write(f"   • Qatorlar soni: {db_sale_count} ta")
-        self.stdout.write(f"   • Jami SUM (Barcha statuslar): {db_sale_sum_agg:,.2f} so'm")
-        self.stdout.write(f"   • Faqat SUCCESSFUL SUM:        {db_successful_sum:,.2f} so'm")
+        self.stdout.write(f"\n4️⃣ Bazaga Yozilgan Sale Yozuvlari (SQL Aggregation):")
+        self.stdout.write(f"   • Qatorlar soni:                    {db_sale_count} ta")
+        self.stdout.write(f"   • Sale aggregation (barcha status): {db_sale_sum_agg:,.2f} so'm")
+        self.stdout.write(f"   • Sale aggregation (successful):   {db_successful_sum:,.2f} so'm")
+        self.stdout.write(f"   • Sale aggregation (pending):      {db_pending_sum:,.2f} so'm")
+        self.stdout.write(f"   • Sale aggregation (cancelled):    {db_cancelled_sum:,.2f} so'm")
 
-        delta_2_4 = parsed_dto_sum - db_sale_sum_agg
-        self.stdout.write(self.style.WARNING(f"   ➡️ DELTA (Parsed DTO - DB Sale All): {delta_2_4:,.2f} so'm"))
-
-        # 5. STATISTICS SERVICE QUERY ANALYSIS
-        stat_service = StatisticsService()
+        # 5. LIST2 SUMMARY_DATA vs SALE AGGREGATION COMPARISON
         if target_emp_id:
             emp = Employee.objects.filter(employee_id=target_emp_id).first()
             if emp:
-                emp_dashboard = stat_service.get_dashboard_for_employee(emp, period_date=target_date)
-                summary_data = emp_dashboard.summary_data or {}
-                self.stdout.write(f"\n5️⃣ Statistics Query & Employee summary_data (ID: {target_emp_id}):")
-                self.stdout.write(f"   • summary_data total_sales:      {summary_data.get('total_sales')}")
-                self.stdout.write(f"   • summary_data successful_sales: {summary_data.get('successful_sales')}")
-                self.stdout.write(f"   • summary_data perv_sales:       {summary_data.get('perv_sales')}")
-                self.stdout.write(f"   • summary_data baza_sales:       {summary_data.get('baza_sales')}")
-                self.stdout.write(f"   • summary_data otkaz_sales:      {summary_data.get('otkaz_sales')}")
-                self.stdout.write(f"   • summary_data v_proc_sales:     {summary_data.get('v_proc_sales')}")
+                summary_data = emp.summary_data or {}
+                list2_total_sales = Decimal(str(summary_data.get("total_sales", 0) or 0))
+                delta_l2_all = list2_total_sales - db_sale_sum_agg
+                delta_l2_succ = list2_total_sales - db_successful_sum
+
+                self.stdout.write(f"\n5️⃣ Xodim ({emp.full_name}, ID: {target_emp_id}) bo'yicha MANBALAR SOLISHTIRISHI:")
+                self.stdout.write(f"   • List2 summary_data['total_sales'] = {list2_total_sales:,.2f} so'm")
+                self.stdout.write(f"   • Sale aggregation (barcha status)  = {db_sale_sum_agg:,.2f} so'm")
+                self.stdout.write(f"   • Sale aggregation (successful)     = {db_successful_sum:,.2f} so'm")
+                self.stdout.write(f"   • Sale aggregation (pending)        = {db_pending_sum:,.2f} so'm")
+                self.stdout.write(f"   • Sale aggregation (cancelled)      = {db_cancelled_sum:,.2f} so'm")
+                self.stdout.write(self.style.WARNING(f"   ➡️ DELTA (List2 - Sale All):        {delta_l2_all:,.2f} so'm"))
+                self.stdout.write(self.style.WARNING(f"   ➡️ DELTA (List2 - Sale Successful): {delta_l2_succ:,.2f} so'm"))
 
         # 6. TELEGRAM BOT FORMATTING OUTPUT
         from apps.telegram_bot.services.formatting import card_text
