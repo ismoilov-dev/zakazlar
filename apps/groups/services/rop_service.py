@@ -15,7 +15,20 @@ class RopService:
     """Calculate ROP group sales, statistics, and salary."""
 
     def get_group_sales_totals(self, group: SalesGroup) -> dict[str, Any]:
-        """Calculate group sales totals by summing summary_data across group employees."""
+        """Calculate group sales totals from DB Sale aggregates (fallback to summary_data)."""
+        from apps.statistics.repositories.statistics import StatisticsRepository
+
+        db_totals = StatisticsRepository().group_totals(group.id)
+        if db_totals and db_totals.get("total_orders", 0) > 0:
+            succ = (db_totals.get("perv_sales") or Decimal("0")) + (db_totals.get("baza_sales") or Decimal("0"))
+            return {
+                "total_sales": db_totals.get("total_sales") or Decimal("0.00"),
+                "successful_sales": succ,
+                "otkaz_sales": db_totals.get("otkaz_sales") or Decimal("0.00"),
+                "v_proc_sales": db_totals.get("v_proc_sales") or Decimal("0.00"),
+                "uncalculated_uspeshka_count": 0,
+            }
+
         employees = Employee.objects.filter(group=group, is_active=True)
 
         totals: dict[str, Any] = {
@@ -59,9 +72,25 @@ class RopService:
 
     def get_group_stats(self, group: SalesGroup) -> dict[str, int | None]:
         """Calculate group headcount, total packaging, and active sellers count."""
-        employees = Employee.objects.filter(group=group, is_active=True)
+        from apps.statistics.repositories.statistics import StatisticsRepository
 
+        employees = Employee.objects.filter(group=group, is_active=True)
         total_count = employees.count()
+
+        db_totals = StatisticsRepository().group_totals(group.id)
+        if db_totals and db_totals.get("total_orders", 0) > 0:
+            total_upakovka = db_totals.get("successful_orders", 0)
+            stats_repo = StatisticsRepository()
+            active_count = sum(
+                1 for emp in employees
+                if (stats_repo.employee_totals(emp.id).get("total_sales") or Decimal("0")) > Decimal("0")
+            )
+            return {
+                "total_count": total_count,
+                "total_upakovka": total_upakovka,
+                "active_count": active_count,
+            }
+
         total_upakovka: int | None = 0
         active_count = 0
 
@@ -132,11 +161,21 @@ class RopService:
 
     def get_group_employee_list(self, group: SalesGroup, filter_key: str) -> list[dict[str, Any]]:
         """Fetch active employees for group, filter by sales, and sort highest sales first."""
+        from apps.statistics.repositories.statistics import StatisticsRepository
+
         employees = Employee.objects.filter(group=group, is_active=True)
 
+        stats_repo = StatisticsRepository()
         parsed_list: list[dict[str, Any]] = []
         for emp in employees:
-            sales_val, orders_val, has_error = self.parse_employee_sales_data(emp.summary_data or {})
+            emp_tot = stats_repo.employee_totals(emp.id)
+            if emp_tot and emp_tot.get("total_orders", 0) > 0:
+                sales_val = emp_tot.get("total_sales") or Decimal("0")
+                orders_val = emp_tot.get("successful_orders") or 0
+                has_error = False
+            else:
+                sales_val, orders_val, has_error = self.parse_employee_sales_data(emp.summary_data or {})
+
             parsed_list.append({
                 "employee_id": emp.employee_id,
                 "full_name": emp.full_name,
