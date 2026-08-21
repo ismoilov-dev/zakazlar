@@ -168,6 +168,15 @@ class DataImporter:
                     if group is None:
                         group = self.groups.get_or_create(code=grp_code)
                         groups_map[grp_code] = group
+
+                    logger.info(
+                        "GroupSummaryDTO saved for Group %s: group_total_sales=%s, group_profit=%s, leader_bonus=%s",
+                        grp_code,
+                        g_dto.group_total_sales,
+                        g_dto.group_profit,
+                        g_dto.leader_bonus,
+                    )
+
                     if (
                         group.group_total_sales != g_dto.group_total_sales
                         or group.group_profit != g_dto.group_profit
