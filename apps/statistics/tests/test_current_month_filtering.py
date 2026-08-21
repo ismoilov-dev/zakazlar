@@ -12,6 +12,9 @@ from apps.statistics.repositories.statistics import StatisticsRepository
 class CurrentMonthFilteringTest(TestCase):
     def test_statistics_filters_by_current_active_month(self):
         """Only sales from the active month (July 2026) are aggregated, excluding June 2026."""
+        from apps.imports.models import SpreadsheetPeriod
+        SpreadsheetPeriod.objects.all().delete()
+
         employee = Employee.objects.create(employee_id="0191", full_name="Amir Karimov")
 
         june_date = timezone.make_aware(datetime(2026, 6, 15, 10, 0, 0))

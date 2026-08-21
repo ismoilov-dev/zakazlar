@@ -168,7 +168,7 @@ class ThreeRegressionsFixedTests(TestCase):
 
         target_p = timezone.now().date().replace(day=1)
         SpreadsheetPeriod.objects.all().delete()
-        SpreadsheetPeriod.objects.create(spreadsheet_id="test_sheet_id", period=target_p, is_active=True)
+        SpreadsheetPeriod.objects.create(spreadsheet_id="1W8wvi0nmrlnIsrqUBjNjEuoXbkcLQxFCK5fd3v3hto8", period=target_p, is_active=True)
 
         Sale.objects.create(
             employee=self.emp_xumoyun,

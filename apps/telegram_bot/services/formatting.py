@@ -333,9 +333,18 @@ def card_text(
         try:
             from apps.employees.models import Employee
             from apps.statistics.repositories.statistics import StatisticsRepository
-            emp = Employee.objects.filter(employee_id=employee_id).first()
-            if emp:
-                totals = StatisticsRepository().employee_totals(emp.id, target_date=period_date)
+            from asgiref.sync import async_to_sync, sync_to_async
+
+            def _fetch():
+                emp = Employee.objects.filter(employee_id=employee_id).first()
+                if emp:
+                    return StatisticsRepository().employee_totals(emp.id, target_date=period_date)
+                return None
+
+            try:
+                totals = _fetch()
+            except Exception:
+                totals = async_to_sync(sync_to_async(_fetch))()
         except Exception as exc:
             logger.warning("Could not calculate employee totals for employee_id=%s: %s", employee_id, exc)
 

@@ -44,6 +44,7 @@ from apps.groups.services.rop_service import RopService
 from apps.imports.dto import normalize_employee_id
 from apps.imports.models import SyncLog, SyncStatus
 from apps.imports.services.sheets_sync import SheetsSyncService
+from apps.statistics.repositories.statistics import StatisticsRepository
 from apps.statistics.services.statistics import StatisticsService
 from apps.telegram_bot.services.formatting import (
     card_keyboard,
@@ -1157,6 +1158,9 @@ async def handle_xizmatlar_callback(callback: CallbackQuery, state: FSMContext |
     elif action == "xm_card":
         card_type = parts[1]
         group_code = employee.group.code if employee.group else "A"
+        db_totals = await sync_to_async(
+            lambda: StatisticsRepository().employee_totals(employee.id, target_date=period_date)
+        )()
         body = card_text(
             card_type=card_type,
             full_name=employee.full_name,
@@ -1166,6 +1170,7 @@ async def handle_xizmatlar_callback(callback: CallbackQuery, state: FSMContext |
             fallback_salary=fallback_salary,
             employee_id=employee.employee_id,
             period_date=period_date,
+            db_totals=db_totals,
         )
         text = body + footer
         reply_markup = card_keyboard(period_iso, src=src, card_type=card_type)
