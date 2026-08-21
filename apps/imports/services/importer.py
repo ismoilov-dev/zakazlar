@@ -282,6 +282,20 @@ class DataImporter:
                 job=job,
                 period=period,
             )
+            # Update SalesGroup.group_total_sales with authoritative DB Sale aggregates
+            from apps.groups.models import SalesGroup
+            from apps.statistics.repositories.statistics import StatisticsRepository
+
+            stats_repo = StatisticsRepository()
+            for grp in SalesGroup.objects.filter(is_active=True):
+                db_tot = stats_repo.group_totals(grp.id, target_date=period)
+                if db_tot and db_tot.get("total_orders", 0) > 0:
+                    ts = db_tot.get("total_sales") or Decimal("0.00")
+                    if grp.group_total_sales != ts:
+                        grp.group_total_sales = ts
+                        grp.synced_at = timezone.now()
+                        grp.save(update_fields=["group_total_sales", "synced_at"])
+
             return ImportResult(
                 processed_rows=len(orders),
                 created_sales=created,
