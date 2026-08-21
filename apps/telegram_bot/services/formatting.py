@@ -1,5 +1,6 @@
 """Telegram message rendering. Contains no business calculations."""
 
+import html
 from datetime import date
 from decimal import Decimal
 from typing import Any
@@ -257,9 +258,11 @@ def card_text(
 ) -> str:
     """Render focused card text for an employee figure."""
     data = summary_data or {}
-    lines = [f"👤 <b>{full_name.strip()}</b>", f"🏢 Bo'lim: <b>{group_code}</b>"]
+    safe_name = html.escape(full_name.strip())
+    safe_group = html.escape(str(group_code))
+    lines = [f"👤 <b>{safe_name}</b>", f"🏢 Bo'lim: <b>{safe_group}</b>"]
     if period_label:
-        lines.append(f"📅 Oy: <b>{period_label}</b>")
+        lines.append(f"📅 Oy: <b>{html.escape(str(period_label))}</b>")
     lines.append("")
 
     if period_label and (summary_data is None or not summary_data):
@@ -434,10 +437,13 @@ def group_dashboard_text(dashboard: GroupDashboard) -> str:
 
 def rop_menu_text(full_name: str, group_code: str, employee_id: str) -> str:
     """Render ROP main menu text."""
+    safe_name = html.escape(full_name.strip())
+    safe_group = html.escape(str(group_code))
+    safe_id = html.escape(str(employee_id))
     return (
-        f"👤 <b>{full_name.strip()}</b>\n"
-        f"🏢 Bo'lim: <b>{group_code}</b>\n"
-        f"🆔 ID: <code>{employee_id}</code>\n\n"
+        f"👤 <b>{safe_name}</b>\n"
+        f"🏢 Bo'lim: <b>{safe_group}</b>\n"
+        f"🆔 ID: <code>{safe_id}</code>\n\n"
         f"<b>XIZMATLAR</b>"
     )
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import html
 import inspect
 import logging
 import math
@@ -248,7 +249,7 @@ async def start(message: Message, state: FSMContext) -> None:
             return
 
         account = await sync_to_async(
-            lambda: TelegramAccount.objects.select_related("employee").filter(telegram_id=message.from_user.id).first()
+            lambda: TelegramAccount.objects.select_related("employee", "employee__group").filter(telegram_id=message.from_user.id).first()
         )()
 
         if account:
@@ -263,7 +264,8 @@ async def start(message: Message, state: FSMContext) -> None:
             except Exception as exc:
                 logger.warning("ensure_fresh_data_and_get_timestamp failed in start: %s", exc)
 
-            info_prefix = f"Siz allaqachon <b>{account.employee.full_name}</b> (<code>{account.employee.employee_id}</code>) sifatida ro'yxatdan o'tgansiz.\n\n"
+            safe_name = html.escape(account.employee.full_name.strip())
+            info_prefix = f"Siz allaqachon <b>{safe_name}</b> (<code>{account.employee.employee_id}</code>) sifatida ro'yxatdan o'tgansiz.\n\n"
 
             is_leader = await sync_to_async(is_group_leader)(account.employee)
 
@@ -278,7 +280,7 @@ async def start(message: Message, state: FSMContext) -> None:
                 groups = await sync_to_async(
                     lambda: list(SalesGroup.objects.filter(leader=account.employee, is_active=True))
                 )()
-                group_code = groups[0].code if groups else (account.employee.group.code if account.employee.group else "A")
+                group_code = groups[0].code if groups else (account.employee.group.code if account.employee and account.employee.group else "A")
                 text = info_prefix + rop_menu_text(account.employee.full_name, group_code, account.employee.employee_id)
                 reply_markup = rop_menu_keyboard()
                 await message.answer(text, reply_markup=reply_markup)
@@ -713,7 +715,7 @@ async def shaxsiy_command(message: Message, state: FSMContext | None = None) -> 
         return
 
     account = await sync_to_async(
-        lambda: TelegramAccount.objects.select_related("employee").filter(telegram_id=message.from_user.id).first()
+        lambda: TelegramAccount.objects.select_related("employee", "employee__group").filter(telegram_id=message.from_user.id).first()
     )()
     if not account or not account.employee:
         await message.answer("Avval Employee ID orqali profilingizni bog'lang.")
@@ -733,7 +735,7 @@ async def rop_command(message: Message, state: FSMContext) -> None:
         return
 
     account = await sync_to_async(
-        lambda: TelegramAccount.objects.select_related("employee").filter(telegram_id=message.from_user.id).first()
+        lambda: TelegramAccount.objects.select_related("employee", "employee__group").filter(telegram_id=message.from_user.id).first()
     )()
     if not account or not account.employee:
         await message.answer("Avval Employee ID orqali profilingizni bog'lang.")
@@ -767,7 +769,7 @@ async def employee_stats(message: Message, state: FSMContext | None = None) -> N
         return
 
     account = await sync_to_async(
-        lambda: TelegramAccount.objects.select_related("employee").filter(telegram_id=message.from_user.id).first()
+        lambda: TelegramAccount.objects.select_related("employee", "employee__group").filter(telegram_id=message.from_user.id).first()
     )()
     if not account or not account.employee:
         await message.answer("Avval Employee ID orqali profilingizni bog'lang.")
@@ -807,7 +809,7 @@ async def handle_switch_rop(callback: CallbackQuery, state: FSMContext) -> None:
 
     telegram_id = callback.from_user.id
     account = await sync_to_async(
-        lambda: TelegramAccount.objects.select_related("employee").filter(telegram_id=telegram_id).first()
+        lambda: TelegramAccount.objects.select_related("employee", "employee__group").filter(telegram_id=telegram_id).first()
     )()
     if not account or not account.employee:
         await callback.answer("Avval profilingizni bog'lang.", show_alert=True)
@@ -845,7 +847,7 @@ async def handle_rop_callback(callback: CallbackQuery, state: FSMContext) -> Non
 
     telegram_id = callback.from_user.id
     account = await sync_to_async(
-        lambda: TelegramAccount.objects.select_related("employee").filter(telegram_id=telegram_id).first()
+        lambda: TelegramAccount.objects.select_related("employee", "employee__group").filter(telegram_id=telegram_id).first()
     )()
     if not account or not account.employee:
         await callback.answer("Avval profilingizni bog'lang.", show_alert=True)
@@ -1031,7 +1033,7 @@ async def handle_bare_text_message(message: Message, state: FSMContext) -> None:
         return
 
     account = await sync_to_async(
-        lambda: TelegramAccount.objects.select_related("employee").filter(telegram_id=message.from_user.id).first()
+        lambda: TelegramAccount.objects.select_related("employee", "employee__group").filter(telegram_id=message.from_user.id).first()
     )()
     if not account or not account.employee:
         await message.answer("Avval Employee ID orqali profilingizni bog'lang.")
@@ -1243,7 +1245,7 @@ async def handle_order_list_callbacks(callback: CallbackQuery) -> None:
 
     telegram_id = callback.from_user.id
     account = await sync_to_async(
-        lambda: TelegramAccount.objects.select_related("employee").filter(telegram_id=telegram_id).first()
+        lambda: TelegramAccount.objects.select_related("employee", "employee__group").filter(telegram_id=telegram_id).first()
     )()
     if not account or not account.employee:
         await callback.answer("Avval Employee ID orqali profilingizni bog'lang.", show_alert=True)
