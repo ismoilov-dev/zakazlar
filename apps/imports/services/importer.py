@@ -227,6 +227,7 @@ class DataImporter:
             )
 
             self.update_group_sales_totals(period=period)
+            self.sync_employee_summaries_from_sales(period=period)
             return len(payroll)
 
     def import_orders_only(
@@ -322,7 +323,68 @@ class DataImporter:
                 res = self.sales.bulk_upsert(sales_to_upsert)
 
             self.update_group_sales_totals(period=period)
+            self.sync_employee_summaries_from_sales(period=period)
             return res
+
+    def sync_employee_summaries_from_sales(self, period: date | None = None) -> None:
+        """Dynamically update employee summary_data JSON in DB with actual Sale aggregates from List1."""
+        from django.db.models import Q, Sum
+        from django.db.models.functions import Coalesce
+        from apps.employees.models import Employee, EmployeeMonthlyStat
+        from apps.imports.sources.sheets import SheetsSource
+        from apps.sales.models import Sale, SaleStatus
+        from apps.statistics.repositories.statistics import get_active_period_date
+
+        period_dt = get_active_period_date(period)
+        sales_qs = Sale.objects.filter(
+            ordered_at__year=period_dt.year,
+            ordered_at__month=period_dt.month,
+        )
+
+        emp_stats = (
+            sales_qs.values("employee_id")
+            .annotate(
+                db_total_sales=Coalesce(Sum("sale_amount"), Decimal("0.00")),
+                db_successful_sales=Coalesce(
+                    Sum("sale_amount", filter=Q(status=SaleStatus.SUCCESSFUL)), Decimal("0.00")
+                ),
+            )
+        )
+
+        for stat in emp_stats:
+            emp_id = stat["employee_id"]
+            db_ts = stat["db_total_sales"]
+            db_ss = stat["db_successful_sales"]
+
+            try:
+                emp = Employee.objects.get(id=emp_id)
+            except Employee.DoesNotExist:
+                continue
+
+            summary = dict(emp.summary_data or {})
+            l2_ts = SheetsSource._parse_money(summary.get("total_sales")) if summary.get("total_sales") else Decimal("0.00")
+            l2_ss = SheetsSource._parse_money(summary.get("successful_sales")) if summary.get("successful_sales") else Decimal("0.00")
+
+            new_ts = max(l2_ts, db_ts)
+            new_ss = max(l2_ss, db_ss)
+
+            changed = False
+            if new_ts > l2_ts and new_ts > Decimal("0.00"):
+                summary["total_sales"] = str(new_ts)
+                changed = True
+            if new_ss > l2_ss and new_ss > Decimal("0.00"):
+                summary["successful_sales"] = str(new_ss)
+                changed = True
+
+            if changed:
+                emp.summary_data = summary
+                emp.save(update_fields=["summary_data"])
+
+                if period:
+                    m_stat = EmployeeMonthlyStat.objects.filter(employee=emp, period=period).first()
+                    if m_stat and not m_stat.is_closed:
+                        m_stat.summary_data = summary
+                        m_stat.save(update_fields=["summary_data"])
 
     def import_dto_lists(
         self,
@@ -348,6 +410,7 @@ class DataImporter:
                 period=period,
             )
             self.update_group_sales_totals(period=period)
+            self.sync_employee_summaries_from_sales(period=period)
             return ImportResult(
                 processed_rows=len(orders),
                 created_sales=created,
