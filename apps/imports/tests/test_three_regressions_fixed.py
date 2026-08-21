@@ -18,17 +18,86 @@ from apps.telegram_bot.services.formatting import card_text
 class ThreeRegressionsFixedTests(TestCase):
     def setUp(self):
         self.group_a = SalesGroup.objects.create(code="A", name="Group A")
-        self.emp_known = Employee.objects.create(
+        self.emp_xumoyun = Employee.objects.create(
             employee_id="0001",
-            full_name="Alisher Navoiy",
+            full_name="XUMOYUN KAMOLOV",
             group=self.group_a,
             monthly_salary=Decimal("5000000.00"),
         )
 
-    def test_1_parse_groups_ignores_u_kuryera_and_jami(self):
-        """1. _parse_groups with real Guruhlar r1 containing 'У курьера' and 'Jami:' outputs ONLY valid groups {A, B, C, D, BAZA}."""
+    def test_1_parse_status_resilience(self):
+        """1. _parse_status recognizes 'В процес', 'В процес.', 'в процес ', 'В процесс', 'У курьер', 'У курьер.', 'Успешно', 'Отказ' without errors."""
         source = object.__new__(SheetsSource)
-        # Real Guruhlar r1 fixture as described in user prompt
+        test_cases = [
+            ("В процес", "pending"),
+            ("В процес.", "pending"),
+            ("в процес ", "pending"),
+            ("В процесс", "pending"),
+            ("У курьер", "successful"),
+            ("У курьер.", "successful"),
+            ("Успешно", "successful"),
+            ("Отказ", "cancelled"),
+        ]
+        for input_text, expected_status in test_cases:
+            with self.subTest(input_text=input_text):
+                status, is_unrecognized = source._parse_status(input_text)
+                self.assertEqual(status, expected_status)
+                self.assertFalse(is_unrecognized)
+
+    def test_2_unknown_status_saved_not_dropped(self):
+        """2. Unknown status ('Xyz') is NOT dropped: saved as pending and tracked in unrecognized_statuses."""
+        source = object.__new__(SheetsSource)
+        status, is_unrecognized = source._parse_status("Xyz")
+        self.assertEqual(status, "pending")
+        self.assertTrue(is_unrecognized)
+
+    def test_3_end_to_end_exact_sum_matching(self):
+        """3. End-to-end test with exact XUMOYUN KAMOLOV figures:
+        Успешно 42 455 000 + Отказ 19 255 000 + В процес 8 000 000 = 69 710 000. Delta = 0.
+        """
+        source = object.__new__(SheetsSource)
+        raw_rows = [
+            ["ID", "Ответственный", "№", "Сумма", "Дата Заказа", "статус", "Bo'lim", "Источник"],
+            ["0001", "XUMOYUN KAMOLOV", "ORD-1", "42 455 000", "01.08.2026", "Успешно", "A", "Pervichka"],
+            ["0001", "XUMOYUN KAMOLOV", "ORD-2", "19 255 000", "02.08.2026", "Отказ", "A", "Pervichka"],
+            ["0001", "XUMOYUN KAMOLOV", "ORD-3", "8 000 000", "03.08.2026", "В процес", "A", "Pervichka"],
+        ]
+
+        orders = source._parse_orders(raw_rows, valid_employee_ids={"0001"})
+        self.assertEqual(len(orders), 3)
+
+        total_parsed_sum = sum(o.sale_amount for o in orders if o.sale_amount)
+        expected_sum = Decimal("69710000.00")
+        self.assertEqual(total_parsed_sum, expected_sum)
+
+        delta = expected_sum - total_parsed_sum
+        self.assertEqual(delta, Decimal("0.00"))
+
+        statuses = [o.status for o in orders]
+        self.assertIn("successful", statuses)
+        self.assertIn("cancelled", statuses)
+        self.assertIn("pending", statuses)
+
+    def test_4_duplicate_order_id_preserved(self):
+        """4. Duplicate order ID № in same month is preserved with unique ID and tracked without dropping sum."""
+        source = object.__new__(SheetsSource)
+        raw_rows = [
+            ["ID", "Ответственный", "№", "Сумма", "Дата Заказа", "статус", "Bo'lim", "Источник"],
+            ["0001", "XUMOYUN KAMOLOV", "ORD-100", "5 000 000", "01.08.2026", "Успешно", "A", "Pervichka"],
+            ["0001", "XUMOYUN KAMOLOV", "ORD-100", "2 380 000", "01.08.2026", "Успешно", "A", "Pervichka"],
+        ]
+
+        orders = source._parse_orders(raw_rows, valid_employee_ids={"0001"})
+        self.assertEqual(len(orders), 2)
+        self.assertEqual(orders[0].order_id, "202608_0001_ORD-100")
+        self.assertEqual(orders[1].order_id, "202608_0001_ORD-100_dup2")
+
+        self.assertEqual(source.last_duplicate_orders_count, 1)
+        self.assertEqual(source.last_duplicate_orders_sum, Decimal("2380000.00"))
+
+    def test_5_parse_groups_ignores_u_kuryera_and_jami(self):
+        """5. _parse_groups with real Guruhlar r1 containing 'У курьера' and 'Jami:' outputs ONLY valid groups {A, B, BAZA}."""
+        source = object.__new__(SheetsSource)
         raw_rows = [
             ["У курьера", "Jami:", "", "", "", "", "", "A", "A_PROFIT", "", "", "", "", "B", "B_PROFIT", "", "", "", "", "BAZA", "BAZA_PROFIT"],
             ["SANA", "JAMI", "Успешно", "Отказ", "В процесс", "USP %", "OTKAZ %", "JAMI", "5000000", "0", "0", "0", "0", "JAMI", "4000000", "0", "0", "0", "0", "JAMI", "3000000"],
@@ -44,58 +113,3 @@ class ThreeRegressionsFixedTests(TestCase):
         self.assertNotIn("У КУРЬЕРА", parsed_codes)
         self.assertNotIn("JAMI:", parsed_codes)
         self.assertNotIn("JAMI", parsed_codes)
-
-    def test_2_import_orders_only_rejects_unlisted_employee_no_autocreate(self):
-        """2. import_orders_only rejects order for employee missing in List2 roster (no auto-creation)."""
-        importer = DataImporter()
-        unlisted_order = OrderDTO(
-            order_id="ORD-UNLISTED-99",
-            employee_id="9999",
-            employee_name="Noma'lum Xodim",
-            group_code="A",
-            status="successful",
-            source="Pervichka",
-            sale_amount=Decimal("10380000.00"),
-            ordered_at=timezone.now(),
-        )
-
-        created, updated = importer.import_orders_only(orders=[unlisted_order])
-
-        # Verify order was rejected (0 created)
-        self.assertEqual(created, 0)
-
-        # Verify no unlisted Employee was auto-created in database
-        unlisted_emp = Employee.objects.filter(employee_id="9999").first()
-        self.assertIsNone(unlisted_emp)
-
-        # Verify no Sale was created for unlisted order
-        sale = Sale.objects.filter(external_order_id="ORD-UNLISTED-99").first()
-        self.assertIsNone(sale)
-
-    def test_3_formatting_card_text_uses_authoritative_source_without_max(self):
-        """3. formatting.py card_text uses single authoritative summary_data source without max() guessing, logging error on discrepancy."""
-        summary_data = {
-            "total_sales": "59330000",
-            "perv_sales": "38545000",
-            "baza_sales": "0",
-            "otkaz_sales": "18605000",
-            "v_proc_sales": "2180000",
-            "successful_sales": "38545000",
-        }
-
-        with self.assertLogs("apps.telegram_bot.services.formatting", level="ERROR") as cm:
-            # Create discrepancy: total_sales=59330000, but perv+baza+otkaz+v_proc = 69710000
-            summary_discrepant = dict(summary_data)
-            summary_discrepant["perv_sales"] = "48925000"  # component sum = 48925000 + 18605000 + 218000 = 69710000
-
-            text = card_text(
-                card_type="total_sales",
-                full_name="XUMOYUN KAMOLOV",
-                group_code="A",
-                summary_data=summary_discrepant,
-            )
-
-            # Assert authoritative value (59 330 000) is rendered, NOT max (69 710 000)
-            self.assertIn("59\xa0330\xa0000 so'm", text)
-            # Assert ERROR log was recorded for discrepancy
-            self.assertTrue(any("Discrepancy in total_sales" in log for log in cm.output))

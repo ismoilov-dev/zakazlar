@@ -343,21 +343,52 @@ class SheetsSyncService:
             sync_log.created_sales = created
             sync_log.updated_sales = updated
             sync_log.unchanged = False
+            total_sales_sum = sum(o.sale_amount or Decimal("0") for o in orders)
+            dropped_list = getattr(source, "last_dropped_rows", [])
+            unrecognized_statuses = getattr(source, "last_unrecognized_statuses", {})
+            unrecognized_statuses_sum = getattr(source, "last_unrecognized_statuses_sum", Decimal("0"))
+            duplicate_orders_count = getattr(source, "last_duplicate_orders_count", 0)
+            duplicate_orders_sum = getattr(source, "last_duplicate_orders_sum", Decimal("0"))
+
+            column_map = getattr(source, "last_column_indexes", {})
+            amt_idx = column_map.get("Сумма")
+            dropped_sum = Decimal("0")
+            unlisted_ids = set()
+            for item in dropped_list:
+                r_data = item.get("row_data", [])
+                reason = str(item.get("reason", ""))
+                if "List2" in reason or "topilmadi" in reason:
+                    m = re.search(r"\((\d+)\)", reason)
+                    if m:
+                        unlisted_ids.add(m.group(1))
+                if amt_idx is not None and amt_idx < len(r_data):
+                    amt_str = str(r_data[amt_idx] or "").strip()
+                    if amt_str and not source._is_sheet_error(amt_str):
+                        try:
+                            dropped_sum += source._parse_money(amt_str)
+                        except Exception:
+                            pass
+
+            log_messages = []
             if skipped_rows > 0:
-                dropped_list = getattr(source, "last_dropped_rows", [])
-                column_map = getattr(source, "last_column_indexes", {})
-                amt_idx = column_map.get("Сумма")
-                dropped_sum = Decimal("0")
-                for item in dropped_list:
-                    r_data = item.get("row_data", [])
-                    if amt_idx is not None and amt_idx < len(r_data):
-                        amt_str = str(r_data[amt_idx] or "").strip()
-                        if amt_str and not source._is_sheet_error(amt_str):
-                            try:
-                                dropped_sum += source._parse_money(amt_str)
-                            except Exception:
-                                pass
-                sync_log.error_text = f"Tashlangan qatorlar: {skipped_rows} ta. Yo'qotilgan summa: {dropped_sum:,.0f} so'm."
+                unlisted_str = f" Topilmagan xodim ID lar: {', '.join(sorted(unlisted_ids))}." if unlisted_ids else ""
+                log_messages.append(f"Tashlangan qatorlar: {skipped_rows} ta. Yo'qotilgan summa: {dropped_sum:,.0f} so'm.{unlisted_str}")
+            if unrecognized_statuses:
+                stat_items = [f"'{k}': {v} ta" for k, v in unrecognized_statuses.items()]
+                log_messages.append(f"Noma'lum status matnlari: {', '.join(stat_items)} (Summa: {unrecognized_statuses_sum:,.0f} so'm).")
+            if duplicate_orders_count > 0:
+                log_messages.append(f"Dublikat № zakazlar: {duplicate_orders_count} ta (Summa: {duplicate_orders_sum:,.0f} so'm).")
+
+            if log_messages:
+                sync_log.error_text = "\n".join(log_messages)
+
+            total_issue_sum = dropped_sum + unrecognized_statuses_sum
+            if total_sales_sum > Decimal("0") and (total_issue_sum / total_sales_sum) > Decimal("0.01"):
+                sync_log.status = SyncStatus.WARNING
+                total_issue_count = skipped_rows + sum(unrecognized_statuses.values())
+                warning_hdr = f"{total_issue_count} ta zakaz noma'lum status sababli hisobga olinmadi ({total_issue_sum:,.0f} so'm)."
+                sync_log.error_text = f"WARNING: {warning_hdr}\n" + (sync_log.error_text or "")
+
             sync_log.save(
                 update_fields=[
                     "status",

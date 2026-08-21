@@ -65,11 +65,17 @@ STATUS_MAP = {
     "bekor": "cancelled",
     "отмена": "cancelled",
     "возврат": "cancelled",
+    "в процес": "pending",
+    "в процес.": "pending",
     "в процесс": "pending",
+    "в процесс.": "pending",
     "v protsess": "pending",
     "v process": "pending",
     "jarayonda": "pending",
+    "у курьер": "successful",
+    "у курьер.": "successful",
     "у курьера": "successful",
+    "у курьера.": "successful",
     "курьер": "successful",
     "kuryerda": "successful",
     "ожидание": "pending",
@@ -276,7 +282,10 @@ class SheetsSource(BaseSource):
         name_to_id_map: dict[str, str] | None = None,
     ) -> list[OrderDTO]:
 
-        raw_rows = worksheet.get_all_values(combine_merged_cells=True)
+        if isinstance(worksheet, list):
+            raw_rows = worksheet
+        else:
+            raw_rows = worksheet.get_all_values(combine_merged_cells=True)
         if not raw_rows:
             raise ValidationError("List1 varog'i bo'sh.")
 
@@ -469,6 +478,11 @@ class SheetsSource(BaseSource):
         from collections import Counter
         unrecognized_sources_count = Counter()
         unrecognized_groups_count = Counter()
+        unrecognized_statuses_count = Counter()
+        unrecognized_statuses_sum = Decimal("0.00")
+        seen_order_ids: dict[str, int] = {}
+        duplicate_orders_count = 0
+        duplicate_orders_sum = Decimal("0.00")
 
         for row_idx, row in enumerate(raw_rows[header_row_idx + 1:], start=header_row_idx + 2):
 
@@ -586,15 +600,7 @@ class SheetsSource(BaseSource):
                 logger.warning("List1 %s-qator tashlandi: %s | Birinchi 6 katak: %s", row_idx, reason, first_6)
                 continue
 
-            try:
-                stat_val = self._parse_status(stat_raw)
-            except PARSE_ERRORS as exc:
-                dropped_invalid_id += 1
-                reason = f"Status xatosi: {exc}"
-                first_6 = [str(c).strip() for c in row[:6]]
-                dropped_rows.append({"row_idx": row_idx, "reason": reason, "raw_cells": first_6, "row_data": row})
-                logger.warning("List1 %s-qator tashlandi: %s | Birinchi 6 katak: %s", row_idx, reason, first_6)
-                continue
+            stat_val, is_unrecognized_stat = self._parse_status(stat_raw)
 
             sale_amount: Decimal | None = None
             has_sheet_error = False
@@ -612,6 +618,11 @@ class SheetsSource(BaseSource):
                     dropped_rows.append({"row_idx": row_idx, "reason": reason, "raw_cells": first_6, "row_data": row})
                     logger.warning("List1 %s-qator tashlandi: %s | Birinchi 6 katak: %s", row_idx, reason, first_6)
                     continue
+
+            if is_unrecognized_stat and stat_raw.strip():
+                unrecognized_statuses_count[stat_raw.strip()] += 1
+                if sale_amount:
+                    unrecognized_statuses_sum += sale_amount
 
             src_raw_cell = self._get_cell(row, source_idx) if source_idx is not None else ""
             src_val, unrecognized_src = self._normalize_source(src_raw_cell)
@@ -641,7 +652,23 @@ class SheetsSource(BaseSource):
 
             try:
                 clean_ord = normalize_order_id(ord_raw)
-                ord_id = f"{ordered_at:%Y%m}_{emp_id}_{clean_ord}"
+                base_ord_id = f"{ordered_at:%Y%m}_{emp_id}_{clean_ord}"
+                if base_ord_id in seen_order_ids:
+                    seen_order_ids[base_ord_id] += 1
+                    ord_id = f"{base_ord_id}_dup{seen_order_ids[base_ord_id]}"
+                    duplicate_orders_count += 1
+                    if sale_amount:
+                        duplicate_orders_sum += sale_amount
+                    logger.warning(
+                        "List1 %s-qator: Dublikat № zakaz raqami '%s' aniqlandi (summa: %s). Noyob ID saqlandi: '%s'",
+                        row_idx,
+                        base_ord_id,
+                        sale_amount,
+                        ord_id,
+                    )
+                else:
+                    seen_order_ids[base_ord_id] = 1
+                    ord_id = base_ord_id
             except PARSE_ERRORS as exc:
                 dropped_invalid_id += 1
                 reason = f"Zakaz raqami (№) formati noto'g'ri: {exc}"
@@ -669,6 +696,11 @@ class SheetsSource(BaseSource):
                 )
             )
             parsed_rows_count += 1
+
+        self.last_unrecognized_statuses = unrecognized_statuses_count
+        self.last_unrecognized_statuses_sum = unrecognized_statuses_sum
+        self.last_duplicate_orders_count = duplicate_orders_count
+        self.last_duplicate_orders_sum = duplicate_orders_sum
 
         if unrecognized_sources_count:
             logger.debug("List1 noma'lum manba (source) qiymatlari agregatsiyasi: %s", dict(unrecognized_sources_count))
@@ -1316,19 +1348,21 @@ class SheetsSource(BaseSource):
         raise ValidationError(f"Noto'g'ri sana formati ('{val}'). Kutilmoqda: dd.mm.yyyy")
 
     @staticmethod
-    def _parse_status(val: str) -> str:
-        if not val:
-            raise ValidationError("Status maydoni bo'sh bo'lishi mumkin emas.")
-        raw = val.strip().lower()
+    def _parse_status(val: str) -> tuple[str, bool]:
+        if not val or not str(val).strip():
+            return "pending", True
+        raw = re.sub(r"[\.\,\:\s]+$", "", str(val).strip().lower()).strip()
         if raw in STATUS_MAP:
-            return STATUS_MAP[raw]
-        if any(term in raw for term in ["отказ", "возврат", "otkaz", "bekor"]):
-            return "cancelled"
-        if any(term in raw for term in ["курьер", "kuryer"]):
-            return "successful"
-        if any(term in raw for term in ["процесс", "ожидан", "protsess", "process", "jarayon"]):
-            return "pending"
-        raise ValidationError(f"Noma'lum status: '{val}'")
+            return STATUS_MAP[raw], False
+        if any(term in raw for term in ["отказ", "возврат", "otkaz", "bekor", "otmena"]):
+            return "cancelled", False
+        if any(term in raw for term in ["курьер", "kuryer", "доставк", "dostavk", "успеш"]):
+            return "successful", False
+        if any(term in raw for term in ["процес", "ожидан", "protsess", "process", "jarayon", "kutilmoq"]):
+            return "pending", False
+
+        logger.warning("Noma'lum status matni uchradi ('%s'), 'pending' deb qabul qilindi", val)
+        return "pending", True
 
     @staticmethod
     def _normalize_source(val: str) -> tuple[str, str | None]:
