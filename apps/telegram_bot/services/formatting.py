@@ -299,6 +299,54 @@ def calculate_sal_1_15_from_sales(
         return None
 
 
+def calculate_sal_16_31_from_sales(
+    employee_id: str | None,
+    period_date: date | None = None,
+    group_code: str = "A",
+) -> Decimal | None:
+    """Calculate 16-31 day salary dynamically from parsed Sale records for the target period."""
+    if not employee_id:
+        return None
+    try:
+        from apps.imports.models import SpreadsheetPeriod
+        from apps.sales.models import Sale, SaleSource, SaleStatus
+        from django.utils import timezone
+
+        if period_date is None:
+            active_sp = SpreadsheetPeriod.objects.filter(is_active=True).first()
+            target_date = active_sp.period if active_sp else timezone.localtime().date()
+        else:
+            target_date = period_date
+
+        sales_16_31 = Sale.objects.filter(
+            employee__employee_id=employee_id,
+            status=SaleStatus.SUCCESSFUL,
+            ordered_at__year=target_date.year,
+            ordered_at__month=target_date.month,
+            ordered_at__day__gte=16,
+        )
+
+        if not sales_16_31.exists():
+            return None
+
+        perv_sum = Decimal("0")
+        baza_sum = Decimal("0")
+        for s in sales_16_31:
+            amt = s.sale_amount or Decimal("0")
+            if s.source == SaleSource.BAZA:
+                baza_sum += amt
+            else:
+                perv_sum += amt
+
+        grp_upper = (group_code or "").strip().upper()
+        if grp_upper == "BAZA":
+            return (perv_sum * Decimal("0.12")) + (baza_sum * Decimal("0.12"))
+        return (perv_sum * Decimal("0.12")) + (baza_sum * Decimal("0.16"))
+    except Exception as exc:
+        logger.warning("Failed to calculate 16-31 salary from sales for %s: %s", employee_id, exc)
+        return None
+
+
 def card_text(
     card_type: str,
     full_name: str,
@@ -382,18 +430,35 @@ def card_text(
         if sal_1_15 is None and employee_id:
             sal_1_15 = calculate_sal_1_15_from_sales(employee_id, period_date, group_code)
 
-        has_explicit_16_31 = sal_16_31 is not None and sal_16_31 > Decimal("0")
-        if sal_1_15 is not None and has_explicit_16_31:
-            sal = sal_1_15 + sal_16_31
-        elif sal is not None:
-            if sal_1_15 is not None:
-                sal_1_15 = min(sal_1_15, sal)
-                sal_16_31 = max(Decimal("0"), sal - sal_1_15)
-            elif sal_16_31 is not None:
-                sal_1_15 = max(Decimal("0"), sal - sal_16_31)
+        if sal_16_31 is None and employee_id:
+            sal_16_31 = calculate_sal_16_31_from_sales(employee_id, period_date, group_code)
+
+        import calendar
+        from decimal import ROUND_HALF_UP
+
+        target_dt = period_date or timezone.localtime().date()
+        num_days = calendar.monthrange(target_dt.year, target_dt.month)[1]
+
+        if sal_1_15 is not None and sal_16_31 is not None and (sal_1_15 > Decimal("0") or sal_16_31 > Decimal("0")):
+            calc_sum = sal_1_15 + sal_16_31
+            if sal is None or calc_sum > sal:
+                sal = calc_sum
+            elif sal > calc_sum:
+                sal_16_31 = sal - sal_1_15
+        elif sal is not None and sal > Decimal("0"):
+            if sal_1_15 is not None and sal_1_15 > Decimal("0") and sal_1_15 < sal:
+                sal_16_31 = sal - sal_1_15
+            elif sal_16_31 is not None and sal_16_31 > Decimal("0") and sal_16_31 < sal:
+                sal_1_15 = sal - sal_16_31
             else:
-                sal_1_15 = sal
-                sal_16_31 = Decimal("0")
+                sal_1_15 = (sal * Decimal("15") / Decimal(str(num_days))).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+                sal_16_31 = sal - sal_1_15
+        elif sal_1_15 is not None or sal_16_31 is not None:
+            s1 = sal_1_15 or Decimal("0")
+            s2 = sal_16_31 or Decimal("0")
+            sal = s1 + s2
+            sal_1_15 = s1
+            sal_16_31 = s2
 
         if card_type == "earned_salary":
             lines.append(f"💵 Shaxsiy oylik: {money(sal)}")
@@ -409,12 +474,12 @@ def card_text(
 
     elif card_type == "total_sales":
         l2_ts = _parse_decimal_val(data.get("total_sales"))
-        ts = db_sales_total if db_sales_total is not None else l2_ts
+        ts = l2_ts if (l2_ts is not None and l2_ts > Decimal("0")) else db_sales_total
         lines.append(f"📊 Jami savdo: {money(ts)}")
 
     elif card_type == "uspeshka":
         l2_ss = _parse_decimal_val(data.get("successful_sales"))
-        ss = db_sales_successful if db_sales_successful is not None else l2_ss
+        ss = l2_ss if (l2_ss is not None and l2_ss > Decimal("0")) else db_sales_successful
 
         so_raw = data.get("successful_orders")
         conv_raw = data.get("conversion_rate")
@@ -451,12 +516,12 @@ def card_text(
 
     elif card_type == "otkaz":
         l2_otkaz = _parse_decimal_val(data.get("otkaz_sales"))
-        otkaz = db_sales_cancelled if db_sales_cancelled is not None else l2_otkaz
+        otkaz = l2_otkaz if (l2_otkaz is not None and l2_otkaz > Decimal("0")) else db_sales_cancelled
         lines.append(f"❌ Otkaz summasi: {money(otkaz)}")
 
     elif card_type == "v_proc":
         l2_vp = _parse_decimal_val(data.get("v_proc_sales"))
-        vp = db_sales_pending if db_sales_pending is not None else l2_vp
+        vp = l2_vp if (l2_vp is not None and l2_vp > Decimal("0")) else db_sales_pending
         lines.append(f"⏳ Jarayondagi summa: {money(vp)}")
 
     return "\n".join(lines)

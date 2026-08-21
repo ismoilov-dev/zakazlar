@@ -234,4 +234,26 @@ class XizmatlarMenuTest(TestCase):
         self.assertIn("16-31 kunlik oylik: <b>402\u00a0000 so'm</b>", text_16_31)
         self.assertIn("Shaxsiy oylik: <b>1\u00a0800\u00a0000 so'm</b>", text_earned)
 
+    def test_calculate_sal_16_31_from_sales(self):
+        from apps.sales.models import Sale, SaleSource, SaleStatus
+        Sale.objects.create(
+            employee=self.emp,
+            sale_amount=Decimal("1000000.00"),
+            status=SaleStatus.SUCCESSFUL,
+            source=SaleSource.PERV,
+            ordered_at=date(2026, 6, 18),
+        )
+        sal_16_31 = formatting.calculate_sal_16_31_from_sales("0191", date(2026, 6, 1), "A")
+        self.assertEqual(sal_16_31, Decimal("120000.00"))
+
+    def test_proportional_salary_split_when_explicit_dates_missing(self):
+        summary_data = {
+            "earned_salary": "177000.00",
+        }
+        text_1_15 = card_text("salary_1_15", "Jamshidbek Solijonov", "D", summary_data, period_date=date(2026, 8, 1))
+        text_16_31 = card_text("salary_16_31", "Jamshidbek Solijonov", "D", summary_data, period_date=date(2026, 8, 1))
+
+        self.assertIn("1-15 kunlik oylik: <b>85\u00a0645 so'm</b>", text_1_15)
+        self.assertIn("16-31 kunlik oylik: <b>91\u00a0355 so'm</b>", text_16_31)
+
 
