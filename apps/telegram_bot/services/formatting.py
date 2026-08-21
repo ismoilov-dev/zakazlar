@@ -412,9 +412,6 @@ def card_text(
         ts = db_sales_total if db_sales_total is not None else l2_ts
         lines.append(f"📊 Jami savdo: {money(ts)}")
 
-        if l2_ts is not None and db_sales_total is not None and abs(l2_ts - db_sales_total) > Decimal("0.01"):
-            lines.append(f"\n⚠️ <i>List2 va zakazlar bo'yicha hisob mos kelmadi ({money(l2_ts)} vs {money(db_sales_total)})</i>")
-
     elif card_type == "uspeshka":
         l2_ss = _parse_decimal_val(data.get("successful_sales"))
         ss = db_sales_successful if db_sales_successful is not None else l2_ss
@@ -424,9 +421,6 @@ def card_text(
         rconv_raw = data.get("real_conversion_rate")
 
         lines.append(f"✅ Uspeshka summasi: {money(ss)}")
-
-        if l2_ss is not None and db_sales_successful is not None and abs(l2_ss - db_sales_successful) > Decimal("0.01"):
-            lines.append(f"\n⚠️ <i>List2 va zakazlar bo'yicha hisob mos kelmadi ({money(l2_ss)} vs {money(db_sales_successful)})</i>")
 
         if so_raw is not None and str(so_raw).strip() != "":
             try:
@@ -460,16 +454,10 @@ def card_text(
         otkaz = db_sales_cancelled if db_sales_cancelled is not None else l2_otkaz
         lines.append(f"❌ Otkaz summasi: {money(otkaz)}")
 
-        if l2_otkaz is not None and db_sales_cancelled is not None and abs(l2_otkaz - db_sales_cancelled) > Decimal("0.01"):
-            lines.append(f"\n⚠️ <i>List2 va zakazlar bo'yicha hisob mos kelmadi ({money(l2_otkaz)} vs {money(db_sales_cancelled)})</i>")
-
     elif card_type == "v_proc":
         l2_vp = _parse_decimal_val(data.get("v_proc_sales"))
         vp = db_sales_pending if db_sales_pending is not None else l2_vp
         lines.append(f"⏳ Jarayondagi summa: {money(vp)}")
-
-        if l2_vp is not None and db_sales_pending is not None and abs(l2_vp - db_sales_pending) > Decimal("0.01"):
-            lines.append(f"\n⚠️ <i>List2 va zakazlar bo'yicha hisob mos kelmadi ({money(l2_vp)} vs {money(db_sales_pending)})</i>")
 
     return "\n".join(lines)
 

@@ -158,8 +158,8 @@ class ThreeRegressionsFixedTests(TestCase):
 
         # Assert authoritative DB Sale total (69 710 000) is displayed
         self.assertIn("69\xa0710\xa0000 so'm", text)
-        # Assert warning badge is rendered for List2 vs DB Sale mismatch
-        self.assertIn("List2 va zakazlar bo'yicha hisob mos kelmadi", text)
+        # Assert warning badge is not rendered for List2 vs DB Sale mismatch
+        self.assertNotIn("List2 va zakazlar bo'yicha hisob mos kelmadi", text)
 
     def test_7_unified_period_resolution_and_matching_shaxsiy_and_stats(self):
         """7. Unified get_active_period_date produces identical target period date and sales totals for stats repo and card text."""
