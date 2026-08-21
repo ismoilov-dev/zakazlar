@@ -412,17 +412,14 @@ def card_text(
 
         perv = _parse_decimal_val(data.get("perv_sales"))
         baza = _parse_decimal_val(data.get("baza_sales"))
-        if perv is not None or baza is not None:
+        if sal is None and (perv is not None or baza is not None):
             p_val = perv or Decimal("0")
             b_val = baza or Decimal("0")
             grp_upper = (group_code or "").strip().upper()
             if grp_upper == "BAZA":
-                calc_sal = (p_val * Decimal("0.12")) + (b_val * Decimal("0.12"))
+                sal = (p_val * Decimal("0.12")) + (b_val * Decimal("0.12"))
             else:
-                calc_sal = (p_val * Decimal("0.12")) + (b_val * Decimal("0.16"))
-
-            if calc_sal > Decimal("0") and (sal is None or calc_sal > sal):
-                sal = calc_sal
+                sal = (p_val * Decimal("0.12")) + (b_val * Decimal("0.16"))
 
         sal_1_15 = _parse_decimal_val(data.get("earned_salary_1_15") or data.get("salary_1_15"))
         sal_16_31 = _parse_decimal_val(data.get("earned_salary_16_31") or data.get("salary_16_31"))

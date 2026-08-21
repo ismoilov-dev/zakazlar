@@ -815,7 +815,11 @@ class SheetsSource(BaseSource):
         )
         salary_idx = self._find_single_column_index(
             headings,
-            candidates=["Ish haqi", "Oylik ish haqi", "OYLIK MOASH", "OYLIK MAOSH", "Oylik maosh", "Oylik maoshi 12%", "Oylik", "Maosh", "Зарплата", "Оклад"],
+            candidates=[
+                "Ish haqi", "Oylik ish haqi", "OYLIK MOASH", "OYLIK MAOSH", "Oylik maosh",
+                "Oylik maoshi", "Oylik maoshi 12%", "Oylik", "Maosh", "Зарплата", "Оклад",
+                "Начислено", "Итого к выплате", "Итого к начислению", "Jami oylik", "Jami ish haqi"
+            ],
             name="ish haqi",
             required=False,
         )
