@@ -741,22 +741,41 @@ class SheetsSource(BaseSource):
         if not raw_rows:
             raise ValidationError(f"'{title}' varog'i bo'sh.")
 
-        # Locate header row dynamically in the first 15 rows
+        # Locate header row dynamically in the first 15 rows: require strict matching of essential columns
+        def _norm(s: object) -> str:
+            return re.sub(r"[\'\’\‘\ʼ\`\s\.\_\-]+", "", str(s or "").strip().lower())
+
+        id_norms = {_norm(x) for x in ["Tabel raqami", "ID", "Табельный номер", "ID №", "ИД"]}
+        name_norms = {_norm(x) for x in ["FISH", "XODIMLAR ISMLARI", "Xodim ismi", "Xodim", "Оператор", "ФИО", "Сотрудник"]}
+        fin_norms = {_norm(x) for x in [
+            "Uspeshka summasi", "Успешка суммаси", "Uspeshka", "Успешка summasi", "Успешка",
+            "Umumiy zakaz summasi", "Общая сумма", "Jami summa", "Jami zakaz summasi", "Первичный Заказ", "База"
+        ]}
+
         header_row_idx = None
         for i, row in enumerate(raw_rows[:15]):
-            row_str_cells = [str(c).strip().lower() for c in row]
-            if any(cell in ["id", "tabel raqami"] for cell in row_str_cells):
+            row_norms = {_norm(c) for c in row if c}
+            if bool(row_norms & id_norms) and bool(row_norms & name_norms) and bool(row_norms & fin_norms):
                 header_row_idx = i
                 break
 
         if header_row_idx is None:
-            raise ValidationError(f"'{title}' varog'ida 'ID' yoki 'Tabel raqami' ustuni topilmadi.")
+            for i, row in enumerate(raw_rows[:15]):
+                row_norms = {_norm(c) for c in row if c}
+                if bool(row_norms & id_norms) and bool(row_norms & name_norms):
+                    header_row_idx = i
+                    break
+
+        if header_row_idx is None:
+            raise ValidationError(f"'{title}' varog'ida sarlavha qatori (ID, FISH/Xodim va Uspeshka/Umumiy zakaz ustunlari) topilmadi.")
 
         headings = raw_rows[header_row_idx]
 
-        id_candidates = ["Tabel raqami", "ID"]
+        id_candidates = ["Tabel raqami", "ID", "Табельный номер", "ID №", "ИД"]
+        name_candidates = ["FISH", "XODIMLAR ISMLARI", "Xodim ismi", "Xodim", "Оператор", "ФИО", "Сотрудник"]
+
         id_idx = self._find_single_column_index(headings, candidates=id_candidates, name="ID", required=False)
-        name_idx = self._find_single_column_index(headings, candidates=["FISH", "XODIMLAR ISMLARI", "Оператор"], name="xodim ismi", required=False)
+        name_idx = self._find_single_column_index(headings, candidates=name_candidates, name="xodim ismi", required=False)
 
         if id_idx is None and name_idx is not None and name_idx > 0:
             candidate_id_idx = name_idx - 1
@@ -770,10 +789,14 @@ class SheetsSource(BaseSource):
                 id_idx = candidate_id_idx
 
         if id_idx is None:
-            raise ValidationError(f"Ustun topilmadi ('ID'): mos nomlar {id_candidates}")
+            raise ValidationError(f"'{title}' varog'ida 'ID' ustuni topilmadi: mos nomlar {id_candidates}")
+
+        if name_idx is None:
+            raise ValidationError(f"'{title}' varog'ida 'xodim ismi' ('FISH'/'XODIM') ustuni topilmadi: mos nomlar {name_candidates}")
+
         group_idx = self._find_single_column_index(
             headings,
-            candidates=["Bo'lim", "Guruhi", "Guruh", "Bo'lim ", "Guruhlar", "Guruh nomi", "Bo'lim nomi"],
+            candidates=["Bo'lim", "Guruhi", "Guruh", "Bo'lim ", "Guruhlar", "Guruh nomi", "Bo'lim nomi", "Группа", "Отдел"],
             name="guruh",
             required=False,
         )
@@ -784,23 +807,67 @@ class SheetsSource(BaseSource):
             required=False,
         )
 
-
-        total_sales_idx = self._find_single_column_index(headings, candidates=["Umumiy zakaz summasi", "Общая сумма", "Jami summa"], name="total_sales", required=False)
-        perv_sales_idx = self._find_single_column_index(headings, candidates=["Первичный Заказ", "Первичка"], name="perv_sales", required=False)
-        baza_sales_idx = self._find_single_column_index(headings, candidates=["База"], name="baza_sales", required=False)
-        otkaz_sales_idx = self._find_single_column_index(headings, candidates=["Otkaz", "Отказ"], name="otkaz_sales", required=False)
-        v_proc_sales_idx = self._find_single_column_index(headings, candidates=["В процесс", "В процессе"], name="v_proc_sales", required=False)
-        upakovka_idx = self._find_single_column_index(headings, candidates=["Upakovka soni", "Upakovka", "Упаковка"], name="upakovka", required=False)
-        conv_idx = self._find_single_column_index(headings, candidates=["Konversiya", "Конверсия"], name="conversion", required=False)
-        real_conv_idx = self._find_single_column_index(headings, candidates=["Real konversiya", "Реальная конверсия"], name="real_conversion", required=False)
+        total_sales_idx = self._find_single_column_index(
+            headings,
+            candidates=["Umumiy zakaz summasi", "Общая сумма", "Jami summa", "Jami zakaz summasi", "Umumiy summa", "Общая сумма заказов"],
+            name="total_sales",
+            required=False,
+        )
+        perv_sales_idx = self._find_single_column_index(
+            headings,
+            candidates=["Первичный Заказ", "Первичка", "Pervichka", "Pervichniy zakaz"],
+            name="perv_sales",
+            required=False,
+        )
+        baza_sales_idx = self._find_single_column_index(
+            headings,
+            candidates=["База", "Baza"],
+            name="baza_sales",
+            required=False,
+        )
+        otkaz_sales_idx = self._find_single_column_index(
+            headings,
+            candidates=["Otkaz", "Отказ"],
+            name="otkaz_sales",
+            required=False,
+        )
+        v_proc_sales_idx = self._find_single_column_index(
+            headings,
+            candidates=["В процесс", "В процессе", "V jarayonda", "Jarayonda"],
+            name="v_proc_sales",
+            required=False,
+        )
+        upakovka_idx = self._find_single_column_index(
+            headings,
+            candidates=["Upakovka soni", "Upakovka", "Упаковка"],
+            name="upakovka",
+            required=False,
+        )
+        conv_idx = self._find_single_column_index(
+            headings,
+            candidates=["Konversiya", "Конверсия"],
+            name="conversion",
+            required=False,
+        )
+        real_conv_idx = self._find_single_column_index(
+            headings,
+            candidates=["Real konversiya", "Реальная конверсия"],
+            name="real_conversion",
+            required=False,
+        )
 
         successful_sales_idx = self._find_single_column_index(
             headings,
-            candidates=["Uspeshka summasi", "Успешка суммаси", "Uspeshka", "Успешка summasi", "Успешка"],
+            candidates=["Uspeshka summasi", "Успешка суммаси", "Uspeshka", "Успешка summasi", "Успешка", "Успешные заказы", "Успешка сумма"],
             name="successful_sales",
             required=False,
             exact_only=True,
         )
+
+        if successful_sales_idx is None and total_sales_idx is None and (perv_sales_idx is None or baza_sales_idx is None):
+            raise ValidationError(
+                f"'{title}' varog'ida muhim moliyaviy ustunlar ('Uspeshka summasi' yoki 'Umumiy zakaz summasi') topilmadi."
+            )
 
         salary_1_15_idx = self._find_single_column_index(
             headings,
