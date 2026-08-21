@@ -54,11 +54,23 @@ SHEET_ERROR_LITERALS: set[str] = {
 STATUS_MAP = {
     "успешно": "successful",
     "успешна": "successful",
+    "успешка": "successful",
+    "успешные": "successful",
+    "успешный": "successful",
+    "успешно.": "successful",
+    "uspeshka": "successful",
     "muvaffaqiyatli": "successful",
     "доставлен": "successful",
     "доставлено": "successful",
+    "доставили": "successful",
+    "доставка": "successful",
     "оплачено": "successful",
+    "оплачен": "successful",
+    "сдан": "successful",
+    "сдано": "successful",
     "bajarildi": "successful",
+    "topshirildi": "successful",
+    "qabul qilindi": "successful",
     "отказ": "cancelled",
     "bekor qilingan": "cancelled",
     "otkaz": "cancelled",
@@ -77,6 +89,7 @@ STATUS_MAP = {
     "у курьера": "successful",
     "у курьера.": "successful",
     "курьер": "successful",
+    "курьерда": "successful",
     "kuryerda": "successful",
     "ожидание": "pending",
 }
@@ -1466,7 +1479,7 @@ class SheetsSource(BaseSource):
             return STATUS_MAP[raw], False
         if any(term in raw for term in ["отказ", "возврат", "otkaz", "bekor", "otmena"]):
             return "cancelled", False
-        if any(term in raw for term in ["курьер", "kuryer", "доставк", "dostavk", "успеш"]):
+        if any(term in raw for term in ["курьер", "kuryer", "достав", "dostav", "успеш", "uspesh", "оплач", "сдан", "topshir"]):
             return "successful", False
         if any(term in raw for term in ["процес", "ожидан", "protsess", "process", "jarayon", "kutilmoq"]):
             return "pending", False

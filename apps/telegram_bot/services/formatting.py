@@ -479,7 +479,9 @@ def card_text(
 
     elif card_type == "uspeshka":
         l2_ss = _parse_decimal_val(data.get("successful_sales"))
-        ss = l2_ss if (l2_ss is not None and l2_ss > Decimal("0")) else db_sales_successful
+        ss_val1 = l2_ss or Decimal("0")
+        ss_val2 = db_sales_successful or Decimal("0")
+        ss = max(ss_val1, ss_val2) if (ss_val1 > Decimal("0") or ss_val2 > Decimal("0")) else None
 
         so_raw = data.get("successful_orders")
         conv_raw = data.get("conversion_rate")
