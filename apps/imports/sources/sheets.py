@@ -307,10 +307,10 @@ class SheetsSource(BaseSource):
 
         headings = raw_rows[header_row_idx]
 
-        id_candidates = ["ID", "Tabel raqami", "User ID", "Id", "id"]
+        id_candidates = ["ID(xodim)", "ID (xodim)", "ID", "Tabel raqami", "User ID", "Id", "id"]
         id_idx = self._find_single_column_index(headings, candidates=id_candidates, name="ID", required=False)
         ord_idx = self._find_single_column_index(headings, candidates=["№", "Zakaz №", "Order ID", "Номер", "No", "Nomer"], name="№", required=False)
-        name_idx = self._find_single_column_index(headings, candidates=["Ответственный", "Xodim", "Menejer", "Operator", "ФИО", "FISH", "XODIMLAR ISMLARI", "Xodim ismi"], name="Ответственный", required=False)
+        name_idx = self._find_single_column_index(headings, candidates=["Ответственный(VLOOKUP)", "Ответственный (VLOOKUP)", "Ответственный", "Xodim", "Menejer", "Operator", "ФИО", "FISH", "XODIMLAR ISMLARI", "Xodim ismi"], name="Ответственный", required=False)
 
         if id_idx is None and name_idx is not None and name_idx > 0:
             candidate_id_idx = name_idx - 1
@@ -332,7 +332,7 @@ class SheetsSource(BaseSource):
         # Find group index: check candidates "Bo'lim", "Guruhi", "Guruh", etc.
         group_idx = self._find_single_column_index(
             headings,
-            candidates=["Bo'lim", "Guruhi", "Guruh", "Bo'lim ", "Guruhlar", "Guruh nomi", "Bo'lim nomi"],
+            candidates=["Bo'lim", "Guruhi", "Guruh", "Bo'lim ", "Guruhlar", "Guruh nomi", "Bo'lim nomi", " ", "  "],
             name="guruh",
             required=False,
         )
@@ -1008,11 +1008,18 @@ class SheetsSource(BaseSource):
         if not summary_row:
             return []
 
+        ignored_headers = {"SANA", "DATE", "JAMI", "ИТОГО", "№", "NO", "%", "USP %", "OTKAZ %", "PROFIT", "A_PROFIT", "E_PROFIT", "U_PROFIT", "OFICE_PROFIT"}
         groups = []
         seen_codes: set[str] = set()
         for col_idx, cell_val in enumerate(row0):
             code = str(cell_val).strip().upper()
-            if code in ["A", "B", "C", "D", "BAZA", "PERVICHKA"] and code not in seen_codes:
+            if (
+                code
+                and code not in ignored_headers
+                and not any(term in code for term in ["SANA", "FOIZ", "%", "PROFIT"])
+                and len(code) <= 12
+                and code not in seen_codes
+            ):
                 seen_codes.add(code)
                 total_val = summary_row[col_idx] if col_idx < len(summary_row) else "0"
                 profit_col = col_idx + 1 if (col_idx + 1 < len(summary_row)) else col_idx
@@ -1136,10 +1143,19 @@ class SheetsSource(BaseSource):
         exact_only: bool = True,
     ) -> int | None:
         def _norm(s: object) -> str:
-            return re.sub(r"[\s\.\_\-]+", "", str(s or "").strip().lower())
+            return re.sub(r"[\'\’\‘\ʼ\`\s\.\_\-]+", "", str(s or "").strip().lower())
 
         for candidate in candidates:
+            if candidate in (" ", "  "):
+                for idx, col_name in enumerate(headings):
+                    if str(col_name or "") == candidate:
+                        logger.info("Sheet ustun topildi (bitta probel sarlavhasi '%s'): indeks %s", name, idx)
+                        return idx
+
             cand_norm = _norm(candidate)
+            if not cand_norm:
+                continue
+
             for idx, col_name in enumerate(headings):
                 col_name_str = str(col_name or "").strip()
                 col_norm = _norm(col_name_str)

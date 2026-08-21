@@ -83,13 +83,19 @@ class DataImporter:
 
             # 1. Upsert payroll & employees & monthly stats (only if changed)
             for row in payroll:
-                grp_code = row.group_code or "A"
+                existing_emp = existing_employees.get(row.employee_id)
+                if row.group_code and row.group_code != "UNKNOWN":
+                    grp_code = row.group_code
+                elif existing_emp and existing_emp.group:
+                    grp_code = existing_emp.group.code
+                else:
+                    grp_code = "A"
+
                 group = groups_map.get(grp_code)
                 if group is None:
                     group = self.groups.get_or_create(code=grp_code)
                     groups_map[grp_code] = group
 
-                existing_emp = existing_employees.get(row.employee_id)
                 summary_dict = row.summary_data or {}
 
                 if (

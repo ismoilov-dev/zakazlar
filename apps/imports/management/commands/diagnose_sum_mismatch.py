@@ -25,6 +25,11 @@ class Command(BaseCommand):
             type=str,
             help="Filter diagnosis for a specific Employee ID (e.g. 0015 or 0191)",
         )
+        parser.add_argument(
+            "--month",
+            type=str,
+            help="Target month in YYYY-MM format (e.g. 2026-06 or 2026-08)",
+        )
 
     def handle(self, *args, **options):
         target_emp_id = None
@@ -35,6 +40,15 @@ class Command(BaseCommand):
                 self.stderr.write(self.style.ERROR(f"Invalid --employee-id: {exc}"))
                 return
 
+        target_date = None
+        if options.get("month"):
+            try:
+                parts = options["month"].strip().split("-")
+                target_date = date(int(parts[0]), int(parts[1]), 1)
+            except Exception as exc:
+                self.stderr.write(self.style.ERROR(f"Invalid --month format (expected YYYY-MM): {exc}"))
+                return
+
         self.stdout.write(self.style.MIGRATE_HEADING("=================================================="))
         self.stdout.write(self.style.MIGRATE_HEADING("   DIAGNOSE SUM MISMATCH — STEP-BY-STEP ANALYSIS   "))
         self.stdout.write(self.style.MIGRATE_HEADING("=================================================="))
@@ -42,8 +56,9 @@ class Command(BaseCommand):
         source = SheetsSource()
         orders, payroll = source.read()
 
-        active_sp = SpreadsheetPeriod.objects.filter(is_active=True).first()
-        target_date = active_sp.period if active_sp else timezone.localtime().date()
+        if target_date is None:
+            active_sp = SpreadsheetPeriod.objects.filter(is_active=True).first()
+            target_date = active_sp.period if active_sp else timezone.localtime().date()
         self.stdout.write(f"📌 Target Period: {target_date.strftime('%Y-%m')} (Active Sheet ID: {source.sheet_id})")
         if target_emp_id:
             self.stdout.write(f"📌 Employee Filter: {target_emp_id}")
