@@ -328,7 +328,7 @@ class DataImporter:
 
     def sync_employee_summaries_from_sales(self, period: date | None = None) -> None:
         """Dynamically update employee summary_data JSON in DB with actual Sale aggregates from List1."""
-        from django.db.models import Q, Sum
+        from django.db.models import Count, Q, Sum
         from django.db.models.functions import Coalesce
         from apps.employees.models import Employee, EmployeeMonthlyStat
         from apps.imports.sources.sheets import SheetsSource
@@ -348,6 +348,21 @@ class DataImporter:
                 db_successful_sales=Coalesce(
                     Sum("sale_amount", filter=Q(status=SaleStatus.SUCCESSFUL)), Decimal("0.00")
                 ),
+                db_perv_sales=Coalesce(
+                    Sum("sale_amount", filter=Q(status=SaleStatus.SUCCESSFUL) & ~Q(source__iexact="Baza")),
+                    Decimal("0.00"),
+                ),
+                db_baza_sales=Coalesce(
+                    Sum("sale_amount", filter=Q(status=SaleStatus.SUCCESSFUL, source__iexact="Baza")),
+                    Decimal("0.00"),
+                ),
+                db_otkaz_sales=Coalesce(
+                    Sum("sale_amount", filter=Q(status=SaleStatus.CANCELLED)), Decimal("0.00")
+                ),
+                db_v_proc_sales=Coalesce(
+                    Sum("sale_amount", filter=Q(status=SaleStatus.PENDING)), Decimal("0.00")
+                ),
+                db_successful_orders=Count("id", filter=Q(status=SaleStatus.SUCCESSFUL)),
             )
         )
 
@@ -355,6 +370,11 @@ class DataImporter:
             emp_id = stat["employee_id"]
             db_ts = stat["db_total_sales"]
             db_ss = stat["db_successful_sales"]
+            db_perv = stat["db_perv_sales"]
+            db_baza = stat["db_baza_sales"]
+            db_otkaz = stat["db_otkaz_sales"]
+            db_vproc = stat["db_v_proc_sales"]
+            db_so = stat["db_successful_orders"]
 
             try:
                 emp = Employee.objects.get(id=emp_id)
@@ -362,11 +382,26 @@ class DataImporter:
                 continue
 
             summary = dict(emp.summary_data or {})
-            l2_ts = SheetsSource._parse_money(summary.get("total_sales")) if summary.get("total_sales") else Decimal("0.00")
-            l2_ss = SheetsSource._parse_money(summary.get("successful_sales")) if summary.get("successful_sales") else Decimal("0.00")
+            
+            def _parse_dec(k: str) -> Decimal:
+                v = summary.get(k)
+                return SheetsSource._parse_money(v) if v else Decimal("0.00")
+
+            l2_ts = _parse_dec("total_sales")
+            l2_ss = _parse_dec("successful_sales")
+            l2_perv = _parse_dec("perv_sales")
+            l2_baza = _parse_dec("baza_sales")
+            l2_otkaz = _parse_dec("otkaz_sales")
+            l2_vproc = _parse_dec("v_proc_sales")
+            l2_so = int(summary.get("successful_orders") or 0)
 
             new_ts = max(l2_ts, db_ts)
             new_ss = max(l2_ss, db_ss)
+            new_perv = max(l2_perv, db_perv)
+            new_baza = max(l2_baza, db_baza)
+            new_otkaz = max(l2_otkaz, db_otkaz)
+            new_vproc = max(l2_vproc, db_vproc)
+            new_so = max(l2_so, db_so)
 
             changed = False
             if new_ts > l2_ts and new_ts > Decimal("0.00"):
@@ -374,6 +409,21 @@ class DataImporter:
                 changed = True
             if new_ss > l2_ss and new_ss > Decimal("0.00"):
                 summary["successful_sales"] = str(new_ss)
+                changed = True
+            if new_perv > l2_perv and new_perv > Decimal("0.00"):
+                summary["perv_sales"] = str(new_perv)
+                changed = True
+            if new_baza > l2_baza and new_baza > Decimal("0.00"):
+                summary["baza_sales"] = str(new_baza)
+                changed = True
+            if new_otkaz > l2_otkaz and new_otkaz > Decimal("0.00"):
+                summary["otkaz_sales"] = str(new_otkaz)
+                changed = True
+            if new_vproc > l2_vproc and new_vproc > Decimal("0.00"):
+                summary["v_proc_sales"] = str(new_vproc)
+                changed = True
+            if new_so > l2_so and new_so > 0:
+                summary["successful_orders"] = new_so
                 changed = True
 
             if changed:
