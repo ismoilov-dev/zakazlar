@@ -209,8 +209,15 @@ class DataImporter:
             for row in orders:
                 employee = employee_map.get(row.employee_id)
                 if employee is None:
-                    logger.warning("Rejecting order %s: employee ID %s not in payroll roster", row.order_id, row.employee_id)
-                    continue
+                    grp_code = row.group_code or "A"
+                    group = groups_map.get(grp_code) if "groups_map" in locals() else self.groups.get_or_create(code=grp_code)
+                    employee = self.employees.upsert(
+                        employee_id=row.employee_id,
+                        full_name=row.employee_name or f"Xodim {row.employee_id}",
+                        group=group,
+                    )
+                    employee_map[row.employee_id] = employee
+                    logger.info("Auto-created employee %s (%s) from order import roster", row.employee_id, row.employee_name)
 
                 existing_sale = existing_sales.get(row.order_id)
                 if (

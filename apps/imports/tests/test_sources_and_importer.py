@@ -60,8 +60,8 @@ class DataImporterTest(TestCase):
         self.assertEqual(emp.monthly_salary, Decimal("5000000.00"))
         self.assertEqual(Sale.objects.count(), 1)
 
-    def test_unlisted_employee_order_does_not_create_employee(self) -> None:
-        """Order for employee ID not in payroll roster does not auto-create an Employee or Sale."""
+    def test_unlisted_employee_order_auto_creates_employee_and_sale(self) -> None:
+        """Order for employee ID not in payroll roster auto-creates Employee and preserves Sale."""
         importer = DataImporter()
         now = timezone.now()
         payroll = [
@@ -85,9 +85,10 @@ class DataImporterTest(TestCase):
             )
         ]
         importer.import_dto_lists(orders=orders, payroll=payroll)
-        self.assertEqual(Employee.objects.count(), 1)
-        self.assertEqual(Employee.objects.first().employee_id, "0191")
-        self.assertEqual(Sale.objects.count(), 0)
+        self.assertEqual(Employee.objects.count(), 2)
+        new_emp = Employee.objects.filter(employee_id="9999").first()
+        self.assertIsNotNone(new_emp)
+        self.assertEqual(Sale.objects.count(), 1)
 
 
     def test_order_row_does_not_override_payroll_group(self) -> None:

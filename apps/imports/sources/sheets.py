@@ -454,6 +454,7 @@ class SheetsSource(BaseSource):
             qty_idx,
         )
 
+        self.last_raw_list1_rows = raw_rows
         orders: list[OrderDTO] = []
         dropped_rows: list[dict[str, object]] = []
 

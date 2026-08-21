@@ -30,8 +30,17 @@ class StatisticsRepository:
                     now = latest_dt
             else:
                 now = calendar_now
-        else:
-            now = timezone.localtime(target_date)
+        if target_date is not None:
+            from datetime import datetime
+            if isinstance(target_date, datetime):
+                now = timezone.localtime(target_date)
+                target_year, target_month = now.year, now.month
+            else:
+                target_year, target_month = target_date.year, target_date.month
+            return Sale.objects.filter(
+                ordered_at__year=target_year,
+                ordered_at__month=target_month,
+            )
 
         return Sale.objects.filter(
             ordered_at__year=now.year,

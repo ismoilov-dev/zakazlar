@@ -344,7 +344,20 @@ class SheetsSyncService:
             sync_log.updated_sales = updated
             sync_log.unchanged = False
             if skipped_rows > 0:
-                sync_log.error_text = f"Tashlangan qatorlar: {skipped_rows} ta."
+                dropped_list = getattr(source, "last_dropped_rows", [])
+                column_map = getattr(source, "last_column_indexes", {})
+                amt_idx = column_map.get("Сумма")
+                dropped_sum = Decimal("0")
+                for item in dropped_list:
+                    r_data = item.get("row_data", [])
+                    if amt_idx is not None and amt_idx < len(r_data):
+                        amt_str = str(r_data[amt_idx] or "").strip()
+                        if amt_str and not source._is_sheet_error(amt_str):
+                            try:
+                                dropped_sum += source._parse_money(amt_str)
+                            except Exception:
+                                pass
+                sync_log.error_text = f"Tashlangan qatorlar: {skipped_rows} ta. Yo'qotilgan summa: {dropped_sum:,.0f} so'm."
             sync_log.save(
                 update_fields=[
                     "status",
