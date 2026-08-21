@@ -375,10 +375,74 @@ def card_text(
 
     elif card_type == "total_sales":
         ts = _parse_decimal_val(data.get("total_sales"))
+        perv = _parse_decimal_val(data.get("perv_sales")) or Decimal("0")
+        baza = _parse_decimal_val(data.get("baza_sales")) or Decimal("0")
+        otkaz = _parse_decimal_val(data.get("otkaz_sales")) or Decimal("0")
+        v_proc = _parse_decimal_val(data.get("v_proc_sales")) or Decimal("0")
+        calc_ts = perv + baza + otkaz + v_proc
+
+        if calc_ts > Decimal("0") and (ts is None or calc_ts > ts):
+            ts = calc_ts
+
+        if employee_id:
+            try:
+                from apps.imports.models import SpreadsheetPeriod
+                from apps.sales.models import Sale
+                from django.db.models import Sum
+                from django.utils import timezone
+
+                if period_date is None:
+                    active_sp = SpreadsheetPeriod.objects.filter(is_active=True).first()
+                    target_date = active_sp.period if active_sp else timezone.localtime().date()
+                else:
+                    target_date = period_date
+
+                agg = Sale.objects.filter(
+                    employee__employee_id=employee_id,
+                    ordered_at__year=target_date.year,
+                    ordered_at__month=target_date.month,
+                ).aggregate(total=Sum("sale_amount"))
+                sale_ts = agg.get("total")
+                if sale_ts and (ts is None or sale_ts > ts):
+                    ts = sale_ts
+            except Exception as exc:
+                logger.warning("Failed to aggregate total_sales from Sale model for %s: %s", employee_id, exc)
+
         lines.append(f"📊 Jami savdo: {money(ts)}")
 
     elif card_type == "uspeshka":
         ss = _parse_decimal_val(data.get("successful_sales"))
+        perv = _parse_decimal_val(data.get("perv_sales")) or Decimal("0")
+        baza = _parse_decimal_val(data.get("baza_sales")) or Decimal("0")
+        calc_ss = perv + baza
+        if calc_ss > Decimal("0") and (ss is None or calc_ss > ss):
+            ss = calc_ss
+
+        if employee_id and (ss is None or ss == Decimal("0")):
+            try:
+                from apps.imports.models import SpreadsheetPeriod
+                from apps.sales.models import Sale, SaleStatus
+                from django.db.models import Sum
+                from django.utils import timezone
+
+                if period_date is None:
+                    active_sp = SpreadsheetPeriod.objects.filter(is_active=True).first()
+                    target_date = active_sp.period if active_sp else timezone.localtime().date()
+                else:
+                    target_date = period_date
+
+                agg = Sale.objects.filter(
+                    employee__employee_id=employee_id,
+                    status=SaleStatus.SUCCESSFUL,
+                    ordered_at__year=target_date.year,
+                    ordered_at__month=target_date.month,
+                ).aggregate(total=Sum("sale_amount"))
+                sale_ss = agg.get("total")
+                if sale_ss and sale_ss > (ss or Decimal("0")):
+                    ss = sale_ss
+            except Exception as exc:
+                logger.warning("Failed to aggregate successful_sales from Sale model for %s: %s", employee_id, exc)
+
         so_raw = data.get("successful_orders")
         conv_raw = data.get("conversion_rate")
         rconv_raw = data.get("real_conversion_rate")
