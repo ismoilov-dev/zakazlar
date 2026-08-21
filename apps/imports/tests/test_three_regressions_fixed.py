@@ -167,7 +167,8 @@ class ThreeRegressionsFixedTests(TestCase):
         from apps.statistics.repositories.statistics import StatisticsRepository, get_active_period_date
 
         target_p = timezone.now().date().replace(day=1)
-        SpreadsheetPeriod.objects.create(period=target_p, is_active=True)
+        SpreadsheetPeriod.objects.all().delete()
+        SpreadsheetPeriod.objects.create(spreadsheet_id="test_sheet_id", period=target_p, is_active=True)
 
         Sale.objects.create(
             employee=self.emp_xumoyun,

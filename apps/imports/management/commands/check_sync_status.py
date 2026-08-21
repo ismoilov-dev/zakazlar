@@ -57,11 +57,45 @@ class Command(BaseCommand):
                 if log.error_text:
                     self.stdout.write(self.style.ERROR(f"     Xatolik: {log.error_text}"))
 
-        # 4. Summary Verdict
+        # 4. Cache System & Lock Diagnostics
+        self.stdout.write("\n4. ⚡ KESH VA LOCK STATUSI (Cache Diagnostics):")
+        from django.core.cache import cache
+        from django.db import connection
+
+        try:
+            tables = connection.introspection.table_names()
+            if "sync_cache" in tables:
+                self.stdout.write(self.style.SUCCESS("   ✓ Kesh jadvali ('sync_cache') bazada MAVJUD."))
+                with connection.cursor() as cursor:
+                    cursor.execute("SELECT COUNT(*) FROM sync_cache;")
+                    cache_count = cursor.fetchone()[0]
+                    self.stdout.write(f"   ✓ 'sync_cache' dagi kalitlar soni: {cache_count} ta")
+            else:
+                self.stdout.write(self.style.ERROR("   X XATOLIK: 'sync_cache' jadvali topilmadi! 'python manage.py createcachetable' ishga tushiring."))
+        except Exception as exc:
+            self.stdout.write(self.style.ERROR(f"   X Kesh jadvalini tekshirishda xatolik: {exc}"))
+
+        sheets_locks = [
+            ("Payroll Sync Lock", "sheets_sync_recent_lock"),
+            ("Orders Sync Lock", "sheets_sync_orders_lock"),
+            ("Webhook Timestamp", "sheet_webhook_last_call_timestamp"),
+        ]
+
+        for lock_name, lock_key in sheets_locks:
+            try:
+                val = cache.get(lock_key)
+                if val is not None:
+                    self.stdout.write(self.style.WARNING(f"   🔒 {lock_name} ({lock_key}): BAND (Qiymati: {val})"))
+                else:
+                    self.stdout.write(self.style.SUCCESS(f"   🔓 {lock_name} ({lock_key}): BO'SH"))
+            except Exception as exc:
+                self.stdout.write(self.style.ERROR(f"   X {lock_name} olishda xatolik: {exc}"))
+
+        # 5. Summary Verdict
         self.stdout.write(self.style.MIGRATE_HEADING("\n=== DIAGNOSTIKA YAKUNI ==="))
         last_payroll_sync = SyncLog.get_last_successful(sync_type="payroll")
         last_orders_sync = SyncLog.get_last_successful(sync_type="orders")
-        
+
         if last_payroll_sync and last_orders_sync:
             p_time = timezone.localtime(last_payroll_sync.finished_at).strftime("%H:%M:%S")
             o_time = timezone.localtime(last_orders_sync.finished_at).strftime("%H:%M:%S")

@@ -3,6 +3,7 @@ import re
 import time
 from datetime import date
 from decimal import Decimal
+from typing import Any
 
 from django.conf import settings
 from django.core.cache import cache
@@ -59,7 +60,11 @@ class SheetsSyncService:
 
     """Orchestrates Google Sheets live synchronization with cache and freshness checks."""
 
-    CACHE_KEY = "sheets_sync_recent_lock"
+    CACHE_KEY_PAYROLL = "sheets_sync_recent_lock"
+    CACHE_KEY_ORDERS = "sheets_sync_orders_lock"
+    CACHE_KEY = CACHE_KEY_PAYROLL
+    CACHE_TTL_PAYROLL = 10
+    CACHE_TTL_ORDERS = 60
     CACHE_TTL_SECONDS = 10
     STALE_THRESHOLD_SECONDS = 300
     SHEETS_RECALC_DELAY_SECONDS = SHEETS_RECALC_DELAY_SECONDS
@@ -70,23 +75,64 @@ class SheetsSyncService:
     @classmethod
     def clear_cache_lock(cls) -> None:
         """Clear cache lock so next sync_if_needed executes immediately."""
-        cache.delete(cls.CACHE_KEY)
+        cls._safe_cache_delete(cls.CACHE_KEY_PAYROLL)
+        cls._safe_cache_delete(cls.CACHE_KEY_ORDERS)
 
-    def _get_drive_modified_time(self, source: SheetsSource, sheet_id: str) -> str:
+    @staticmethod
+    def _safe_cache_add(key: str, value: Any, timeout: int) -> tuple[bool, bool]:
+        """Atomic add to cache. Returns (acquired: bool, cache_available: bool)."""
+        try:
+            acquired = cache.add(key, value, timeout=timeout)
+            return bool(acquired), True
+        except Exception as exc:
+            logger.warning("Cache add failed for key %s: %s", key, exc)
+            return True, False  # Fail-soft: allow execution if cache is unavailable
+
+    @staticmethod
+    def _safe_cache_get(key: str) -> tuple[Any, bool]:
+        """Safe cache get. Returns (value, cache_available: bool)."""
+        try:
+            val = cache.get(key)
+            return val, True
+        except Exception as exc:
+            logger.warning("Cache get failed for key %s: %s", key, exc)
+            return None, False
+
+    @staticmethod
+    def _safe_cache_set(key: str, value: Any, timeout: int) -> bool:
+        """Safe cache set. Returns cache_available: bool."""
+        try:
+            cache.set(key, value, timeout=timeout)
+            return True
+        except Exception as exc:
+            logger.warning("Cache set failed for key %s: %s", key, exc)
+            return False
+
+    @staticmethod
+    def _safe_cache_delete(key: str) -> bool:
+        """Safe cache delete. Returns cache_available: bool."""
+        try:
+            cache.delete(key)
+            return True
+        except Exception as exc:
+            logger.warning("Cache delete failed for key %s: %s", key, exc)
+            return False
+
+    def _get_drive_modified_time(self, source: SheetsSource, sheet_id: str) -> tuple[str, bool]:
         cache_key = f"drive_modified_time_{sheet_id}"
-        cached_val = cache.get(cache_key)
+        cached_val, cache_ok = self._safe_cache_get(cache_key)
         if cached_val is not None:
-            return str(cached_val)
+            return str(cached_val), cache_ok
 
         try:
             drive_meta = source.client.http_client.get_file_drive_metadata(sheet_id)
             current_modified_time = str(drive_meta.get("modifiedTime", ""))
             if current_modified_time:
-                cache.set(cache_key, current_modified_time, timeout=5)
-            return current_modified_time
+                self._safe_cache_set(cache_key, current_modified_time, timeout=5)
+            return current_modified_time, cache_ok
         except Exception as exc:
             logger.warning("Google Drive metadata olishda xatolik (sheet_id=%s): %s", sheet_id, exc)
-            return ""
+            return "", cache_ok
 
     def sync_payroll(self, force: bool = False) -> SyncLog:
         """Fast path: Reads List2 and Guruhlar ONLY. Updates payroll, stats and groups without touching Sale records."""
@@ -247,12 +293,24 @@ class SheetsSyncService:
         """Slow path: Reads List1, resolves modal month, verifies period and writes Sale records."""
         last_successful = SyncLog.get_last_successful(sync_type="orders")
 
+        cache_error_note = ""
+        if not force:
+            acquired, cache_ok = self._safe_cache_add(self.CACHE_KEY_ORDERS, True, timeout=self.CACHE_TTL_ORDERS)
+            if not cache_ok:
+                cache_error_note = "CACHE UNAVAILABLE"
+            elif not acquired:
+                logger.info("Orders sync lock held, returning last successful log.")
+                if last_successful:
+                    return last_successful
+
         sync_log = None
         try:
             source = SheetsSource()
             sheet_id = source.sheet_id
 
-            current_modified_time = self._get_drive_modified_time(source, sheet_id)
+            current_modified_time, drive_cache_ok = self._get_drive_modified_time(source, sheet_id)
+            if not drive_cache_ok and not cache_error_note:
+                cache_error_note = "CACHE UNAVAILABLE"
 
             if not force and current_modified_time and last_successful and last_successful.sheet_modified_at == current_modified_time:
                 logger.info("Drive modified_time (%s) o'zgarmagan, short-circuit success log yaratilmoqda.", current_modified_time)
@@ -265,12 +323,14 @@ class SheetsSyncService:
                     orders_hash=last_successful.orders_hash,
                     row_count=0,
                     unchanged=True,
+                    error_text=cache_error_note,
                 )
 
             sync_log = SyncLog.objects.create(
                 status=SyncStatus.PENDING,
                 sync_type="orders",
                 sheet_modified_at=current_modified_time,
+                error_text=cache_error_note,
             )
 
             orders, payroll = source.read()
@@ -289,6 +349,8 @@ class SheetsSyncService:
                 sync_log.created_sales = 0
                 sync_log.updated_sales = 0
                 sync_log.unchanged = True
+                if cache_error_note:
+                    sync_log.error_text = cache_error_note
                 sync_log.save(
                     update_fields=[
                         "status",
@@ -300,6 +362,7 @@ class SheetsSyncService:
                         "created_sales",
                         "updated_sales",
                         "unchanged",
+                        "error_text",
                     ]
                 )
                 return sync_log
@@ -372,6 +435,8 @@ class SheetsSyncService:
                             pass
 
             log_messages = []
+            if cache_error_note:
+                log_messages.append(cache_error_note)
             if skipped_rows > 0:
                 unlisted_str = f" Topilmagan xodim ID lar: {', '.join(sorted(unlisted_ids))}." if unlisted_ids else ""
                 log_messages.append(f"Tashlangan qatorlar: {skipped_rows} ta. Yo'qotilgan summa: {dropped_sum:,.0f} so'm.{unlisted_str}")
@@ -413,13 +478,15 @@ class SheetsSyncService:
             if sync_log is not None:
                 sync_log.status = SyncStatus.FAILED
                 sync_log.finished_at = timezone.now()
-                sync_log.error_text = str(exc)[:1000]
+                err_text = f"{cache_error_note}. {exc}".strip(". ") if cache_error_note else str(exc)[:1000]
+                sync_log.error_text = err_text
                 sync_log.save(update_fields=["status", "finished_at", "error_text"])
             else:
+                err_text = f"{cache_error_note}. {exc}".strip(". ") if cache_error_note else str(exc)[:1000]
                 sync_log = SyncLog.objects.create(
                     status=SyncStatus.FAILED,
                     finished_at=timezone.now(),
-                    error_text=str(exc)[:1000],
+                    error_text=err_text,
                 )
 
             if last_successful:

@@ -44,6 +44,11 @@ class Command(BaseCommand):
             action="store_true",
             help="Allow sync to proceed even if active SpreadsheetPeriod does not match sheet data modal month.",
         )
+        parser.add_argument(
+            "--clear-cache",
+            action="store_true",
+            help="Clear all sheets-related cache keys before starting sync.",
+        )
 
     def _handle_signal(self, signum: int, frame: Any) -> None:
         self.stdout.write(self.style.WARNING(f"\nSignal {signum} qabul qilindi. Jarayon toza to'xtatilmoqda..."))
@@ -54,6 +59,12 @@ class Command(BaseCommand):
         watch = options.get("watch", False)
         interval = options.get("interval", 30)
         allow_period_mismatch = options.get("allow_period_mismatch", False)
+        clear_cache_opt = options.get("clear_cache", False)
+
+        if clear_cache_opt:
+            from apps.imports.management.commands.clear_sheets_cache import clear_sheets_cache_keys
+            deleted = clear_sheets_cache_keys()
+            self.stdout.write(self.style.SUCCESS(f"✅ Sinxronizatsiyadan oldin {deleted} ta kesh kalitlari tozalandi."))
 
         if watch:
             signal.signal(signal.SIGINT, self._handle_signal)

@@ -5,7 +5,9 @@ echo "=== Running Database Migrations ==="
 python manage.py migrate --noinput
 
 echo "=== Creating Cache Table ==="
-python manage.py createcachetable || true
+if ! python manage.py createcachetable; then
+    echo "[WARNING] createcachetable bajarishda ogohlantirish yuz berdi. sync_cache jadvalini tekshiring." >&2
+fi
 
 echo "=== Collecting Static Files ==="
 if ! python manage.py collectstatic --noinput; then

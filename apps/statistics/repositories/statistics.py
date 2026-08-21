@@ -29,15 +29,11 @@ def get_active_period_date(target_date=None) -> date:
         return active_sp.period
 
     # 2. Fallback: latest sale ordered_at date
-    calendar_now = timezone.localtime()
     first_sale = Sale.objects.order_by("-ordered_at").first()
     if first_sale and first_sale.ordered_at:
-        latest_dt = timezone.localtime(first_sale.ordered_at)
-        months_diff = (latest_dt.year - calendar_now.year) * 12 + (latest_dt.month - calendar_now.month)
-        if months_diff <= 1:
-            return latest_dt.date()
+        return timezone.localtime(first_sale.ordered_at).date()
 
-    return calendar_now.date()
+    return timezone.localtime().date()
 
 
 class StatisticsRepository:

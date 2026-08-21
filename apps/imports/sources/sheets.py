@@ -159,7 +159,7 @@ class SheetsSource(BaseSource):
         if not ws_titles:
             try:
                 ws_titles = [ws.title for ws in spreadsheet.worksheets()]
-                cache.set(cache_key, ws_titles, timeout=86400)
+                cache.set(cache_key, ws_titles, timeout=300)
             except Exception as exc:
                 logger.warning("Worksheet nomlarini olishda xatolik: %s", exc)
                 ws_titles = ["List2", "Guruhlar"]
