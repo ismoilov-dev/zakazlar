@@ -308,6 +308,7 @@ def card_text(
     fallback_salary: Decimal | None = None,
     employee_id: str | None = None,
     period_date: date | None = None,
+    db_totals: dict[str, Any] | None = None,
 ) -> str:
     """Render focused card text for an employee figure."""
     data = summary_data or {}
@@ -327,36 +328,24 @@ def card_text(
     db_sales_pending: Decimal | None = None
     db_sales_cancelled: Decimal | None = None
 
-    if employee_id:
+    totals = db_totals
+    if totals is None and employee_id:
         try:
-            from apps.sales.models import Sale, SaleStatus
-            from django.db.models import Sum
-            from apps.imports.models import SpreadsheetPeriod
-            from django.utils import timezone
-
-            p_date = period_date
-            if not p_date:
-                active_sp = SpreadsheetPeriod.objects.filter(is_active=True).first()
-                p_date = active_sp.period if active_sp else timezone.localtime().date()
-
-            qs = Sale.objects.filter(
-                employee__employee_id=employee_id,
-                ordered_at__year=p_date.year,
-                ordered_at__month=p_date.month,
-            )
-            if qs.exists():
-                db_sales_total = qs.aggregate(t=Sum("sale_amount")).get("t") or Decimal("0")
-                db_sales_successful = (
-                    qs.filter(status=SaleStatus.SUCCESSFUL).aggregate(t=Sum("sale_amount")).get("t") or Decimal("0")
-                )
-                db_sales_pending = (
-                    qs.filter(status=SaleStatus.PENDING).aggregate(t=Sum("sale_amount")).get("t") or Decimal("0")
-                )
-                db_sales_cancelled = (
-                    qs.filter(status=SaleStatus.CANCELLED).aggregate(t=Sum("sale_amount")).get("t") or Decimal("0")
-                )
+            from apps.employees.models import Employee
+            from apps.statistics.repositories.statistics import StatisticsRepository
+            emp = Employee.objects.filter(employee_id=employee_id).first()
+            if emp:
+                totals = StatisticsRepository().employee_totals(emp.id, target_date=period_date)
         except Exception as exc:
-            logger.warning("Could not calculate DB sale aggregation for employee %s: %s", employee_id, exc)
+            logger.warning("Could not calculate employee totals for employee_id=%s: %s", employee_id, exc)
+
+    if totals and totals.get("total_orders", 0) > 0:
+        db_sales_total = totals.get("total_sales")
+        perv = totals.get("perv_sales") or Decimal("0")
+        baza = totals.get("baza_sales") or Decimal("0")
+        db_sales_successful = perv + baza
+        db_sales_pending = totals.get("v_proc_sales")
+        db_sales_cancelled = totals.get("otkaz_sales")
 
     if card_type in ("earned_salary", "salary_1_15", "salary_16_31"):
         raw_sal = data.get("earned_salary")
@@ -468,16 +457,10 @@ def card_text(
     elif card_type == "v_proc":
         l2_vp = _parse_decimal_val(data.get("v_proc_sales"))
         vp = db_sales_pending if db_sales_pending is not None else l2_vp
-        lines.append(f"⏳ В процесс summasi: {money(vp)}")
+        lines.append(f"⏳ Jarayondagi summa: {money(vp)}")
 
         if l2_vp is not None and db_sales_pending is not None and abs(l2_vp - db_sales_pending) > Decimal("0.01"):
             lines.append(f"\n⚠️ <i>List2 va zakazlar bo'yicha hisob mos kelmadi ({money(l2_vp)} vs {money(db_sales_pending)})</i>")
-        otkaz = _parse_decimal_val(data.get("otkaz_sales"))
-        lines.append(f"❌ Otkaz summasi: {money(otkaz)}")
-
-    elif card_type == "v_proc":
-        vp = _parse_decimal_val(data.get("v_proc_sales"))
-        lines.append(f"⏳ Jarayondagi summa: {money(vp)}")
 
     return "\n".join(lines)
 

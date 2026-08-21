@@ -1,4 +1,5 @@
 import logging
+from datetime import date
 from decimal import Decimal
 
 from django.db.models import Count, Q, Sum
@@ -10,52 +11,48 @@ from apps.sales.models import Sale, SaleStatus
 logger = logging.getLogger(__name__)
 
 
+def get_active_period_date(target_date=None) -> date:
+    """Unified period date resolution for both /shaxsiy and /stats."""
+    if target_date is not None:
+        from datetime import datetime
+        if isinstance(target_date, str):
+            parts = target_date.split("-")
+            return date(int(parts[0]), int(parts[1]), 1)
+        if isinstance(target_date, datetime):
+            return target_date.date()
+        return target_date
+
+    # 1. Primary choice: active SpreadsheetPeriod
+    from apps.imports.models import SpreadsheetPeriod
+    active_sp = SpreadsheetPeriod.objects.filter(is_active=True).first()
+    if active_sp and active_sp.period:
+        return active_sp.period
+
+    # 2. Fallback: latest sale ordered_at date
+    calendar_now = timezone.localtime()
+    first_sale = Sale.objects.order_by("-ordered_at").first()
+    if first_sale and first_sale.ordered_at:
+        latest_dt = timezone.localtime(first_sale.ordered_at)
+        months_diff = (latest_dt.year - calendar_now.year) * 12 + (latest_dt.month - calendar_now.month)
+        if months_diff <= 1:
+            return latest_dt.date()
+
+    return calendar_now.date()
+
+
 class StatisticsRepository:
     """Calculate aggregates in PostgreSQL instead of loading sale rows."""
 
     def _get_current_month_qs(self, target_date=None):
-        calendar_now = timezone.localtime()
-        if target_date is None:
-            latest_sale = Sale.objects.order_by("-ordered_at").first()
-            if latest_sale and latest_sale.ordered_at:
-                latest_dt = timezone.localtime(latest_sale.ordered_at)
-                months_diff = (latest_dt.year - calendar_now.year) * 12 + (latest_dt.month - calendar_now.month)
-                if months_diff > 1:
-                    logger.warning(
-                        "Bazadagi eng oxirgi zakaz sanasi (%s) kalendar oyidan 1 oydan ortiq kelajakda. Kalendar oyiga qaytildi.",
-                        latest_dt.strftime("%d.%m.%Y"),
-                    )
-                    now = calendar_now
-                else:
-                    now = latest_dt
-            else:
-                now = calendar_now
-        if target_date is not None:
-            from datetime import datetime
-            if isinstance(target_date, datetime):
-                now = timezone.localtime(target_date)
-                target_year, target_month = now.year, now.month
-            else:
-                target_year, target_month = target_date.year, target_date.month
-            return Sale.objects.filter(
-                ordered_at__year=target_year,
-                ordered_at__month=target_month,
-            )
-
+        period_dt = get_active_period_date(target_date)
         return Sale.objects.filter(
-            ordered_at__year=now.year,
-            ordered_at__month=now.month,
+            ordered_at__year=period_dt.year,
+            ordered_at__month=period_dt.month,
         )
 
-    def get_active_month_str(self) -> str:
-        calendar_now = timezone.localtime()
-        first_sale = Sale.objects.order_by("-ordered_at").first()
-        if first_sale and first_sale.ordered_at:
-            latest_dt = timezone.localtime(first_sale.ordered_at)
-            months_diff = (latest_dt.year - calendar_now.year) * 12 + (latest_dt.month - calendar_now.month)
-            if months_diff <= 1:
-                return latest_dt.strftime("%m.%Y")
-        return calendar_now.strftime("%m.%Y")
+    def get_active_month_str(self, target_date=None) -> str:
+        period_dt = get_active_period_date(target_date)
+        return period_dt.strftime("%m.%Y")
 
     def employee_totals(self, employee_id: int, target_date=None) -> dict[str, object]:
         return self._aggregate(self._get_current_month_qs(target_date).filter(employee_id=employee_id))

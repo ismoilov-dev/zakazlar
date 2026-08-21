@@ -160,3 +160,36 @@ class ThreeRegressionsFixedTests(TestCase):
         self.assertIn("69\xa0710\xa0000 so'm", text)
         # Assert warning badge is rendered for List2 vs DB Sale mismatch
         self.assertIn("List2 va zakazlar bo'yicha hisob mos kelmadi", text)
+
+    def test_7_unified_period_resolution_and_matching_shaxsiy_and_stats(self):
+        """7. Unified get_active_period_date produces identical target period date and sales totals for stats repo and card text."""
+        from apps.imports.models import SpreadsheetPeriod
+        from apps.statistics.repositories.statistics import StatisticsRepository, get_active_period_date
+
+        target_p = timezone.now().date().replace(day=1)
+        SpreadsheetPeriod.objects.create(period=target_p, is_active=True)
+
+        Sale.objects.create(
+            employee=self.emp_xumoyun,
+            external_order_id="UNIFIED-1",
+            sale_amount=Decimal("69710000.00"),
+            status=SaleStatus.SUCCESSFUL,
+            ordered_at=timezone.now(),
+        )
+
+        resolved_date = get_active_period_date()
+        self.assertEqual(resolved_date, target_p)
+
+        repo_totals = StatisticsRepository().employee_totals(self.emp_xumoyun.id)
+        self.assertEqual(repo_totals["total_sales"], Decimal("69710000.00"))
+
+        text = card_text(
+            card_type="total_sales",
+            full_name=self.emp_xumoyun.full_name,
+            group_code=self.emp_xumoyun.group.code,
+            summary_data={"total_sales": "69710000"},
+            employee_id=self.emp_xumoyun.employee_id,
+            db_totals=repo_totals,
+        )
+        self.assertIn("69\xa0710\xa0000 so'm", text)
+        self.assertNotIn("List2 va zakazlar bo'yicha hisob mos kelmadi", text)

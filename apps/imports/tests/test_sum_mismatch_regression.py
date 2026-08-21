@@ -34,8 +34,8 @@ class SumMismatchRegressionTests(TestCase):
         self.assertEqual(SheetsSource._parse_money("69710000"), Decimal("69710000"))
         self.assertEqual(SheetsSource._parse_money("1,5"), Decimal("1.5"))
 
-    def test_employee_missing_from_payroll_auto_created_and_orders_preserved(self):
-        """2. Employee missing from List2 payroll roster should be auto-created during order import."""
+    def test_employee_missing_from_payroll_rejected_no_autocreate(self):
+        """2. Employee missing from List2 payroll roster should be rejected, not auto-created."""
         importer = DataImporter()
         orders = [
             OrderDTO(
@@ -50,15 +50,14 @@ class SumMismatchRegressionTests(TestCase):
             )
         ]
         created, updated = importer.import_orders_only(orders=orders)
-        self.assertEqual(created, 1)
+        self.assertEqual(created, 0)
+        self.assertEqual(updated, 0)
 
         new_emp = Employee.objects.filter(employee_id="0999").first()
-        self.assertIsNotNone(new_emp)
-        self.assertEqual(new_emp.full_name, "Yangi Xodim")
+        self.assertIsNone(new_emp)
 
         sale = Sale.objects.filter(external_order_id="ORD-999").first()
-        self.assertIsNotNone(sale)
-        self.assertEqual(sale.sale_amount, Decimal("10380000.00"))
+        self.assertIsNone(sale)
 
     def test_sale_amount_none_has_sheet_error_handling(self):
         """3. Sale with has_sheet_error=True and sale_amount=None does not crash aggregate SUM."""

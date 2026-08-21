@@ -76,23 +76,29 @@ class SilentSyncFixesTest(TestCase):
     def test_status_mapping_cancellation_substrings(self):
         """Substrings 'отказ клиента' and 'Возврат товара' map correctly to 'cancelled'."""
         source = SheetsSource.__new__(SheetsSource)
-        self.assertEqual(source._parse_status("отказ клиента"), "cancelled")
-        self.assertEqual(source._parse_status("Возврат товара"), "cancelled")
+        self.assertEqual(source._parse_status("отказ клиента"), ("cancelled", False))
+        self.assertEqual(source._parse_status("Возврат товара"), ("cancelled", False))
 
-    def test_unknown_status_drops_row_and_does_not_default_to_successful(self):
-        """Unknown status string 'Новый' causes row to be dropped with warning, not defaulted to 'successful'."""
+    def test_unknown_status_saved_as_pending_and_tracked(self):
+        """Unknown status string 'Новый' causes row to be saved as 'pending' with is_unrecognized=True and tracked."""
         raw_data = [
             ["№", "ID", "Ответственный", "Сумма", "Дата Заказа", "статус", "Источник"],
             ["1", "0191", "Amir Karimov", "100,000", "28.07.2026", "Новый"],  # Unknown status
         ]
 
         source = SheetsSource.__new__(SheetsSource)
+        source.last_unrecognized_statuses = {}
+        source.last_unrecognized_statuses_sum = Decimal("0")
+        source.last_duplicate_orders_count = 0
+        source.last_duplicate_orders_sum = Decimal("0")
+
         mock_worksheet = MagicMock()
         mock_worksheet.get_all_values.return_value = raw_data
 
         orders = source._parse_orders(mock_worksheet)
-        self.assertEqual(len(orders), 0)
-        self.assertEqual(source.last_parse_summary["dropped_invalid_id"], 1)
+        self.assertEqual(len(orders), 1)
+        self.assertEqual(orders[0].status, "pending")
+        self.assertEqual(source.last_unrecognized_statuses.get("Новый"), 1)
 
     def test_single_bad_row_in_payroll_does_not_crash_whole_payroll_sheet(self):
         """One bad row in payroll worksheet is logged and skipped without breaking valid rows."""
@@ -114,11 +120,11 @@ class SilentSyncFixesTest(TestCase):
     def test_courier_status_parses_as_successful_and_fixture_aggregation(self):
         """Courier status strings map to 'successful', 'В процесс' stays 'pending', 'Отказ' stays 'cancelled'."""
         source = SheetsSource.__new__(SheetsSource)
-        self.assertEqual(source._parse_status("У курьера"), "successful")
-        self.assertEqual(source._parse_status("курьер"), "successful")
-        self.assertEqual(source._parse_status("kuryerda"), "successful")
-        self.assertEqual(source._parse_status("В процесс"), "pending")
-        self.assertEqual(source._parse_status("Отказ"), "cancelled")
+        self.assertEqual(source._parse_status("У курьера"), ("successful", False))
+        self.assertEqual(source._parse_status("курьер"), ("successful", False))
+        self.assertEqual(source._parse_status("kuryerda"), ("successful", False))
+        self.assertEqual(source._parse_status("В процесс"), ("pending", False))
+        self.assertEqual(source._parse_status("Отказ"), ("cancelled", False))
 
         raw_data = [
             ["№", "ID", "Ответственный", "Сумма", "Дата Заказа", "статус", "Источник"],
