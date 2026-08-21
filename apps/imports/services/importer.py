@@ -160,7 +160,8 @@ class DataImporter:
                                 period,
                             )
 
-            # Upsert group summaries only if changed
+            # Upsert group summaries from DTOs or compute fallback from employee payroll data
+            explicit_summary_codes: set[str] = set()
             if group_summaries:
                 for g_dto in group_summaries:
                     grp_code = g_dto.group_code or "A"
@@ -177,6 +178,9 @@ class DataImporter:
                         g_dto.leader_bonus,
                     )
 
+                    if g_dto.group_total_sales and g_dto.group_total_sales > Decimal("0.00"):
+                        explicit_summary_codes.add(grp_code.upper())
+
                     if (
                         group.group_total_sales != g_dto.group_total_sales
                         or group.group_profit != g_dto.group_profit
@@ -187,6 +191,35 @@ class DataImporter:
                         group.leader_bonus = g_dto.leader_bonus
                         group.synced_at = timezone.now()
                         group.save(update_fields=["group_total_sales", "group_profit", "leader_bonus", "synced_at"])
+
+            # Compute authoritative group_total_sales by summing employee sales from List2 payroll for groups without explicit group_summaries
+            from collections import defaultdict
+            from apps.imports.sources.sheets import SheetsSource
+
+            group_payroll_sales: dict[str, Decimal] = defaultdict(Decimal)
+            for p_dto in payroll:
+                grp_k = (p_dto.group_code or "A").strip().upper()
+                if grp_k and grp_k != "UNKNOWN" and p_dto.summary_data:
+                    ts_val = p_dto.summary_data.get("total_sales") or p_dto.summary_data.get("successful_sales")
+                    if ts_val:
+                        try:
+                            group_payroll_sales[grp_k] += SheetsSource._parse_money(ts_val)
+                        except Exception:
+                            pass
+
+            for grp_code, group in groups_map.items():
+                code_up = grp_code.upper()
+                if code_up not in explicit_summary_codes:
+                    calc_sales = group_payroll_sales.get(code_up, Decimal("0.00"))
+                    if calc_sales > Decimal("0.00") and group.group_total_sales != calc_sales:
+                        group.group_total_sales = calc_sales
+                        group.synced_at = timezone.now()
+                        group.save(update_fields=["group_total_sales", "synced_at"])
+                        logger.info(
+                            "SalesGroup %s total sales updated to %s from List2 employee payroll sales sum",
+                            grp_code,
+                            calc_sales,
+                        )
 
             # Clear stale summary_data and monthly_salary for active employees no longer in List2
             Employee.objects.filter(is_active=True).exclude(employee_id__in=payroll_employee_ids).update(

@@ -445,5 +445,25 @@ class SheetsSyncFailureTest(TestCase):
         self.assertEqual(groups_fallback[0].group_code, "B")
         self.assertEqual(groups_fallback[0].group_total_sales, Decimal("630315000.00"))
 
+    def test_importer_computes_group_sales_from_payroll_when_group_summaries_empty(self) -> None:
+        """Verify DataImporter computes SalesGroup.group_total_sales from employee payroll when group_summaries is empty."""
+        from decimal import Decimal
+        from apps.groups.models import SalesGroup
+        from apps.imports.dto import PayrollDTO
+        from apps.imports.services.importer import DataImporter
+
+        group_b = SalesGroup.objects.create(code="B", name="Group B", group_total_sales=Decimal("0.00"))
+
+        importer = DataImporter()
+        payroll_data = [
+            PayrollDTO(group_code="B", employee_id="1001", employee_name="Employee 1", summary_data={"total_sales": "400,000,000"}),
+            PayrollDTO(group_code="B", employee_id="1002", employee_name="Employee 2", summary_data={"total_sales": "230,315,000"}),
+        ]
+        importer.import_payroll_only(payroll=payroll_data, group_summaries=[])
+
+        group_b.refresh_from_db()
+        self.assertEqual(group_b.group_total_sales, Decimal("630315000.00"))
+
+
 
 
