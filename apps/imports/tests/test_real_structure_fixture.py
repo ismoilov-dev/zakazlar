@@ -141,8 +141,8 @@ class RealStructureFixtureTests(TestCase):
         self.assertTrue(all(o.status == "successful" for o in orders))
         self.assertEqual(len(source.last_dropped_rows), 0)
 
-    def test_3_unlisted_employee_tracked_in_synclog_and_auto_created(self):
-        """3. Employee missing from List2 auto-creates Employee and records dropped sum if skipped."""
+    def test_3_unlisted_employee_order_rejected_by_importer(self):
+        """3. Employee missing from List2 roster is strictly rejected by importer."""
         importer = DataImporter()
         orders = [
             OrderDTO(
@@ -157,16 +157,9 @@ class RealStructureFixtureTests(TestCase):
             )
         ]
         created, updated = importer.import_orders_only(orders=orders)
-        self.assertEqual(created, 1)
-
-        # Verify auto-created Employee & preserved Sale
-        new_emp = Employee.objects.filter(employee_id="9988").first()
-        self.assertIsNotNone(new_emp)
-        self.assertEqual(new_emp.full_name, "Yangi Sotuvchi")
-
-        sale = Sale.objects.filter(external_order_id="ORD-UNLISTED-1").first()
-        self.assertIsNotNone(sale)
-        self.assertEqual(sale.sale_amount, Decimal("10380000.00"))
+        self.assertEqual(created, 0)
+        self.assertIsNone(Employee.objects.filter(employee_id="9988").first())
+        self.assertIsNone(Sale.objects.filter(external_order_id="ORD-UNLISTED-1").first())
 
     def test_4_dynamic_groups_e_u_office_leader_bonus_calculated(self):
         """4. Groups E, U, OFICE dynamically parsed from Guruhlar sheet and leader bonus calculated."""

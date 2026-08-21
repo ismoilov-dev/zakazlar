@@ -957,7 +957,11 @@ class SheetsSource(BaseSource):
         return payroll
 
 
-    def _parse_groups(self, worksheet_or_rows: gspread.Worksheet | list[list[Any]]) -> list[GroupSummaryDTO]:
+    def _parse_groups(
+        self,
+        worksheet_or_rows: gspread.Worksheet | list[list[Any]],
+        valid_group_codes: set[str] | list[str] | None = None,
+    ) -> list[GroupSummaryDTO]:
         if isinstance(worksheet_or_rows, list):
             raw_rows = worksheet_or_rows
         else:
@@ -968,15 +972,15 @@ class SheetsSource(BaseSource):
         # 1. Try vertical format first if 'Guruh foydasi' column exists in header
         header_row_idx = None
         for i, row in enumerate(raw_rows[:15]):
-            row_str_cells = [str(c).strip().lower() for c in row]
-            if "guruh foydasi" in row_str_cells:
+            row_clean = [str(c).strip().lower() for c in row]
+            if "guruh foydasi" in row_clean or "guruh kodi" in row_clean:
                 header_row_idx = i
                 break
 
         if header_row_idx is not None:
             headings = raw_rows[header_row_idx]
-            code_idx = self._find_single_column_index(headings, candidates=["Guruh", "Bo'lim"], name="guruh", required=False)
-            profit_idx = self._find_single_column_index(headings, candidates=["Guruh foydasi"], name="guruh foydasi", required=False)
+            code_idx = self._find_single_column_index(headings, candidates=["Guruh kodi", "Guruh"], name="guruh kodi", required=False)
+            profit_idx = self._find_single_column_index(headings, candidates=["Guruh foydasi", "Foyda"], name="guruh foydasi", required=False)
             bonus_idx = self._find_single_column_index(headings, candidates=["Rahbar bonusi"], name="rahbar bonusi", required=False)
 
             if code_idx is not None and profit_idx is not None:
@@ -993,8 +997,8 @@ class SheetsSource(BaseSource):
                 if groups:
                     return groups
 
-        # 2. Horizontal layout parsing (Row 0 has group codes A, B, C, D, BAZA, last JAMI row has totals)
-        row0 = raw_rows[0]
+        # 2. Horizontal layout parsing
+        row0 = raw_rows[0] if raw_rows else []
         summary_row = None
         for row in reversed(raw_rows):
             cell0 = str(row[0] if row else "").strip().upper()
@@ -1008,19 +1012,19 @@ class SheetsSource(BaseSource):
         if not summary_row:
             return []
 
-        ignored_headers = {"SANA", "DATE", "JAMI", "ИТОГО", "№", "NO", "%", "USP %", "OTKAZ %", "PROFIT", "A_PROFIT", "E_PROFIT", "U_PROFIT", "OFICE_PROFIT"}
+        if valid_group_codes:
+            allowed_codes = {str(c).strip().upper() for c in valid_group_codes if str(c).strip()}
+        else:
+            allowed_codes = {"A", "B", "C", "D", "E", "U", "BAZA", "OFICE", "PERVICHKA"}
+
         groups = []
         seen_codes: set[str] = set()
         for col_idx, cell_val in enumerate(row0):
-            code = str(cell_val).strip().upper()
-            if (
-                code
-                and code not in ignored_headers
-                and not any(term in code for term in ["SANA", "FOIZ", "%", "PROFIT"])
-                and len(code) <= 12
-                and code not in seen_codes
-            ):
-                seen_codes.add(code)
+            raw_val = str(cell_val or "").strip().upper()
+            clean_code = re.sub(r"[\:\.\,\s]+", "", raw_val)
+
+            if clean_code in allowed_codes and clean_code not in seen_codes:
+                seen_codes.add(clean_code)
                 total_val = summary_row[col_idx] if col_idx < len(summary_row) else "0"
                 profit_col = col_idx + 1 if (col_idx + 1 < len(summary_row)) else col_idx
                 profit_val = summary_row[profit_col] if profit_col < len(summary_row) else "0"
@@ -1035,7 +1039,7 @@ class SheetsSource(BaseSource):
                 bonus = (profit * Decimal("0.02")).quantize(Decimal("0.01"))
                 groups.append(
                     GroupSummaryDTO(
-                        group_code=code,
+                        group_code=clean_code,
                         group_total_sales=total_sales,
                         group_profit=profit,
                         leader_bonus=bonus,
