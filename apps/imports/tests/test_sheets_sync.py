@@ -388,3 +388,30 @@ class SheetsSyncFailureTest(TestCase):
         self.assertTrue(dto.has_sheet_error)
         self.assertEqual(len(getattr(source, "last_dropped_rows", [])), 0)
 
+    def test_sheets_group_summary_preserved_without_being_overwritten_by_db(self) -> None:
+        """Verify that Google Sheets GroupSummaryDTO totals are preserved as authoritative in SalesGroup."""
+        from decimal import Decimal
+        from apps.groups.models import SalesGroup
+        from apps.imports.dto import GroupSummaryDTO, OrderDTO, PayrollDTO
+        from apps.imports.services.importer import DataImporter
+
+        group = SalesGroup.objects.create(code="B", name="Group B", group_total_sales=Decimal("0"))
+
+        importer = DataImporter()
+        importer.import_dto_lists(
+            orders=[],
+            payroll=[],
+            group_summaries=[
+                GroupSummaryDTO(
+                    group_code="B",
+                    group_total_sales=Decimal("630315000.00"),
+                    group_profit=Decimal("200000000.00"),
+                    leader_bonus=Decimal("5000000.00"),
+                )
+            ],
+        )
+
+        group.refresh_from_db()
+        self.assertEqual(group.group_total_sales, Decimal("630315000.00"))
+
+
