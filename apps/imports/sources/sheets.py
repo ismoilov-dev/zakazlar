@@ -214,12 +214,13 @@ class SheetsSource(BaseSource):
         if "list1" not in worksheets:
             raise ValidationError("Google Sheet'da 'List1' varog'i topilmadi.")
 
-        # Check all candidate payroll worksheets: 'list2' prioritized first, then 'xodimlar maoshi', 'ish haqi'
+        # Check candidate payroll worksheets: 'list2' prioritized first, then 'xodimlar maoshi', 'ish haqi'
         payroll_candidates: list[gspread.Worksheet] = []
         for name in ["list2", "xodimlar maoshi", "ish haqi"]:
             ws = worksheets.get(name)
             if ws and ws not in payroll_candidates:
                 payroll_candidates.append(ws)
+                break
 
         if not payroll_candidates:
             raise ValidationError("Google Sheet'da 'List2', 'Xodimlar maoshi' yoki 'Ish haqi' varog'i topilmadi.")
@@ -1214,10 +1215,33 @@ class SheetsSource(BaseSource):
         clean = s.replace(" ", "").replace("\xa0", "").replace("$", "").replace("so'm", "").replace("som", "").strip()
         if not clean or SheetsSource._is_sheet_error(clean):
             return Decimal("0.00")
-        if "." not in clean and clean.count(",") == 1:
-            clean = clean.replace(",", ".")
-        else:
-            clean = clean.replace(",", "")
+
+        if "," in clean and "." in clean:
+            last_comma = clean.rfind(",")
+            last_dot = clean.rfind(".")
+            if last_dot > last_comma:
+                clean = clean.replace(",", "")
+            else:
+                clean = clean.replace(".", "").replace(",", ".")
+        elif "," in clean and "." not in clean:
+            parts = clean.split(",")
+            if len(parts) > 2:
+                clean = clean.replace(",", "")
+            elif len(parts) == 2:
+                if len(parts[1]) == 3 and parts[1].isdigit():
+                    clean = clean.replace(",", "")
+                elif len(parts[1]) in (1, 2) and parts[0].isdigit():
+                    clean = clean.replace(",", ".")
+                else:
+                    clean = clean.replace(",", "")
+        elif "." in clean and "," not in clean:
+            parts = clean.split(".")
+            if len(parts) > 2:
+                clean = clean.replace(".", "")
+            elif len(parts) == 2:
+                if len(parts[1]) == 3 and parts[1].isdigit():
+                    clean = clean.replace(".", "")
+
         try:
             return Decimal(clean)
         except Exception as exc:
