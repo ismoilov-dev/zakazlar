@@ -13,7 +13,7 @@ from apps.imports.dto import normalize_employee_id
 from apps.imports.models import SpreadsheetPeriod
 from apps.imports.sources.sheets import SheetsSource
 from apps.sales.models import Sale, SaleStatus
-from apps.statistics.services.statistics import EmployeeStatisticsService
+from apps.statistics.services.statistics import StatisticsService
 
 
 class Command(BaseCommand):
@@ -202,7 +202,7 @@ class Command(BaseCommand):
         self.stdout.write(self.style.WARNING(f"   ➡️ DELTA (Parsed DTO - DB Sale All): {delta_2_4:,.2f} so'm"))
 
         # 5. STATISTICS SERVICE QUERY ANALYSIS
-        stat_service = EmployeeStatisticsService()
+        stat_service = StatisticsService()
         if target_emp_id:
             emp = Employee.objects.filter(employee_id=target_emp_id).first()
             if emp:
