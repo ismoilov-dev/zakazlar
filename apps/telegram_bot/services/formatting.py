@@ -474,14 +474,18 @@ def card_text(
 
     elif card_type == "total_sales":
         l2_ts = _parse_decimal_val(data.get("total_sales"))
-        ts = l2_ts if (l2_ts is not None and l2_ts > Decimal("0")) else db_sales_total
+        ts_val1 = l2_ts or Decimal("0")
+        ts_val2 = db_sales_total or Decimal("0")
+        ts_val3 = db_sales_successful or Decimal("0")
+        ts = max(ts_val1, ts_val2, ts_val3) if (ts_val1 > Decimal("0") or ts_val2 > Decimal("0") or ts_val3 > Decimal("0")) else None
         lines.append(f"📊 Jami savdo: {money(ts)}")
 
     elif card_type == "uspeshka":
         l2_ss = _parse_decimal_val(data.get("successful_sales"))
         ss_val1 = l2_ss or Decimal("0")
         ss_val2 = db_sales_successful or Decimal("0")
-        ss = max(ss_val1, ss_val2) if (ss_val1 > Decimal("0") or ss_val2 > Decimal("0")) else None
+        ss_val3 = db_sales_total or Decimal("0")
+        ss = max(ss_val1, ss_val2, ss_val3) if (ss_val1 > Decimal("0") or ss_val2 > Decimal("0") or ss_val3 > Decimal("0")) else None
 
         so_raw = data.get("successful_orders")
         conv_raw = data.get("conversion_rate")
