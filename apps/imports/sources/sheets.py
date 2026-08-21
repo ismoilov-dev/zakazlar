@@ -200,7 +200,7 @@ class SheetsSource(BaseSource):
         self.last_payroll_hash = hashlib.sha256(raw_payroll_str.encode("utf-8")).hexdigest()
 
         payroll = self._parse_payroll(raw_payroll, sheet_title=payroll_title)
-        groups_summary = self._parse_groups(raw_guruhlar)
+        groups_summary = self._parse_groups(raw_guruhlar, payroll_dtos=payroll)
 
         self.groups_summary = groups_summary
         return payroll, groups_summary
@@ -260,7 +260,7 @@ class SheetsSource(BaseSource):
         groups_summary: list[GroupSummaryDTO] = []
         if ws_guruhlar:
             try:
-                groups_summary = self._parse_groups(ws_guruhlar)
+                groups_summary = self._parse_groups(ws_guruhlar, payroll_dtos=payroll)
             except Exception as exc:
                 logger.warning("Guruhlar varag'ini tahlil qilishda xatolik: %s", exc)
         else:
@@ -993,6 +993,7 @@ class SheetsSource(BaseSource):
         self,
         worksheet_or_rows: gspread.Worksheet | list[list[Any]],
         valid_group_codes: set[str] | list[str] | None = None,
+        payroll_dtos: list[PayrollDTO] | None = None,
     ) -> list[GroupSummaryDTO]:
         if isinstance(worksheet_or_rows, list):
             raw_rows = worksheet_or_rows
@@ -1001,7 +1002,7 @@ class SheetsSource(BaseSource):
         if not raw_rows:
             return []
 
-        # 1. Try vertical format first if 'Guruh foydasi' column exists in header
+        # 1. Try vertical format first if 'Guruh foydasi' or 'Guruh kodi' column exists in header
         header_row_idx = None
         for i, row in enumerate(raw_rows[:15]):
             row_clean = [str(c).strip().lower() for c in row]
@@ -1014,8 +1015,24 @@ class SheetsSource(BaseSource):
             code_idx = self._find_single_column_index(headings, candidates=["Guruh kodi", "Guruh"], name="guruh kodi", required=False)
             profit_idx = self._find_single_column_index(headings, candidates=["Guruh foydasi", "Foyda"], name="guruh foydasi", required=False)
             bonus_idx = self._find_single_column_index(headings, candidates=["Rahbar bonusi"], name="rahbar bonusi", required=False)
+            total_sales_idx = self._find_single_column_index(
+                headings,
+                candidates=[
+                    "Guruh jami savdosi",
+                    "Guruh savdosi",
+                    "Jami savdo",
+                    "Savdo summasi",
+                    "Savdo",
+                    "Umumiy savdo",
+                    "Total sales",
+                    "Jami zakaz summasi",
+                    "Umumiy zakaz summasi",
+                ],
+                name="guruh jami savdosi",
+                required=False,
+            )
 
-            if code_idx is not None and profit_idx is not None:
+            if code_idx is not None and (profit_idx is not None or total_sales_idx is not None):
                 groups: list[GroupSummaryDTO] = []
                 for row in raw_rows[header_row_idx + 1:]:
                     if not any(str(cell).strip() for cell in row):
@@ -1023,9 +1040,35 @@ class SheetsSource(BaseSource):
                     grp_code = self._get_cell(row, code_idx).upper()
                     if not grp_code:
                         continue
-                    profit = self._parse_money(self._get_cell(row, profit_idx))
+                    profit = self._parse_money(self._get_cell(row, profit_idx)) if profit_idx is not None else Decimal("0.00")
                     bonus = self._parse_money(self._get_cell(row, bonus_idx)) if bonus_idx is not None else (profit * Decimal("0.02"))
-                    groups.append(GroupSummaryDTO(group_code=grp_code, group_profit=profit, leader_bonus=bonus))
+
+                    total_sales = Decimal("0.00")
+                    if total_sales_idx is not None:
+                        total_sales = self._parse_money(self._get_cell(row, total_sales_idx))
+
+                    # Fallback: if total_sales is missing/zero, sum employee total_sales for this group from payroll_dtos
+                    if (total_sales == Decimal("0.00") or total_sales_idx is None) and payroll_dtos:
+                        emp_sales_sum = Decimal("0.00")
+                        for dto in payroll_dtos:
+                            if dto.group_code and dto.group_code.strip().upper() == grp_code and dto.summary_data:
+                                ts_str = dto.summary_data.get("total_sales")
+                                if ts_str:
+                                    try:
+                                        emp_sales_sum += self._parse_money(ts_str)
+                                    except Exception:
+                                        pass
+                        if emp_sales_sum > Decimal("0.00"):
+                            total_sales = emp_sales_sum
+
+                    groups.append(
+                        GroupSummaryDTO(
+                            group_code=grp_code,
+                            group_total_sales=total_sales,
+                            group_profit=profit,
+                            leader_bonus=bonus,
+                        )
+                    )
                 if groups:
                     return groups
 

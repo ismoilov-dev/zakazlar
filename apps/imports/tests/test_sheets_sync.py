@@ -414,4 +414,36 @@ class SheetsSyncFailureTest(TestCase):
         group.refresh_from_db()
         self.assertEqual(group.group_total_sales, Decimal("630315000.00"))
 
+    def test_parse_groups_vertical_layout_total_sales_and_fallback(self) -> None:
+        from decimal import Decimal
+        from apps.imports.dto import PayrollDTO
+        from apps.imports.sources.sheets import SheetsSource
+
+        source = SheetsSource(sheet_id="test_sheet_id")
+
+        # 1. Test vertical layout with explicit total sales column
+        raw_guruhlar = [
+            ["Guruh kodi", "Guruh foydasi", "Rahbar bonusi", "Guruh jami savdosi"],
+            ["B", "150,000,000", "3,000,000", "630,315,000"],
+        ]
+        groups = source._parse_groups(raw_guruhlar)
+        self.assertEqual(len(groups), 1)
+        self.assertEqual(groups[0].group_code, "B")
+        self.assertEqual(groups[0].group_total_sales, Decimal("630315000.00"))
+
+        # 2. Test vertical layout missing total sales column -> fallback to summing employee sales
+        raw_guruhlar_no_sales = [
+            ["Guruh kodi", "Guruh foydasi", "Rahbar bonusi"],
+            ["B", "150,000,000", "3,000,000"],
+        ]
+        payroll_dtos = [
+            PayrollDTO(group_code="B", employee_id="0001", employee_name="Emp 1", summary_data={"total_sales": "400,000,000"}),
+            PayrollDTO(group_code="B", employee_id="0002", employee_name="Emp 2", summary_data={"total_sales": "230,315,000"}),
+        ]
+        groups_fallback = source._parse_groups(raw_guruhlar_no_sales, payroll_dtos=payroll_dtos)
+        self.assertEqual(len(groups_fallback), 1)
+        self.assertEqual(groups_fallback[0].group_code, "B")
+        self.assertEqual(groups_fallback[0].group_total_sales, Decimal("630315000.00"))
+
+
 
