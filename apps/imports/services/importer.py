@@ -192,7 +192,7 @@ class DataImporter:
                         group.synced_at = timezone.now()
                         group.save(update_fields=["group_total_sales", "group_profit", "leader_bonus", "synced_at"])
 
-            # Compute authoritative group_total_sales by summing employee sales from List2 payroll for groups without explicit group_summaries
+            # Compute authoritative group_total_sales by summing employee sales from List2 payroll for all groups
             from collections import defaultdict
             from apps.imports.sources.sheets import SheetsSource
 
@@ -209,17 +209,16 @@ class DataImporter:
 
             for grp_code, group in groups_map.items():
                 code_up = grp_code.upper()
-                if code_up not in explicit_summary_codes:
-                    calc_sales = group_payroll_sales.get(code_up, Decimal("0.00"))
-                    if calc_sales > Decimal("0.00") and group.group_total_sales != calc_sales:
-                        group.group_total_sales = calc_sales
-                        group.synced_at = timezone.now()
-                        group.save(update_fields=["group_total_sales", "synced_at"])
-                        logger.info(
-                            "SalesGroup %s total sales updated to %s from List2 employee payroll sales sum",
-                            grp_code,
-                            calc_sales,
-                        )
+                calc_sales = group_payroll_sales.get(code_up, Decimal("0.00"))
+                if calc_sales > Decimal("0.00") and group.group_total_sales != calc_sales:
+                    group.group_total_sales = calc_sales
+                    group.synced_at = timezone.now()
+                    group.save(update_fields=["group_total_sales", "synced_at"])
+                    logger.info(
+                        "SalesGroup %s total sales set to %s from List2 employee payroll sales sum",
+                        grp_code,
+                        calc_sales,
+                    )
 
             # Clear stale summary_data and monthly_salary for active employees no longer in List2
             Employee.objects.filter(is_active=True).exclude(employee_id__in=payroll_employee_ids).update(
