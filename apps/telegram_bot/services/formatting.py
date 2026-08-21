@@ -248,6 +248,54 @@ def money(value: Decimal | None, *, bold: bool = True) -> str:
     return formatted_str
 
 
+def calculate_sal_1_15_from_sales(
+    employee_id: str | None,
+    period_date: date | None = None,
+    group_code: str = "A",
+) -> Decimal | None:
+    """Calculate 1-15 day salary dynamically from parsed Sale records for the target period."""
+    if not employee_id:
+        return None
+    try:
+        from apps.imports.models import SpreadsheetPeriod
+        from apps.sales.models import Sale, SaleSource, SaleStatus
+        from django.utils import timezone
+
+        if period_date is None:
+            active_sp = SpreadsheetPeriod.objects.filter(is_active=True).first()
+            target_date = active_sp.period if active_sp else timezone.localtime().date()
+        else:
+            target_date = period_date
+
+        sales_1_15 = Sale.objects.filter(
+            employee__employee_id=employee_id,
+            status=SaleStatus.SUCCESSFUL,
+            ordered_at__year=target_date.year,
+            ordered_at__month=target_date.month,
+            ordered_at__day__lte=15,
+        )
+
+        if not sales_1_15.exists():
+            return None
+
+        perv_sum = Decimal("0")
+        baza_sum = Decimal("0")
+        for s in sales_1_15:
+            amt = s.sale_amount or Decimal("0")
+            if s.source == SaleSource.BAZA:
+                baza_sum += amt
+            else:
+                perv_sum += amt
+
+        grp_upper = (group_code or "").strip().upper()
+        if grp_upper == "BAZA":
+            return (perv_sum * Decimal("0.12")) + (baza_sum * Decimal("0.12"))
+        return (perv_sum * Decimal("0.12")) + (baza_sum * Decimal("0.16"))
+    except Exception as exc:
+        logger.warning("Failed to calculate 1-15 salary from sales for %s: %s", employee_id, exc)
+        return None
+
+
 def card_text(
     card_type: str,
     full_name: str,
@@ -255,6 +303,8 @@ def card_text(
     summary_data: dict[str, Any] | None,
     period_label: str | None = None,
     fallback_salary: Decimal | None = None,
+    employee_id: str | None = None,
+    period_date: date | None = None,
 ) -> str:
     """Render focused card text for an employee figure."""
     data = summary_data or {}
@@ -292,11 +342,15 @@ def card_text(
         sal_1_15 = _parse_decimal_val(data.get("earned_salary_1_15") or data.get("salary_1_15"))
         sal_16_31 = _parse_decimal_val(data.get("earned_salary_16_31") or data.get("salary_16_31"))
 
+        if sal_1_15 is None and employee_id:
+            sal_1_15 = calculate_sal_1_15_from_sales(employee_id, period_date, group_code)
+
         has_explicit_16_31 = sal_16_31 is not None and sal_16_31 > Decimal("0")
         if sal_1_15 is not None and has_explicit_16_31:
             sal = sal_1_15 + sal_16_31
         elif sal is not None:
             if sal_1_15 is not None:
+                sal_1_15 = min(sal_1_15, sal)
                 sal_16_31 = max(Decimal("0"), sal - sal_1_15)
             elif sal_16_31 is not None:
                 sal_1_15 = max(Decimal("0"), sal - sal_16_31)

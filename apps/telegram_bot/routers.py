@@ -927,6 +927,7 @@ async def handle_rop_callback(callback: CallbackQuery, state: FSMContext) -> Non
                 account.employee.full_name,
                 group.code,
                 account.employee.summary_data,
+                employee_id=account.employee.employee_id,
             )
             + footer
         )
@@ -1163,6 +1164,8 @@ async def handle_xizmatlar_callback(callback: CallbackQuery, state: FSMContext |
             summary_data=summary_data,
             period_label=period_label,
             fallback_salary=fallback_salary,
+            employee_id=employee.employee_id,
+            period_date=period_date,
         )
         text = body + footer
         reply_markup = card_keyboard(period_iso, src=src, card_type=card_type)
