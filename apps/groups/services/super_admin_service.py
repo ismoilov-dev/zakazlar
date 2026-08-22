@@ -287,19 +287,19 @@ class SuperAdminService:
             vp = emp_tot.get("v_proc_sales") or Decimal("0.00")
             upk = emp_tot.get("successful_orders") or 0
         else:
-            ts = self._parse_decimal(s.get("total_sales"))
-            ss = self._parse_decimal(s.get("successful_sales"))
-            os = self._parse_decimal(s.get("otkaz_sales"))
-            vp = self._parse_decimal(s.get("v_proc_sales"))
-            upk = self._parse_int(s.get("successful_orders"))
+            ts = self._parse_decimal(s.get("total_sales") or s.get("total_sales_sum"))
+            ss = self._parse_decimal(s.get("successful_sales") or s.get("successful_sales_sum") or s.get("uspeshka"))
+            os = self._parse_decimal(s.get("otkaz_sales") or s.get("otkaz"))
+            vp = self._parse_decimal(s.get("v_proc_sales") or s.get("v_proc"))
+            upk = self._parse_int(s.get("successful_orders") or s.get("upakovka"))
 
             if ss == Decimal("0.00") and ts > Decimal("0.00"):
                 ss = ts
 
         # 2. Earned Salary & 1-15 / 16-31 Breakdown
-        sal_1_15 = self._parse_decimal(s.get("salary_1_15"))
-        sal_16_31 = self._parse_decimal(s.get("salary_16_31"))
-        earned_sal = self._parse_decimal(s.get("earned_salary"))
+        sal_1_15 = self._parse_decimal(s.get("salary_1_15") or s.get("earned_salary_1_15"))
+        sal_16_31 = self._parse_decimal(s.get("salary_16_31") or s.get("earned_salary_16_31"))
+        earned_sal = self._parse_decimal(s.get("earned_salary") or s.get("earned_salary_total") or s.get("monthly_salary"))
 
         if earned_sal == Decimal("0.00") and ss > Decimal("0.00"):
             grp_code = emp.group.code.upper() if emp.group else "A"
@@ -382,18 +382,40 @@ class SuperAdminService:
 
     @staticmethod
     def _parse_decimal(raw: Any) -> Decimal:
-        if raw is None or str(raw).strip() == "":
+        if raw is None:
+            return Decimal("0.00")
+        clean_str = (
+            str(raw)
+            .replace("\xa0", "")
+            .replace(" ", "")
+            .replace(",", "")
+            .replace("so'm", "")
+            .replace("som", "")
+            .replace("UZS", "")
+            .strip()
+        )
+        if not clean_str:
             return Decimal("0.00")
         try:
-            return Decimal(str(raw).replace(",", "").strip())
+            return Decimal(clean_str)
         except Exception:
             return Decimal("0.00")
 
     @staticmethod
     def _parse_int(raw: Any) -> int:
-        if raw is None or str(raw).strip() == "":
+        if raw is None:
+            return 0
+        clean_str = (
+            str(raw)
+            .replace("\xa0", "")
+            .replace(" ", "")
+            .replace(",", "")
+            .replace("ta", "")
+            .strip()
+        )
+        if not clean_str:
             return 0
         try:
-            return int(Decimal(str(raw).replace(",", "").strip()))
+            return int(float(clean_str))
         except Exception:
             return 0
