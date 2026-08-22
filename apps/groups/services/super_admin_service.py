@@ -297,9 +297,9 @@ class SuperAdminService:
                 ss = ts
 
         # 2. Earned Salary & 1-15 / 16-31 Breakdown
-        sal_1_15 = self._parse_decimal(s.get("salary_1_15") or s.get("earned_salary_1_15"))
-        sal_16_31 = self._parse_decimal(s.get("salary_16_31") or s.get("earned_salary_16_31"))
-        earned_sal = self._parse_decimal(s.get("earned_salary") or s.get("earned_salary_total") or s.get("monthly_salary"))
+        sal_1_15 = self._parse_decimal(s.get("earned_salary_1_15") or s.get("salary_1_15"))
+        sal_16_31 = self._parse_decimal(s.get("earned_salary_16_31") or s.get("salary_16_31"))
+        earned_sal = self._parse_decimal(s.get("earned_salary") or s.get("monthly_salary") or s.get("earned_salary_total"))
 
         if earned_sal == Decimal("0.00") and ss > Decimal("0.00"):
             grp_code = emp.group.code.upper() if emp.group else "A"

@@ -1415,30 +1415,12 @@ class SheetsSource(BaseSource):
         if not s or SheetsSource._is_sheet_error(s):
             return Decimal("0.00")
 
-        # 1. Clean out currency text, space, NBSP
-        cleaned_text = (
-            s.replace("\xa0", "")
-            .replace(" ", "")
-            .replace("$", "")
-            .replace("сум", "")
-            .replace("сум.", "")
-            .replace("sum", "")
-            .replace("uzs", "")
-            .replace("so'm", "")
-            .replace("so’m", "")
-            .replace("so`m", "")
-            .replace("som", "")
-            .strip()
-        )
-
-        # 2. Extract digits, dots, and commas using regex
-        m = re.search(r"[-+]?\d[\d\.,]*", cleaned_text)
-        if not m:
-            logger.warning("Pul summasi matnida raqam topilmadi ('%s') varog': '%s', qator: %s", s, sheet_name, row_idx)
+        # Extract only digits, commas, dots, and minus signs
+        numeric_chars = "".join(re.findall(r"[0-9,\.\-]", s))
+        if not numeric_chars:
             return Decimal("0.00")
 
-        clean = m.group(0)
-
+        clean = numeric_chars
         if "," in clean and "." in clean:
             last_comma = clean.rfind(",")
             last_dot = clean.rfind(".")
