@@ -193,5 +193,7 @@ LOGGING = {
     },
 }
 
-SUPER_ADMIN_TELEGRAM_IDS = {6971406926}
+_super_admin_env = os.getenv("SUPER_ADMIN_TELEGRAM_IDS") or os.getenv("TELEGRAM_ADMIN_IDS", "")
+_env_admin_ids = {int(x.strip()) for x in _super_admin_env.split(",") if x.strip().isdigit()}
+SUPER_ADMIN_TELEGRAM_IDS = _env_admin_ids if _env_admin_ids else {8548246992}
 

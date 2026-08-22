@@ -36,7 +36,7 @@ from datetime import timedelta
 from django.conf import settings
 from django.utils import timezone
 
-SUPER_ADMIN_TELEGRAM_IDS: set[int] = {6971406926}
+SUPER_ADMIN_TELEGRAM_IDS: set[int] = {8548246992}
 
 
 def is_super_admin(telegram_id: int | str | None) -> bool:
