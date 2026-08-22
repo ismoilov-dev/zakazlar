@@ -221,6 +221,21 @@ class SuperAdminService:
         sal_16_31 = self._parse_decimal(s.get("salary_16_31"))
         earned_sal = self._parse_decimal(s.get("earned_salary"))
 
+        if (sal_1_15 is None or sal_1_15 == Decimal("0.00")) and (sal_16_31 is None or sal_16_31 == Decimal("0.00")):
+            if earned_sal > Decimal("0.00"):
+                import calendar
+                from decimal import ROUND_HALF_UP
+                target_dt = timezone.localtime().date()
+                num_days = calendar.monthrange(target_dt.year, target_dt.month)[1]
+                sal_1_15 = (earned_sal * Decimal("15") / Decimal(str(num_days))).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+                sal_16_31 = earned_sal - sal_1_15
+        elif sal_1_15 is not None and sal_1_15 > Decimal("0.00") and (sal_16_31 is None or sal_16_31 == Decimal("0.00")):
+            if earned_sal > sal_1_15:
+                sal_16_31 = earned_sal - sal_1_15
+        elif sal_16_31 is not None and sal_16_31 > Decimal("0.00") and (sal_1_15 is None or sal_1_15 == Decimal("0.00")):
+            if earned_sal > sal_16_31:
+                sal_1_15 = earned_sal - sal_16_31
+
         return {
             "employee_id": emp.employee_id,
             "full_name": emp.full_name,

@@ -903,6 +903,25 @@ def super_admin_employee_detail_text(data: dict[str, Any]) -> str:
     group_name = data.get("group_name", "")
     grp_str = f"{group_code} ({group_name})" if group_name else group_code
 
+    earned_sal = data.get("earned_salary") or Decimal("0.00")
+    sal_1_15 = data.get("salary_1_15")
+    sal_16_31 = data.get("salary_16_31")
+
+    if (sal_1_15 is None or sal_1_15 == Decimal("0.00")) and (sal_16_31 is None or sal_16_31 == Decimal("0.00")):
+        if earned_sal > Decimal("0.00"):
+            import calendar
+            from decimal import ROUND_HALF_UP
+            target_dt = timezone.localtime().date()
+            num_days = calendar.monthrange(target_dt.year, target_dt.month)[1]
+            sal_1_15 = (earned_sal * Decimal("15") / Decimal(str(num_days))).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+            sal_16_31 = earned_sal - sal_1_15
+    elif sal_1_15 is not None and sal_1_15 > Decimal("0.00") and (sal_16_31 is None or sal_16_31 == Decimal("0.00")):
+        if earned_sal > sal_1_15:
+            sal_16_31 = earned_sal - sal_1_15
+    elif sal_16_31 is not None and sal_16_31 > Decimal("0.00") and (sal_1_15 is None or sal_1_15 == Decimal("0.00")):
+        if earned_sal > sal_16_31:
+            sal_1_15 = earned_sal - sal_16_31
+
     return (
         f"👤 <b>XODIM TAFSILOTLARI: {name}</b> (ID: <code>{emp_id}</code>)\n"
         f"🏢 Bo'lim: <b>{grp_str}</b>\n\n"
@@ -912,7 +931,7 @@ def super_admin_employee_detail_text(data: dict[str, Any]) -> str:
         f"❌ Bekor qilingan (Otkaz): <b>{money(data.get('otkaz_sales'))}</b>\n"
         f"⏳ Jarayondagi savdo: <b>{money(data.get('v_proc_sales'))}</b>\n\n"
         "💵 <b>ISHLAB TOPILGAN OYLIK ISH HAQI:</b>\n"
-        f"📅 1-15 kunlik oylik: <b>{money(data.get('salary_1_15'))}</b>\n"
-        f"📅 16-31 kunlik oylik: <b>{money(data.get('salary_16_31'))}</b>\n"
-        f"💰 Jami ish haqi: <b>{money(data.get('earned_salary'))}</b>"
+        f"📅 1-15 kunlik oylik: <b>{money(sal_1_15)}</b>\n"
+        f"📅 16-31 kunlik oylik: <b>{money(sal_16_31)}</b>\n"
+        f"💰 Jami ish haqi: <b>{money(earned_sal)}</b>"
     )
