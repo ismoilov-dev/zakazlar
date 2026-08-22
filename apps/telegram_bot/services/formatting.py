@@ -791,3 +791,105 @@ def rop_salary_card_text(group_code: str, salary_info: dict[str, Any]) -> str:
             "\n⚠️ Diqqat: bu raqam Google Sheets'dagi qiymatdan farq qilmoqda.\nAdministratorga murojaat qiling."
         )
     return "\n".join(lines)
+
+
+def super_admin_dashboard_text(dash: dict[str, Any]) -> str:
+    """Render Global Executive Dashboard for Super Admin."""
+    return (
+        "👑 <b>GLOBAL EXECUTIVE DASHBOARD</b>\n"
+        "<i>Kompaniya bo'yicha umumiy sotuv va moliyaviy ko'rsatkichlar</i>\n\n"
+        f"🏢 Faol bo'limlar: <b>{dash['groups_count']} ta</b>\n"
+        f"👥 Jami xodimlar: <b>{dash['total_employees']} ta</b> (🟢 {dash['active_sellers_count']} ta sotuvda faol)\n\n"
+        "📊 <b>KOMPANIYA UMUMIY SAVDOSI:</b>\n"
+        f"💰 Jami savdo summasi: <b>{money(dash['company_total_sales'])}</b>\n"
+        f"✅ Muvaffaqiyatli (Uspeshka): <b>{money(dash['company_successful_sales'])}</b> (📦 <b>{dash['company_upakovka']} ta</b> zakaz)\n"
+        f"❌ Bekor qilingan (Otkaz): <b>{money(dash['company_otkaz_sales'])}</b>\n"
+        f"⏳ Jarayondagi savdo: <b>{money(dash['company_v_proc_sales'])}</b>\n\n"
+        "💵 <b>ISHLAB TOPILGAN OYLIK FOND:</b>\n"
+        f"💰 Xodimlarning oyligi: <b>{money(dash['company_earned_salary'])}</b>"
+    )
+
+
+def super_admin_dashboard_keyboard() -> InlineKeyboardMarkup:
+    """Render main menu inline keyboard for Super Admin."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🏢 Bo'limlar kesimida (A, B, C...)", callback_data="sa_groups")
+    builder.button(text="👥 Barcha xodimlar va oyliklar", callback_data="sa_emp_page:1")
+    builder.button(text="🔍 Xodimni qidirish", callback_data="sa_search_prompt")
+    builder.button(text="🔄 Ma'lumotlarni yangilash", callback_data="sa_refresh")
+    builder.adjust(1, 1, 1, 1)
+    return builder.as_markup()
+
+
+def super_admin_groups_list_text(groups: list[dict[str, Any]]) -> str:
+    """Render formatted group summary list text."""
+    lines = ["🏢 <b>BO'LIMLAR KESIMIDA SAVDOLAR RO'YXATI</b>\n"]
+    for g in groups:
+        lines.append(
+            f"<b>Bo'lim {g['code']} ({g['name']})</b>\n"
+            f"   👤 Rahbar: {g['leader_name']}\n"
+            f"   👥 Xodimlar: {g['total_count']} ta (🟢 {g['active_count']} faol)\n"
+            f"   📊 Jami savdo: {money(g['total_sales'], bold=False)}\n"
+            f"   ✅ Uspeshka: {money(g['successful_sales'], bold=False)}\n"
+        )
+    return "\n".join(lines)
+
+
+def super_admin_groups_list_keyboard(groups: list[dict[str, Any]]) -> InlineKeyboardMarkup:
+    """Render inline buttons for group drill-down."""
+    builder = InlineKeyboardBuilder()
+    for g in groups:
+        builder.button(text=f"🏢 Bo'lim {g['code']} ({money(g['total_sales'], bold=False)})", callback_data=f"sa_group_detail:{g['id']}")
+    builder.button(text="🏠 Bosh sahifaga qaytish", callback_data="sa_dashboard")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def super_admin_employee_list_text(
+    employees: list[dict[str, Any]], page: int, total_pages: int, page_size: int = 15
+) -> str:
+    """Render company-wide employee sales & salaries list."""
+    lines = [f"👥 <b>BARCHA XODIMLAR VA OYLIKLAR (Jami: {len(employees)} ta)</b>\n"]
+
+    start_idx = (page - 1) * page_size
+    page_items = employees[start_idx : start_idx + page_size]
+
+    if not page_items:
+        lines.append("<i>Xodimlar topilmadi.</i>")
+    else:
+        for idx, emp in enumerate(page_items, start=start_idx + 1):
+            name = emp["full_name"]
+            emp_id = emp["employee_id"]
+            grp = emp["group_code"]
+            sales = money(emp["sales_val"], bold=False)
+            orders = emp["orders_val"]
+            salary = money(emp["salary_val"], bold=False)
+            lines.append(f"{idx}. <b>{name}</b> (<code>{emp_id}</code> · {grp} bo'lim)")
+            lines.append(f"   📊 Savdo: {sales} · 📦 {orders} ta · 💰 Oylik: {salary}")
+
+    lines.append(f"\n📄 Sahifa: <b>{page}/{total_pages}</b>")
+    return "\n".join(lines)
+
+
+def super_admin_employee_list_keyboard(page: int, total_pages: int) -> InlineKeyboardMarkup:
+    """Render inline keyboard for Super Admin employee pagination."""
+    builder = InlineKeyboardBuilder()
+
+    if total_pages > 1:
+        if page > 1:
+            builder.button(text="⬅️ Oldingi", callback_data=f"sa_emp_page:{page - 1}")
+        if page < total_pages:
+            builder.button(text="Keyingi ➡️", callback_data=f"sa_emp_page:{page + 1}")
+
+    builder.button(text="🔍 Xodimni qidirish", callback_data="sa_search_prompt")
+    builder.button(text="🏠 Bosh sahifaga qaytish", callback_data="sa_dashboard")
+
+    if total_pages > 1:
+        if page > 1 and page < total_pages:
+            builder.adjust(2, 1, 1)
+        else:
+            builder.adjust(1, 1, 1)
+    else:
+        builder.adjust(1, 1)
+
+    return builder.as_markup()

@@ -42,6 +42,7 @@ from apps.employees.models import Employee
 from apps.employees.repositories.employee import EmployeeRepository
 from apps.groups.models import SalesGroup
 from apps.groups.services.rop_service import RopService
+from apps.groups.services.super_admin_service import SuperAdminService
 from apps.imports.dto import normalize_employee_id
 from apps.imports.models import SyncLog, SyncStatus
 from apps.imports.services.sheets_sync import SheetsSyncService
@@ -68,8 +69,13 @@ from apps.telegram_bot.services.formatting import (
     order_status_picker_text,
     xizmatlar_menu_keyboard,
     xizmatlar_menu_text,
+    super_admin_dashboard_text,
+    super_admin_dashboard_keyboard,
+    super_admin_groups_list_text,
+    super_admin_groups_list_keyboard,
+    super_admin_employee_list_text,
+    super_admin_employee_list_keyboard,
 )
-
 
 
 router = Router(name="sales_bot")
@@ -88,6 +94,10 @@ class RegistrationStates(StatesGroup):
     enter_id = State()
     enter_password = State()
     enter_name = State()
+
+
+class SuperAdminStates(StatesGroup):
+    search_query = State()
     confirm = State()
 
 
@@ -251,13 +261,25 @@ async def start(message: Message, state: FSMContext) -> None:
             return
 
         if is_super_admin(message.from_user.id):
-            account = await sync_to_async(get_or_create_super_admin_account)(message.from_user.id)
-        else:
-            account = await sync_to_async(
-                lambda: TelegramAccount.objects.select_related("employee", "employee__group").filter(telegram_id=message.from_user.id).first()
-            )()
+            await sync_to_async(get_or_create_super_admin_account)(message.from_user.id)
+            try:
+                await ensure_fresh_data_and_get_timestamp()
+            except Exception as exc:
+                logger.warning("ensure_fresh_data_and_get_timestamp failed in start: %s", exc)
 
-        if account and not is_super_admin(message.from_user.id):
+            dash = await sync_to_async(SuperAdminService().get_company_global_dashboard)()
+            ts_str, is_stale = await ensure_fresh_data_and_get_timestamp()
+            footer = format_footer(ts_str, is_stale)
+            text = super_admin_dashboard_text(dash) + footer
+            reply_markup = super_admin_dashboard_keyboard()
+            await message.answer(text, reply_markup=reply_markup)
+            return
+
+        account = await sync_to_async(
+            lambda: TelegramAccount.objects.select_related("employee", "employee__group").filter(telegram_id=message.from_user.id).first()
+        )()
+
+        if account:
             if not account.employee:
                 logger.warning("Deleting orphaned TelegramAccount without employee for telegram_id=%s", message.from_user.id)
                 await sync_to_async(account.delete)()
@@ -269,16 +291,10 @@ async def start(message: Message, state: FSMContext) -> None:
             except Exception as exc:
                 logger.warning("ensure_fresh_data_and_get_timestamp failed in start: %s", exc)
 
-            if is_super_admin(message.from_user.id):
-                info_prefix = "👑 <b>Super Admin Boshqaruv Paneli (UzSardorbek)</b>\n<i>Barcha bo'limlar ko'rsatkichlarini nazorat qilish paneli:</i>\n\n"
-            else:
-                safe_name = html.escape(account.employee.full_name.strip())
-                info_prefix = f"Siz allaqachon <b>{safe_name}</b> (<code>{account.employee.employee_id}</code>) sifatida ro'yxatdan o'tgansiz.\n\n"
+            safe_name = html.escape(account.employee.full_name.strip())
+            info_prefix = f"Siz allaqachon <b>{safe_name}</b> (<code>{account.employee.employee_id}</code>) sifatida ro'yxatdan o'tgansiz.\n\n"
 
             is_leader = await sync_to_async(is_group_leader)(account.employee, message.from_user.id)
-            if is_super_admin(message.from_user.id):
-                is_leader = True
-                account.role = "ROP"
 
             if account.role == "ROP" and is_leader:
                 if not require_rop_session(account):
@@ -289,7 +305,7 @@ async def start(message: Message, state: FSMContext) -> None:
                     return
 
                 groups = await sync_to_async(
-                    lambda: list(SalesGroup.objects.filter(is_active=True).order_by("code")) if is_super_admin(message.from_user.id) else list(SalesGroup.objects.filter(leader=account.employee, is_active=True).order_by("code"))
+                    lambda: list(SalesGroup.objects.filter(leader=account.employee, is_active=True).order_by("code"))
                 )()
                 data = await state.get_data()
                 sel_id = data.get("selected_group_id")
@@ -753,31 +769,35 @@ async def shaxsiy_command(message: Message, state: FSMContext | None = None) -> 
 
 @router.message(Command("rop"))
 async def rop_command(message: Message, state: FSMContext) -> None:
-    """Open ROP panel menu (or prompt for password if expired)."""
+    """Open ROP panel menu (or Super Admin Executive Dashboard)."""
     if message.from_user is None:
         return
 
     if is_super_admin(message.from_user.id):
-        account = await sync_to_async(get_or_create_super_admin_account)(message.from_user.id)
-    else:
-        account = await sync_to_async(
-            lambda: TelegramAccount.objects.select_related("employee", "employee__group").filter(telegram_id=message.from_user.id).first()
-        )()
+        await sync_to_async(get_or_create_super_admin_account)(message.from_user.id)
+        dash = await sync_to_async(SuperAdminService().get_company_global_dashboard)()
+        ts_str, is_stale = await ensure_fresh_data_and_get_timestamp()
+        footer = format_footer(ts_str, is_stale)
+        text = super_admin_dashboard_text(dash) + footer
+        reply_markup = super_admin_dashboard_keyboard()
+        await message.answer(text, reply_markup=reply_markup)
+        return
+
+    account = await sync_to_async(
+        lambda: TelegramAccount.objects.select_related("employee", "employee__group").filter(telegram_id=message.from_user.id).first()
+    )()
     if not account or not account.employee:
         await message.answer("Avval Employee ID orqali profilingizni bog'lang.")
         return
 
     is_leader = await sync_to_async(is_group_leader)(account.employee, message.from_user.id)
-    if is_super_admin(message.from_user.id):
-        is_leader = True
-
     if not is_leader:
         await message.answer("Siz guruh rahbari emassiz.")
         return
 
     if require_rop_session(account):
         groups = await sync_to_async(
-            lambda: list(SalesGroup.objects.filter(is_active=True).order_by("code")) if is_super_admin(message.from_user.id) else list(SalesGroup.objects.filter(leader=account.employee, is_active=True).order_by("code"))
+            lambda: list(SalesGroup.objects.filter(leader=account.employee, is_active=True).order_by("code"))
         )()
         data = await state.get_data()
         sel_id = data.get("selected_group_id")
@@ -796,17 +816,19 @@ async def rop_command(message: Message, state: FSMContext) -> None:
 
 @router.message(Command("stats"))
 async def employee_stats(message: Message, state: FSMContext | None = None) -> None:
-
-    """Return bound employee's menu (ROP or MOP)."""
+    """Return bound employee's menu (ROP, MOP, or Super Admin Dashboard)."""
     if message.from_user is None:
         return
 
     if is_super_admin(message.from_user.id):
-        account = await sync_to_async(get_or_create_super_admin_account)(message.from_user.id)
-    else:
-        account = await sync_to_async(
-            lambda: TelegramAccount.objects.select_related("employee", "employee__group").filter(telegram_id=message.from_user.id).first()
-        )()
+        await sync_to_async(get_or_create_super_admin_account)(message.from_user.id)
+        dash = await sync_to_async(SuperAdminService().get_company_global_dashboard)()
+        ts_str, is_stale = await ensure_fresh_data_and_get_timestamp()
+        footer = format_footer(ts_str, is_stale)
+        text = super_admin_dashboard_text(dash) + footer
+        reply_markup = super_admin_dashboard_keyboard()
+        await message.answer(text, reply_markup=reply_markup)
+        return
     if not account or not account.employee:
         await message.answer("Avval Employee ID orqali profilingizni bog'lang.")
         return
@@ -890,6 +912,141 @@ async def handle_switch_rop(callback: CallbackQuery, state: FSMContext) -> None:
     if callback.message:
         await callback.message.answer("🔑 ROP paneliga kirish uchun parolingizni kiriting:")
     await callback.answer()
+
+
+@router.callback_query(F.data.startswith("sa_"))
+async def handle_super_admin_callback(callback: CallbackQuery, state: FSMContext) -> None:
+    """Handle all Super Admin dashboard callback queries."""
+    if callback.from_user is None or callback.data is None:
+        return
+
+    telegram_id = callback.from_user.id
+    if not is_super_admin(telegram_id):
+        await callback.answer("Sizda Super Admin ruxsati yo'q.", show_alert=True)
+        return
+
+    action = callback.data
+    sa_service = SuperAdminService()
+    ts_str, is_stale = await ensure_fresh_data_and_get_timestamp()
+    footer = format_footer(ts_str, is_stale)
+
+    if action in ("sa_dashboard", "sa_refresh"):
+        await state.clear()
+        dash = await sync_to_async(sa_service.get_company_global_dashboard)()
+        text = super_admin_dashboard_text(dash) + footer
+        reply_markup = super_admin_dashboard_keyboard()
+        if callback.message:
+            await callback.message.edit_text(text, reply_markup=reply_markup)
+        await callback.answer("Ma'lumotlar yangilandi!" if action == "sa_refresh" else None)
+        return
+
+    elif action == "sa_groups":
+        groups_summary = await sync_to_async(sa_service.get_all_groups_summary)()
+        text = super_admin_groups_list_text(groups_summary) + footer
+        reply_markup = super_admin_groups_list_keyboard(groups_summary)
+        if callback.message:
+            await callback.message.edit_text(text, reply_markup=reply_markup)
+        await callback.answer()
+        return
+
+    elif action.startswith("sa_group_detail:"):
+        group_id = int(action.split(":")[1])
+        group = await sync_to_async(lambda: SalesGroup.objects.get(id=group_id))()
+        rop_service = RopService()
+        totals = await sync_to_async(rop_service.get_group_sales_totals)(group)
+        stats = await sync_to_async(rop_service.get_group_stats)(group)
+        salary_info = await sync_to_async(rop_service.calculate_rop_salary)(group)
+
+        leader_name = group.leader.full_name if group.leader else "Tayinlanmagan"
+        text = (
+            f"🏢 <b>BO'LIM {group.code} ({group.name}) TAFSILOTLARI</b>\n"
+            f"👤 Rahbar: <b>{leader_name}</b>\n\n"
+            f"📊 <b>Savdo ko'rsatkichlari:</b>\n"
+            f"💰 Jami savdo: <b>{money(totals.get('total_sales'))}</b>\n"
+            f"✅ Muvaffaqiyatli (Uspeshka): <b>{money(totals.get('successful_sales'))}</b>\n"
+            f"❌ Bekor qilingan (Otkaz): <b>{money(totals.get('otkaz_sales'))}</b>\n"
+            f"⏳ Jarayonda: <b>{money(totals.get('v_proc_sales'))}</b>\n\n"
+            f"👥 Xodimlar soni: <b>{stats['total_count']} ta</b> (🟢 {stats['active_count']} faol)\n"
+            f"📦 Upakovka: <b>{stats['total_upakovka']} ta</b>\n"
+            f"💵 ROP Oyligi: <b>{money(salary_info.get('computed_salary'))}</b>\n" + footer
+        )
+
+        builder = InlineKeyboardBuilder()
+        builder.button(text="⬅️ Barcha bo'limlarga qaytish", callback_data="sa_groups")
+        builder.button(text="🏠 Bosh sahifaga qaytish", callback_data="sa_dashboard")
+        builder.adjust(1)
+        if callback.message:
+            await callback.message.edit_text(text, reply_markup=builder.as_markup())
+        await callback.answer()
+        return
+
+    elif action.startswith("sa_emp_page:"):
+        page = int(action.split(":")[1])
+        employees = await sync_to_async(sa_service.get_company_employees_sorted)()
+        page_size = 15
+        total_pages = max(1, math.ceil(len(employees) / page_size))
+        text = super_admin_employee_list_text(employees, page, total_pages, page_size) + footer
+        reply_markup = super_admin_employee_list_keyboard(page, total_pages)
+        if callback.message:
+            await callback.message.edit_text(text, reply_markup=reply_markup)
+        await callback.answer()
+        return
+
+    elif action == "sa_search_prompt":
+        await state.set_state(SuperAdminStates.search_query)
+        builder = InlineKeyboardBuilder()
+        builder.button(text="🏠 Bosh sahifaga qaytish", callback_data="sa_dashboard")
+        builder.adjust(1)
+        if callback.message:
+            await callback.message.edit_text(
+                "🔍 <b>Xodimni qidirish:</b>\n\n"
+                "Xodim ismi yoki ID raqamini kiriting (masalan: <i>Umidjon</i> yoki <i>0178</i>):",
+                reply_markup=builder.as_markup(),
+            )
+        await callback.answer()
+        return
+
+
+@router.message(SuperAdminStates.search_query)
+async def handle_super_admin_search_input(message: Message, state: FSMContext) -> None:
+    """Handle text search input from Super Admin."""
+    if message.from_user is None or not is_super_admin(message.from_user.id):
+        await state.clear()
+        return
+
+    query = message.text.strip() if message.text else ""
+    await state.clear()
+
+    if not query:
+        await message.answer("Qidiruv matni kiritilmadi.")
+        return
+
+    sa_service = SuperAdminService()
+    results = await sync_to_async(sa_service.search_employees)(query)
+    ts_str, is_stale = await ensure_fresh_data_and_get_timestamp()
+    footer = format_footer(ts_str, is_stale)
+
+    lines = [f"🔍 <b>QIDIRUV NATIJASI: '{html.escape(query)}' ({len(results)} ta)</b>\n"]
+
+    if not results:
+        lines.append("<i>Bunday nomli yoki ID'li xodim topilmadi.</i>")
+    else:
+        for idx, emp in enumerate(results[:20], start=1):
+            name = emp["full_name"]
+            emp_id = emp["employee_id"]
+            grp = emp["group_code"]
+            sales = money(emp["sales_val"], bold=False)
+            orders = emp["orders_val"]
+            salary = money(emp["salary_val"], bold=False)
+            lines.append(f"{idx}. <b>{name}</b> (<code>{emp_id}</code> · {grp} bo'lim)")
+            lines.append(f"   📊 Savdo: {sales} · 📦 {orders} ta · 💰 Oylik: {salary}")
+
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🔍 Qayta qidirish", callback_data="sa_search_prompt")
+    builder.button(text="🏠 Bosh sahifaga qaytish", callback_data="sa_dashboard")
+    builder.adjust(1)
+
+    await message.answer("\n".join(lines) + footer, reply_markup=builder.as_markup())
 
 
 @router.callback_query(F.data.startswith("rop_"))
