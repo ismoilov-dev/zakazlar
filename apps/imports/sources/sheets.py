@@ -1032,6 +1032,11 @@ class SheetsSource(BaseSource):
                 _process_payroll_col(salary_1_15_idx, "1-15 kunlik ish haqi", "earned_salary_1_15", lambda v: str(self._parse_money(v, sheet_name=title, row_idx=row_idx)))
                 _process_payroll_col(salary_16_31_idx, "16-31 kunlik ish haqi", "earned_salary_16_31", lambda v: str(self._parse_money(v, sheet_name=title, row_idx=row_idx)))
 
+                if "earned_salary_1_15" in summary:
+                    summary["salary_1_15"] = summary["earned_salary_1_15"]
+                if "earned_salary_16_31" in summary:
+                    summary["salary_16_31"] = summary["earned_salary_16_31"]
+
                 def _parse_conv(v: str) -> float | None:
                     raw_c = v.replace("%", "").replace(",", ".").strip()
                     val_dec = Decimal(raw_c)
@@ -1409,9 +1414,30 @@ class SheetsSource(BaseSource):
         s = str(val).strip()
         if not s or SheetsSource._is_sheet_error(s):
             return Decimal("0.00")
-        clean = s.replace(" ", "").replace("\xa0", "").replace("$", "").replace("so'm", "").replace("som", "").strip()
-        if not clean or SheetsSource._is_sheet_error(clean):
+
+        # 1. Clean out currency text, space, NBSP
+        cleaned_text = (
+            s.replace("\xa0", "")
+            .replace(" ", "")
+            .replace("$", "")
+            .replace("сум", "")
+            .replace("сум.", "")
+            .replace("sum", "")
+            .replace("uzs", "")
+            .replace("so'm", "")
+            .replace("so’m", "")
+            .replace("so`m", "")
+            .replace("som", "")
+            .strip()
+        )
+
+        # 2. Extract digits, dots, and commas using regex
+        m = re.search(r"[-+]?\d[\d\.,]*", cleaned_text)
+        if not m:
+            logger.warning("Pul summasi matnida raqam topilmadi ('%s') varog': '%s', qator: %s", s, sheet_name, row_idx)
             return Decimal("0.00")
+
+        clean = m.group(0)
 
         if "," in clean and "." in clean:
             last_comma = clean.rfind(",")
@@ -1442,8 +1468,8 @@ class SheetsSource(BaseSource):
         try:
             return Decimal(clean)
         except Exception as exc:
-            logger.warning("Noto'g'ri pul summasi formati ('%s') varog': '%s', qator: %s", s, sheet_name, row_idx)
-            raise ValidationError(f"Noto'g'ri pul summasi formati ('{s}'): {exc}") from exc
+            logger.warning("Noto'g'ri pul summasi formati ('%s', clean: '%s') varog': '%s', qator: %s. Xato: %s. 0.00 ga tenglashtirildi.", s, clean, sheet_name, row_idx, exc)
+            return Decimal("0.00")
 
 
     @staticmethod
@@ -1461,7 +1487,24 @@ class SheetsSource(BaseSource):
         if " " in clean_val:
             clean_val = clean_val.split()[0]
 
-        # 1. Match dd.mm.yyyy or dd.mm.yy or d.m.yyyy or d.m.yy (with dot, slash, or dash)
+        # 1. Match dd.mm (without year) e.g. "15.08"
+        m_short = re.match(r"^(\d{1,2})[\.\/-](\d{1,2})$", clean_val)
+        if m_short:
+            day, month = int(m_short.group(1)), int(m_short.group(2))
+            try:
+                from apps.imports.models import SpreadsheetPeriod
+                active_sp = SpreadsheetPeriod.objects.filter(is_active=True).first()
+                current_year = active_sp.period.year if (active_sp and active_sp.period) else timezone.localtime().year
+            except Exception:
+                current_year = timezone.localtime().year
+
+            try:
+                d = date(current_year, month, day)
+                return timezone.make_aware(datetime.combine(d, time.min))
+            except ValueError as exc:
+                raise ValidationError(f"Noto'g'ri qisqa sana ('{val}'): {exc}") from exc
+
+        # 2. Match dd.mm.yyyy or dd.mm.yy or d.m.yyyy or d.m.yy (with dot, slash, or dash)
         m = re.match(r"^(\d{1,2})[\.\/-](\d{1,2})[\.\/-](\d{2,4})$", clean_val)
         if m:
             day, month, year_str = int(m.group(1)), int(m.group(2)), m.group(3)
@@ -1474,7 +1517,7 @@ class SheetsSource(BaseSource):
             except ValueError as exc:
                 raise ValidationError(f"Noto'g'ri sana ('{val}'): {exc}") from exc
 
-        # 2. Match yyyy-mm-dd or yyyy/mm/dd
+        # 3. Match yyyy-mm-dd or yyyy/mm/dd
         m = re.match(r"^(\d{4})[\.\/-](\d{1,2})[\.\/-](\d{1,2})$", clean_val)
         if m:
             year, month, day = int(m.group(1)), int(m.group(2)), int(m.group(3))
@@ -1484,7 +1527,7 @@ class SheetsSource(BaseSource):
             except ValueError as exc:
                 raise ValidationError(f"Noto'g'ri sana ('{val}'): {exc}") from exc
 
-        # 3. Fallback to ISO parsing
+        # 4. Fallback to ISO parsing
         parsed = parse_iso_date(clean_val)
         if parsed:
             return timezone.make_aware(datetime.combine(parsed, time.min))

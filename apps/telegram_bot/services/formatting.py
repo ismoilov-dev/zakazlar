@@ -332,7 +332,7 @@ def calculate_sal_1_15_from_sales(
                     perv_sum += amt
 
             grp_upper = (group_code or "").strip().upper()
-            sal_calc = (perv_sum * Decimal("0.12")) + (baza_sum * Decimal("0.12")) if grp_upper == "BAZA" else (perv_sum * Decimal("0.12")) + (baza_sum * Decimal("0.16"))
+            sal_calc = (perv_sum * Decimal("0.12")) + (baza_sum * Decimal("0.12")) if grp_upper == "BAZA" else (perv_sum * Decimal("0.16")) + (baza_sum * Decimal("0.12"))
             logger.info("Calculated 1-15 salary for emp ID %s (%s) from DB Sale records: %s", raw_id, target_date, sal_calc)
             return sal_calc
 
@@ -352,7 +352,9 @@ def calculate_sal_1_15_from_sales(
 
             succ_sales = _parse_decimal_val(s_data.get("successful_sales") or s_data.get("total_sales"))
             if succ_sales is not None and succ_sales > Decimal("0"):
-                comm = (succ_sales * Decimal("0.12")).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+                grp_upper = (group_code or "").strip().upper()
+                rate = Decimal("0.12") if grp_upper == "BAZA" else Decimal("0.16")
+                comm = (succ_sales * rate).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
                 sal_prop = (comm * Decimal("15") / Decimal(str(num_days))).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
                 logger.info("Calculated 1-15 salary for emp ID %s from JSON summary_data successful_sales fallback: %s", raw_id, sal_prop)
                 return sal_prop
@@ -424,7 +426,7 @@ def calculate_sal_16_31_from_sales(
                     perv_sum += amt
 
             grp_upper = (group_code or "").strip().upper()
-            sal_calc = (perv_sum * Decimal("0.12")) + (baza_sum * Decimal("0.12")) if grp_upper == "BAZA" else (perv_sum * Decimal("0.12")) + (baza_sum * Decimal("0.16"))
+            sal_calc = (perv_sum * Decimal("0.12")) + (baza_sum * Decimal("0.12")) if grp_upper == "BAZA" else (perv_sum * Decimal("0.16")) + (baza_sum * Decimal("0.12"))
             logger.info("Calculated 16-31 salary for emp ID %s (%s) from DB Sale records: %s", raw_id, target_date, sal_calc)
             return sal_calc
 
@@ -450,7 +452,9 @@ def calculate_sal_16_31_from_sales(
 
             succ_sales = _parse_decimal_val(s_data.get("successful_sales") or s_data.get("total_sales"))
             if succ_sales is not None and succ_sales > Decimal("0"):
-                comm = (succ_sales * Decimal("0.12")).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+                grp_upper = (group_code or "").strip().upper()
+                rate = Decimal("0.12") if grp_upper == "BAZA" else Decimal("0.16")
+                comm = (succ_sales * rate).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
                 sal_1_15_calc = (comm * Decimal("15") / Decimal(str(num_days))).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
                 sal_rem = comm - sal_1_15_calc
                 logger.info("Calculated 16-31 salary for emp ID %s from JSON summary_data successful_sales fallback: %s", raw_id, sal_rem)

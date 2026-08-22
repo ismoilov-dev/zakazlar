@@ -303,10 +303,8 @@ class SuperAdminService:
 
         if earned_sal == Decimal("0.00") and ss > Decimal("0.00"):
             grp_code = emp.group.code.upper() if emp.group else "A"
-            if grp_code == "BAZA":
-                earned_sal = (ss * Decimal("0.12")).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
-            else:
-                earned_sal = (ss * Decimal("0.12")).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+            rate = Decimal("0.12") if grp_code == "BAZA" else Decimal("0.16")
+            earned_sal = (ss * rate).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
 
         target_dt = timezone.localtime().date()
         num_days = calendar.monthrange(target_dt.year, target_dt.month)[1]
