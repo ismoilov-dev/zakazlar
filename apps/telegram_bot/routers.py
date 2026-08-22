@@ -75,6 +75,7 @@ from apps.telegram_bot.services.formatting import (
     super_admin_groups_list_keyboard,
     super_admin_employee_list_text,
     super_admin_employee_list_keyboard,
+    super_admin_employee_detail_text,
 )
 
 
@@ -993,6 +994,21 @@ async def handle_super_admin_callback(callback: CallbackQuery, state: FSMContext
         await callback.answer()
         return
 
+    elif action.startswith("sa_emp_detail:"):
+        emp_id = action.split(":")[1]
+        detail = await sync_to_async(sa_service.get_employee_detail)(emp_id)
+        if detail:
+            text = super_admin_employee_detail_text(detail) + footer
+            builder = InlineKeyboardBuilder()
+            builder.button(text="👥 Barcha xodimlarga qaytish", callback_data="sa_emp_page:1")
+            builder.button(text="🔍 Qayta qidirish", callback_data="sa_search_prompt")
+            builder.button(text="🏠 Bosh sahifaga qaytish", callback_data="sa_dashboard")
+            builder.adjust(1)
+            if callback.message:
+                await callback.message.edit_text(text, reply_markup=builder.as_markup())
+        await callback.answer()
+        return
+
     elif action == "sa_search_prompt":
         await state.set_state(SuperAdminStates.search_query)
         builder = InlineKeyboardBuilder()
@@ -1023,14 +1039,25 @@ async def handle_super_admin_search_input(message: Message, state: FSMContext) -
         return
 
     sa_service = SuperAdminService()
-    results = await sync_to_async(sa_service.search_employees)(query)
+    detail = await sync_to_async(sa_service.get_employee_detail)(query)
     ts_str, is_stale = await ensure_fresh_data_and_get_timestamp()
     footer = format_footer(ts_str, is_stale)
 
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🔍 Qayta qidirish", callback_data="sa_search_prompt")
+    builder.button(text="🏠 Bosh sahifaga qaytish", callback_data="sa_dashboard")
+    builder.adjust(1)
+
+    if detail:
+        card_text = super_admin_employee_detail_text(detail) + footer
+        await message.answer(card_text, reply_markup=builder.as_markup())
+        return
+
+    results = await sync_to_async(sa_service.search_employees)(query)
     lines = [f"🔍 <b>QIDIRUV NATIJASI: '{html.escape(query)}' ({len(results)} ta)</b>\n"]
 
     if not results:
-        lines.append("<i>Bunday nomli yoki ID'li xodim topilmadi.</i>")
+        lines.append("<i>Bunday ID'li yoki nomli xodim topilmadi.</i>")
     else:
         for idx, emp in enumerate(results[:20], start=1):
             name = emp["full_name"]
@@ -1041,11 +1068,6 @@ async def handle_super_admin_search_input(message: Message, state: FSMContext) -
             salary = money(emp["salary_val"], bold=False)
             lines.append(f"{idx}. <b>{name}</b> (<code>{emp_id}</code> · {grp} bo'lim)")
             lines.append(f"   📊 Savdo: {sales} · 📦 {orders} ta · 💰 Oylik: {salary}")
-
-    builder = InlineKeyboardBuilder()
-    builder.button(text="🔍 Qayta qidirish", callback_data="sa_search_prompt")
-    builder.button(text="🏠 Bosh sahifaga qaytish", callback_data="sa_dashboard")
-    builder.adjust(1)
 
     await message.answer("\n".join(lines) + footer, reply_markup=builder.as_markup())
 

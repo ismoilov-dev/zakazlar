@@ -170,6 +170,72 @@ class SuperAdminService:
             or q in e["full_name"].lower()
         ]
 
+    def get_employee_detail(self, query: str) -> dict[str, Any] | None:
+        """Fetch complete detailed metrics for a single employee matching query ID or name."""
+        from django.db.models import Q
+        from apps.imports.dto import normalize_employee_id
+
+        q = query.strip()
+        norm_q = normalize_employee_id(q)
+
+        emp = (
+            Employee.objects.filter(is_active=True)
+            .select_related("group")
+            .filter(
+                Q(employee_id__iexact=q)
+                | Q(employee_id__iexact=norm_q)
+                | Q(full_name__icontains=q)
+            )
+            .first()
+        )
+
+        if not emp:
+            emp = (
+                Employee.objects.filter(is_active=True)
+                .select_related("group")
+                .filter(Q(employee_id__icontains=q) | Q(employee_id__endswith=norm_q))
+                .first()
+            )
+
+        if not emp:
+            return None
+
+        stats_repo = StatisticsRepository()
+        emp_tot = stats_repo.employee_totals(emp.id)
+        s = emp.summary_data or {}
+
+        if emp_tot and emp_tot.get("total_orders", 0) > 0:
+            ts = emp_tot.get("total_sales") or Decimal("0.00")
+            ss = (emp_tot.get("perv_sales") or Decimal("0.00")) + (emp_tot.get("baza_sales") or Decimal("0.00"))
+            os = emp_tot.get("otkaz_sales") or Decimal("0.00")
+            vp = emp_tot.get("v_proc_sales") or Decimal("0.00")
+            upk = emp_tot.get("successful_orders") or 0
+        else:
+            ts = self._parse_decimal(s.get("total_sales"))
+            ss = self._parse_decimal(s.get("successful_sales"))
+            os = self._parse_decimal(s.get("otkaz_sales"))
+            vp = self._parse_decimal(s.get("v_proc_sales"))
+            upk = self._parse_int(s.get("successful_orders"))
+
+        sal_1_15 = self._parse_decimal(s.get("salary_1_15"))
+        sal_16_31 = self._parse_decimal(s.get("salary_16_31"))
+        earned_sal = self._parse_decimal(s.get("earned_salary"))
+
+        return {
+            "employee_id": emp.employee_id,
+            "full_name": emp.full_name,
+            "group_code": emp.group.code if emp.group else "—",
+            "group_name": emp.group.name if emp.group else "",
+            "total_sales": ts,
+            "successful_sales": ss,
+            "otkaz_sales": os,
+            "v_proc_sales": vp,
+            "upakovka": upk,
+            "salary_1_15": sal_1_15,
+            "salary_16_31": sal_16_31,
+            "earned_salary": earned_sal,
+        }
+
     @staticmethod
     def _parse_decimal(raw: Any) -> Decimal:
         if raw is None or str(raw).strip() == "":

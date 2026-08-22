@@ -893,3 +893,26 @@ def super_admin_employee_list_keyboard(page: int, total_pages: int) -> InlineKey
         builder.adjust(1, 1)
 
     return builder.as_markup()
+
+
+def super_admin_employee_detail_text(data: dict[str, Any]) -> str:
+    """Render full detailed card for a single searched employee."""
+    name = data.get("full_name", "Noma'lum")
+    emp_id = data.get("employee_id", "—")
+    group_code = data.get("group_code", "—")
+    group_name = data.get("group_name", "")
+    grp_str = f"{group_code} ({group_name})" if group_name else group_code
+
+    return (
+        f"👤 <b>XODIM TAFSILOTLARI: {name}</b> (ID: <code>{emp_id}</code>)\n"
+        f"🏢 Bo'lim: <b>{grp_str}</b>\n\n"
+        "📊 <b>SAVDO KO'RSATKICHLARI:</b>\n"
+        f"💰 Jami savdo summasi: <b>{money(data.get('total_sales'))}</b>\n"
+        f"✅ Muvaffaqiyatli (Uspeshka): <b>{money(data.get('successful_sales'))}</b> (📦 <b>{data.get('upakovka', 0)} ta</b> zakaz)\n"
+        f"❌ Bekor qilingan (Otkaz): <b>{money(data.get('otkaz_sales'))}</b>\n"
+        f"⏳ Jarayondagi savdo: <b>{money(data.get('v_proc_sales'))}</b>\n\n"
+        "💵 <b>ISHLAB TOPILGAN OYLIK ISH HAQI:</b>\n"
+        f"📅 1-15 kunlik oylik: <b>{money(data.get('salary_1_15'))}</b>\n"
+        f"📅 16-31 kunlik oylik: <b>{money(data.get('salary_16_31'))}</b>\n"
+        f"💰 Jami ish haqi: <b>{money(data.get('earned_salary'))}</b>"
+    )
