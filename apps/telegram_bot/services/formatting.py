@@ -251,18 +251,53 @@ def money(value: Decimal | None, *, bold: bool = True) -> str:
     return formatted_str
 
 
+def _parse_decimal_val(raw: Any) -> Decimal | None:
+    if raw is None:
+        return None
+    clean_str = (
+        str(raw)
+        .replace("\xa0", "")
+        .replace(" ", "")
+        .replace(",", "")
+        .replace("so'm", "")
+        .replace("som", "")
+        .replace("UZS", "")
+        .strip()
+    )
+    if not clean_str:
+        return None
+    try:
+        return Decimal(clean_str)
+    except Exception:
+        return None
+
+
 def calculate_sal_1_15_from_sales(
     employee_id: str | None,
     period_date: date | None = None,
     group_code: str = "A",
 ) -> Decimal | None:
-    """Calculate 1-15 day salary dynamically from parsed Sale records for the target period."""
+    """Calculate 1-15 day salary dynamically from parsed Sale records or fallback to summary_data."""
     if not employee_id:
         return None
     try:
+        import calendar
+        from decimal import ROUND_HALF_UP
+        from django.db.models import Q
+        from django.utils import timezone
+        from apps.employees.models import Employee
+        from apps.imports.dto import normalize_employee_id
         from apps.imports.models import SpreadsheetPeriod
         from apps.sales.models import Sale, SaleSource, SaleStatus
-        from django.utils import timezone
+
+        raw_id = str(employee_id).strip()
+        norm_id = normalize_employee_id(raw_id)
+
+        emp = (
+            Employee.objects.filter(is_active=True)
+            .filter(Q(employee_id__iexact=raw_id) | Q(employee_id__iexact=norm_id) | Q(employee_id__endswith=norm_id))
+            .first()
+        )
 
         if period_date is None:
             active_sp = SpreadsheetPeriod.objects.filter(is_active=True).first()
@@ -270,30 +305,60 @@ def calculate_sal_1_15_from_sales(
         else:
             target_date = period_date
 
+        num_days = calendar.monthrange(target_date.year, target_date.month)[1]
+
+        # 1. Try DB Sale records query
         sales_1_15 = Sale.objects.filter(
-            employee__employee_id=employee_id,
             status=SaleStatus.SUCCESSFUL,
             ordered_at__year=target_date.year,
             ordered_at__month=target_date.month,
             ordered_at__day__lte=15,
         )
+        if emp:
+            sales_1_15 = sales_1_15.filter(employee=emp)
+        else:
+            sales_1_15 = sales_1_15.filter(
+                Q(employee__employee_id__iexact=raw_id) | Q(employee__employee_id__iexact=norm_id)
+            )
 
-        if not sales_1_15.exists():
-            return None
+        if sales_1_15.exists():
+            perv_sum = Decimal("0")
+            baza_sum = Decimal("0")
+            for s in sales_1_15:
+                amt = s.sale_amount or Decimal("0")
+                if s.source == SaleSource.BAZA:
+                    baza_sum += amt
+                else:
+                    perv_sum += amt
 
-        perv_sum = Decimal("0")
-        baza_sum = Decimal("0")
-        for s in sales_1_15:
-            amt = s.sale_amount or Decimal("0")
-            if s.source == SaleSource.BAZA:
-                baza_sum += amt
-            else:
-                perv_sum += amt
+            grp_upper = (group_code or "").strip().upper()
+            sal_calc = (perv_sum * Decimal("0.12")) + (baza_sum * Decimal("0.12")) if grp_upper == "BAZA" else (perv_sum * Decimal("0.12")) + (baza_sum * Decimal("0.16"))
+            logger.info("Calculated 1-15 salary for emp ID %s (%s) from DB Sale records: %s", raw_id, target_date, sal_calc)
+            return sal_calc
 
-        grp_upper = (group_code or "").strip().upper()
-        if grp_upper == "BAZA":
-            return (perv_sum * Decimal("0.12")) + (baza_sum * Decimal("0.12"))
-        return (perv_sum * Decimal("0.12")) + (baza_sum * Decimal("0.16"))
+        # 2. Fallback to Employee.summary_data JSON
+        if emp:
+            s_data = emp.summary_data or {}
+            sal_1_15_val = _parse_decimal_val(s_data.get("salary_1_15") or s_data.get("earned_salary_1_15"))
+            if sal_1_15_val is not None and sal_1_15_val > Decimal("0"):
+                logger.info("Calculated 1-15 salary for emp ID %s from JSON summary_data salary_1_15: %s", raw_id, sal_1_15_val)
+                return sal_1_15_val
+
+            earned_sal = _parse_decimal_val(s_data.get("earned_salary") or s_data.get("earned_salary_total"))
+            if earned_sal is not None and earned_sal > Decimal("0"):
+                sal_prop = (earned_sal * Decimal("15") / Decimal(str(num_days))).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+                logger.info("Calculated 1-15 salary for emp ID %s from JSON summary_data earned_salary proportional fallback: %s", raw_id, sal_prop)
+                return sal_prop
+
+            succ_sales = _parse_decimal_val(s_data.get("successful_sales") or s_data.get("total_sales"))
+            if succ_sales is not None and succ_sales > Decimal("0"):
+                comm = (succ_sales * Decimal("0.12")).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+                sal_prop = (comm * Decimal("15") / Decimal(str(num_days))).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+                logger.info("Calculated 1-15 salary for emp ID %s from JSON summary_data successful_sales fallback: %s", raw_id, sal_prop)
+                return sal_prop
+
+        logger.info("No sales or summary_data found for 1-15 salary for emp ID %s (%s)", raw_id, target_date)
+        return None
     except Exception as exc:
         logger.warning("Failed to calculate 1-15 salary from sales for %s: %s", employee_id, exc)
         return None
@@ -304,13 +369,27 @@ def calculate_sal_16_31_from_sales(
     period_date: date | None = None,
     group_code: str = "A",
 ) -> Decimal | None:
-    """Calculate 16-31 day salary dynamically from parsed Sale records for the target period."""
+    """Calculate 16-31 day salary dynamically from parsed Sale records or fallback to summary_data."""
     if not employee_id:
         return None
     try:
+        import calendar
+        from decimal import ROUND_HALF_UP
+        from django.db.models import Q
+        from django.utils import timezone
+        from apps.employees.models import Employee
+        from apps.imports.dto import normalize_employee_id
         from apps.imports.models import SpreadsheetPeriod
         from apps.sales.models import Sale, SaleSource, SaleStatus
-        from django.utils import timezone
+
+        raw_id = str(employee_id).strip()
+        norm_id = normalize_employee_id(raw_id)
+
+        emp = (
+            Employee.objects.filter(is_active=True)
+            .filter(Q(employee_id__iexact=raw_id) | Q(employee_id__iexact=norm_id) | Q(employee_id__endswith=norm_id))
+            .first()
+        )
 
         if period_date is None:
             active_sp = SpreadsheetPeriod.objects.filter(is_active=True).first()
@@ -318,30 +397,67 @@ def calculate_sal_16_31_from_sales(
         else:
             target_date = period_date
 
+        num_days = calendar.monthrange(target_date.year, target_date.month)[1]
+
+        # 1. Try DB Sale records query
         sales_16_31 = Sale.objects.filter(
-            employee__employee_id=employee_id,
             status=SaleStatus.SUCCESSFUL,
             ordered_at__year=target_date.year,
             ordered_at__month=target_date.month,
             ordered_at__day__gte=16,
         )
+        if emp:
+            sales_16_31 = sales_16_31.filter(employee=emp)
+        else:
+            sales_16_31 = sales_16_31.filter(
+                Q(employee__employee_id__iexact=raw_id) | Q(employee__employee_id__iexact=norm_id)
+            )
 
-        if not sales_16_31.exists():
-            return None
+        if sales_16_31.exists():
+            perv_sum = Decimal("0")
+            baza_sum = Decimal("0")
+            for s in sales_16_31:
+                amt = s.sale_amount or Decimal("0")
+                if s.source == SaleSource.BAZA:
+                    baza_sum += amt
+                else:
+                    perv_sum += amt
 
-        perv_sum = Decimal("0")
-        baza_sum = Decimal("0")
-        for s in sales_16_31:
-            amt = s.sale_amount or Decimal("0")
-            if s.source == SaleSource.BAZA:
-                baza_sum += amt
-            else:
-                perv_sum += amt
+            grp_upper = (group_code or "").strip().upper()
+            sal_calc = (perv_sum * Decimal("0.12")) + (baza_sum * Decimal("0.12")) if grp_upper == "BAZA" else (perv_sum * Decimal("0.12")) + (baza_sum * Decimal("0.16"))
+            logger.info("Calculated 16-31 salary for emp ID %s (%s) from DB Sale records: %s", raw_id, target_date, sal_calc)
+            return sal_calc
 
-        grp_upper = (group_code or "").strip().upper()
-        if grp_upper == "BAZA":
-            return (perv_sum * Decimal("0.12")) + (baza_sum * Decimal("0.12"))
-        return (perv_sum * Decimal("0.12")) + (baza_sum * Decimal("0.16"))
+        # 2. Fallback to Employee.summary_data JSON
+        if emp:
+            s_data = emp.summary_data or {}
+            sal_16_31_val = _parse_decimal_val(s_data.get("salary_16_31") or s_data.get("earned_salary_16_31"))
+            if sal_16_31_val is not None and sal_16_31_val > Decimal("0"):
+                logger.info("Calculated 16-31 salary for emp ID %s from JSON summary_data salary_16_31: %s", raw_id, sal_16_31_val)
+                return sal_16_31_val
+
+            earned_sal = _parse_decimal_val(s_data.get("earned_salary") or s_data.get("earned_salary_total"))
+            sal_1_15_val = _parse_decimal_val(s_data.get("salary_1_15") or s_data.get("earned_salary_1_15"))
+
+            if earned_sal is not None and earned_sal > Decimal("0"):
+                if sal_1_15_val is not None and sal_1_15_val > Decimal("0") and earned_sal > sal_1_15_val:
+                    sal_rem = earned_sal - sal_1_15_val
+                else:
+                    sal_1_15_calc = (earned_sal * Decimal("15") / Decimal(str(num_days))).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+                    sal_rem = earned_sal - sal_1_15_calc
+                logger.info("Calculated 16-31 salary for emp ID %s from JSON summary_data earned_salary fallback: %s", raw_id, sal_rem)
+                return sal_rem
+
+            succ_sales = _parse_decimal_val(s_data.get("successful_sales") or s_data.get("total_sales"))
+            if succ_sales is not None and succ_sales > Decimal("0"):
+                comm = (succ_sales * Decimal("0.12")).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+                sal_1_15_calc = (comm * Decimal("15") / Decimal(str(num_days))).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+                sal_rem = comm - sal_1_15_calc
+                logger.info("Calculated 16-31 salary for emp ID %s from JSON summary_data successful_sales fallback: %s", raw_id, sal_rem)
+                return sal_rem
+
+        logger.info("No sales or summary_data found for 16-31 salary for emp ID %s (%s)", raw_id, target_date)
+        return None
     except Exception as exc:
         logger.warning("Failed to calculate 16-31 salary from sales for %s: %s", employee_id, exc)
         return None

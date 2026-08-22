@@ -19,7 +19,7 @@ def get_active_period_date(target_date=None) -> date:
             parts = target_date.split("-")
             return date(int(parts[0]), int(parts[1]), 1)
         if isinstance(target_date, datetime):
-            return target_date.date()
+            return timezone.localtime(target_date).date()
         return target_date
 
     # 1. Primary choice: active SpreadsheetPeriod

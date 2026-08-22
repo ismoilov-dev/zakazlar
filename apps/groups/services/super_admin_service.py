@@ -355,6 +355,20 @@ class SuperAdminService:
             p1_upakovka = int(upk * 15 // num_days)
             p2_upakovka = upk - p1_upakovka
 
+        source_label = "DB_SALE_RECORDS" if (emp_tot and emp_tot.get("total_orders", 0) > 0) else "EMPLOYEE_SUMMARY_JSON"
+        logger.info(
+            "SuperAdmin lookup for employee %s (ID: %s, Group: %s) via %s: total_sales=%s, successful_sales=%s, earned_sal=%s, sal_1_15=%s, sal_16_31=%s",
+            emp.full_name,
+            emp.employee_id,
+            emp.group.code if emp.group else "—",
+            source_label,
+            ts,
+            ss,
+            earned_sal,
+            sal_1_15,
+            sal_16_31,
+        )
+
         return {
             "employee_id": emp.employee_id,
             "full_name": emp.full_name,
