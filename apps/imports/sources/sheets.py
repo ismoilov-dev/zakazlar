@@ -108,17 +108,27 @@ def resolve_spreadsheet_id(passed_sheet_id: str | None = None) -> tuple[str, str
         if clean_id:
             return clean_id, "explicit argument"
 
+    env_id = (os.environ.get("GOOGLE_SHEET_ID") or "").strip().strip("/")
+
     try:
         from apps.imports.models import SpreadsheetPeriod
         active_period = SpreadsheetPeriod.objects.filter(is_active=True).first()
         if active_period and active_period.spreadsheet_id:
+            db_sheet_id = active_period.spreadsheet_id.strip().strip("/")
             period_str = active_period.period.strftime("%Y-%m")
-            return active_period.spreadsheet_id.strip().strip("/"), f"DB SpreadsheetPeriod ({period_str})"
+            if env_id and env_id != db_sheet_id:
+                logger.warning(
+                    "Spreadsheet ID mismatch! DB active SpreadsheetPeriod (%s) has '%s', but GOOGLE_SHEET_ID env has '%s'. Using authoritative DB period ID.",
+                    period_str,
+                    db_sheet_id,
+                    env_id,
+                )
+            return db_sheet_id, f"DB SpreadsheetPeriod ({period_str})"
     except Exception as exc:
         logger.warning("SpreadsheetPeriod o'qishda xatolik: %s", exc)
 
-    env_id = (os.environ.get("GOOGLE_SHEET_ID") or "").strip().strip("/")
     if env_id:
+        logger.info("Using GOOGLE_SHEET_ID from environment: %s", env_id)
         return env_id, "env fallback"
 
     raise ValidationError("GOOGLE_SHEET_ID muhit o'zgaruvchisi yoki faol SpreadsheetPeriod topilmadi.")
@@ -535,6 +545,8 @@ class SheetsSource(BaseSource):
                         last_seen_emp_name = raw_emp_name
                         name_map[raw_emp_name.strip().lower()] = emp_id
                 except PARSE_ERRORS as exc:
+                    last_seen_emp_id = None
+                    last_seen_emp_name = None
                     dropped_invalid_id += 1
                     reason = f"ID formati noto'g'ri: {exc}"
                     first_6 = [str(c).strip() for c in row[:6]]
@@ -542,6 +554,11 @@ class SheetsSource(BaseSource):
                     logger.warning("List1 %s-qator tashlandi: %s | Birinchi 6 katak: %s", row_idx, reason, first_6)
                     continue
             else:
+                if raw_emp_name and last_seen_emp_name and raw_emp_name.strip().lower() != last_seen_emp_name.strip().lower():
+                    # Unmapped new employee name without ID - reset state to prevent cascading wrong ID
+                    last_seen_emp_id = None
+                    last_seen_emp_name = None
+
                 if mapped_id:
                     emp_id = mapped_id
                     last_seen_emp_id = emp_id
