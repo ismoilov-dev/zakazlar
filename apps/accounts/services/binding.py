@@ -68,3 +68,33 @@ def require_rop_session(account: TelegramAccount | None) -> bool:
     """Single guard function to check ROP session validity."""
     return is_rop_session_valid(account)
 
+
+def get_or_create_super_admin_account(telegram_id: int) -> TelegramAccount:
+    """Auto-bind Super Admin Telegram ID to a virtual Super Admin employee record."""
+    account = TelegramAccount.objects.select_related("employee", "employee__group").filter(telegram_id=telegram_id).first()
+    if account and account.employee:
+        return account
+
+    employee, _ = Employee.objects.get_or_create(
+        employee_id="SUPERADMIN",
+        defaults={
+            "full_name": "UzSardorbek (Super Admin)",
+            "is_active": True,
+        },
+    )
+    if not account:
+        account = TelegramAccount.objects.create(
+            employee=employee,
+            telegram_id=telegram_id,
+            username="UzSardorbek",
+            role="ROP",
+            rop_authenticated_at=timezone.now(),
+        )
+    elif not account.employee:
+        account.employee = employee
+        account.role = "ROP"
+        account.rop_authenticated_at = timezone.now()
+        account.save()
+
+    return account
+

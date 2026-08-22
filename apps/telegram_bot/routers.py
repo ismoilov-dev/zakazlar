@@ -29,6 +29,7 @@ from apps.accounts.services.binding import (
     TelegramBindingService,
     is_rop_session_valid,
     require_rop_session,
+    get_or_create_super_admin_account,
 )
 from apps.accounts.services.name_match import names_match
 from apps.accounts.services.rate_limiter import (
@@ -249,11 +250,14 @@ async def start(message: Message, state: FSMContext) -> None:
         if message.from_user is None:
             return
 
-        account = await sync_to_async(
-            lambda: TelegramAccount.objects.select_related("employee", "employee__group").filter(telegram_id=message.from_user.id).first()
-        )()
+        if is_super_admin(message.from_user.id):
+            account = await sync_to_async(get_or_create_super_admin_account)(message.from_user.id)
+        else:
+            account = await sync_to_async(
+                lambda: TelegramAccount.objects.select_related("employee", "employee__group").filter(telegram_id=message.from_user.id).first()
+            )()
 
-        if account:
+        if account and not is_super_admin(message.from_user.id):
             if not account.employee:
                 logger.warning("Deleting orphaned TelegramAccount without employee for telegram_id=%s", message.from_user.id)
                 await sync_to_async(account.delete)()
@@ -265,8 +269,11 @@ async def start(message: Message, state: FSMContext) -> None:
             except Exception as exc:
                 logger.warning("ensure_fresh_data_and_get_timestamp failed in start: %s", exc)
 
-            safe_name = html.escape(account.employee.full_name.strip())
-            info_prefix = f"Siz allaqachon <b>{safe_name}</b> (<code>{account.employee.employee_id}</code>) sifatida ro'yxatdan o'tgansiz.\n\n"
+            if is_super_admin(message.from_user.id):
+                info_prefix = "👑 <b>Super Admin Boshqaruv Paneli (UzSardorbek)</b>\n<i>Barcha bo'limlar ko'rsatkichlarini nazorat qilish paneli:</i>\n\n"
+            else:
+                safe_name = html.escape(account.employee.full_name.strip())
+                info_prefix = f"Siz allaqachon <b>{safe_name}</b> (<code>{account.employee.employee_id}</code>) sifatida ro'yxatdan o'tgansiz.\n\n"
 
             is_leader = await sync_to_async(is_group_leader)(account.employee, message.from_user.id)
             if is_super_admin(message.from_user.id):
@@ -723,9 +730,12 @@ async def shaxsiy_command(message: Message, state: FSMContext | None = None) -> 
     if message.from_user is None:
         return
 
-    account = await sync_to_async(
-        lambda: TelegramAccount.objects.select_related("employee", "employee__group").filter(telegram_id=message.from_user.id).first()
-    )()
+    if is_super_admin(message.from_user.id):
+        account = await sync_to_async(get_or_create_super_admin_account)(message.from_user.id)
+    else:
+        account = await sync_to_async(
+            lambda: TelegramAccount.objects.select_related("employee", "employee__group").filter(telegram_id=message.from_user.id).first()
+        )()
     if not account or not account.employee:
         await message.answer("Avval Employee ID orqali profilingizni bog'lang.")
         return
@@ -743,9 +753,12 @@ async def rop_command(message: Message, state: FSMContext) -> None:
     if message.from_user is None:
         return
 
-    account = await sync_to_async(
-        lambda: TelegramAccount.objects.select_related("employee", "employee__group").filter(telegram_id=message.from_user.id).first()
-    )()
+    if is_super_admin(message.from_user.id):
+        account = await sync_to_async(get_or_create_super_admin_account)(message.from_user.id)
+    else:
+        account = await sync_to_async(
+            lambda: TelegramAccount.objects.select_related("employee", "employee__group").filter(telegram_id=message.from_user.id).first()
+        )()
     if not account or not account.employee:
         await message.answer("Avval Employee ID orqali profilingizni bog'lang.")
         return
@@ -781,9 +794,12 @@ async def employee_stats(message: Message, state: FSMContext | None = None) -> N
     if message.from_user is None:
         return
 
-    account = await sync_to_async(
-        lambda: TelegramAccount.objects.select_related("employee", "employee__group").filter(telegram_id=message.from_user.id).first()
-    )()
+    if is_super_admin(message.from_user.id):
+        account = await sync_to_async(get_or_create_super_admin_account)(message.from_user.id)
+    else:
+        account = await sync_to_async(
+            lambda: TelegramAccount.objects.select_related("employee", "employee__group").filter(telegram_id=message.from_user.id).first()
+        )()
     if not account or not account.employee:
         await message.answer("Avval Employee ID orqali profilingizni bog'lang.")
         return
@@ -825,9 +841,12 @@ async def handle_switch_rop(callback: CallbackQuery, state: FSMContext) -> None:
         return
 
     telegram_id = callback.from_user.id
-    account = await sync_to_async(
-        lambda: TelegramAccount.objects.select_related("employee", "employee__group").filter(telegram_id=telegram_id).first()
-    )()
+    if is_super_admin(telegram_id):
+        account = await sync_to_async(get_or_create_super_admin_account)(telegram_id)
+    else:
+        account = await sync_to_async(
+            lambda: TelegramAccount.objects.select_related("employee", "employee__group").filter(telegram_id=telegram_id).first()
+        )()
     if not account or not account.employee:
         await callback.answer("Avval profilingizni bog'lang.", show_alert=True)
         return
@@ -866,9 +885,12 @@ async def handle_rop_callback(callback: CallbackQuery, state: FSMContext) -> Non
         return
 
     telegram_id = callback.from_user.id
-    account = await sync_to_async(
-        lambda: TelegramAccount.objects.select_related("employee", "employee__group").filter(telegram_id=telegram_id).first()
-    )()
+    if is_super_admin(telegram_id):
+        account = await sync_to_async(get_or_create_super_admin_account)(telegram_id)
+    else:
+        account = await sync_to_async(
+            lambda: TelegramAccount.objects.select_related("employee", "employee__group").filter(telegram_id=telegram_id).first()
+        )()
     if not account or not account.employee:
         await callback.answer("Avval profilingizni bog'lang.", show_alert=True)
         return
