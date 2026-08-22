@@ -157,11 +157,17 @@ class SuperAdminService:
 
     def search_employees(self, query: str) -> list[dict[str, Any]]:
         """Search active employees by name or employee_id."""
+        from apps.imports.dto import normalize_employee_id
+
         q = query.strip().lower()
+        norm_q = normalize_employee_id(q)
         all_emps = self.get_company_employees_sorted()
         return [
-            e for e in all_emps
-            if q in e["employee_id"].lower() or q in e["full_name"].lower()
+            e
+            for e in all_emps
+            if q in e["employee_id"].lower()
+            or (norm_q and norm_q in normalize_employee_id(e["employee_id"]))
+            or q in e["full_name"].lower()
         ]
 
     @staticmethod
