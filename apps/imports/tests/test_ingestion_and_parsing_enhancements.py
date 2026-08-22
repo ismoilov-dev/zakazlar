@@ -47,3 +47,15 @@ class SpreadsheetIngestionEnhancementsTestCase(TestCase):
         for raw, expected in test_cases:
             res = SheetsSource._parse_money(raw)
             self.assertEqual(res, expected)
+
+    def test_sync_status_warning_persistence(self):
+        """Test that SyncStatus.WARNING choice can be saved to SyncLog without AttributeError or DB error."""
+        from apps.imports.models import SyncLog, SyncStatus
+        log = SyncLog.objects.create(
+            status=SyncStatus.WARNING,
+            sync_type="orders",
+            error_text="WARNING: 5 ta zakaz noma'lum status sababli hisobga olinmadi.",
+        )
+        fetched = SyncLog.objects.get(pk=log.pk)
+        self.assertEqual(fetched.status, SyncStatus.WARNING)
+        self.assertIn("WARNING:", fetched.error_text)
