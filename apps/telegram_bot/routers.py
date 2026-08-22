@@ -95,6 +95,7 @@ class RegistrationStates(StatesGroup):
     enter_id = State()
     enter_password = State()
     enter_name = State()
+    confirm = State()
 
 
 class SuperAdminStates(StatesGroup):
@@ -616,11 +617,34 @@ async def process_name(message: Message, state: FSMContext) -> None:
         await state.clear()
         return
 
+    # If the user typed a 4-digit ID instead of a name (e.g. entered wrong ID previously)
+    try:
+        new_id = normalize_employee_id(message.text)
+        employee = await sync_to_async(EmployeeRepository().get_active_by_employee_id)(new_id)
+        existing_binding = await sync_to_async(
+            lambda: TelegramAccount.objects.filter(employee=employee).first()
+        )()
+        if existing_binding and existing_binding.telegram_id != message.from_user.id:
+            text = "Bu Employee ID allaqachon boshqa Telegram profiliga bog'langan. Administratsiyaga murojaat qiling."
+            await _send_or_edit_registration_prompt(message, state, text, reply_markup=retry_builder.as_markup())
+            await state.clear()
+            return
+
+        await state.update_data(employee_id=new_id, sheet_name=employee.full_name)
+        await state.set_state(RegistrationStates.enter_name)
+        await _send_or_edit_registration_prompt(message, state, "Iltimos, ism va familiyangizni kiriting:")
+        return
+    except (DomainError, Employee.DoesNotExist):
+        pass
+
     if not names_match(message.text, sheet_name):
         await sync_to_async(record_failed_attempt)(telegram_id, employee_id, message.text)
-        text = "Kiritilgan ism-familiya ushbu ID ma'lumotlariga mos kelmadi."
+        text = (
+            "Kiritilgan ism-familiya ushbu ID ma'lumotlariga mos kelmadi.\n"
+            "Iltimos, ism va familiyangizni to'liq kiriting (masalan: <code>Alisher Navoiy</code>):"
+        )
         await _send_or_edit_registration_prompt(message, state, text, reply_markup=retry_builder.as_markup())
-        await state.set_state(RegistrationStates.enter_id)
+        await state.set_state(RegistrationStates.enter_name)
         return
 
     await state.set_state(RegistrationStates.confirm)

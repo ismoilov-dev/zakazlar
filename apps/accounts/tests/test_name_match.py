@@ -34,6 +34,10 @@ class NameMatchTest(SimpleTestCase):
             ("Elbek", "Xaydarov Elbek", False),
             ("Xaydarov", "Xaydarov Elbek", False),
 
+            # Uzbek stem / suffix variations
+            ("Ismat Ismoilov", "Ismoilov Ismatjon", True),
+            ("Jasurbek Karimov", "Karimov Jasur", True),
+
             # Mismatched name tokens
             ("Elbek Smith", "Xaydarov Elbek", False),
             ("Ali Valiyev", "Hasan Husanov", False),

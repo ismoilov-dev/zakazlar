@@ -86,11 +86,22 @@ def normalize_name_to_tokens(name: str) -> set[str]:
     return normalized
 
 
+def token_matches(typed_tok: str, sheet_tok: str) -> bool:
+    """Check if a typed token matches a sheet token."""
+    if typed_tok == sheet_tok:
+        return True
+    # Stem / prefix matching for Uzbek name variations (e.g. Ismat vs Ismatjon, Jasur vs Jasurbek, Xasanov vs Xasanova)
+    if len(typed_tok) >= 3 and len(sheet_tok) >= 3:
+        if typed_tok.startswith(sheet_tok) or sheet_tok.startswith(typed_tok):
+            return True
+    return False
+
+
 def names_match(typed: str, sheet_name: str) -> bool:
     """Compare typed name against sheet record name using set inclusion rules.
 
     - Requires at least 2 tokens in the typed string.
-    - Every typed token must exist in the sheet name tokens.
+    - Every typed token must match at least one sheet name token.
     - Deterministic only (no fuzzy matching).
     """
     typed_tokens = normalize_name_to_tokens(typed)
@@ -99,4 +110,8 @@ def names_match(typed: str, sheet_name: str) -> bool:
     if len(typed_tokens) < 2:
         return False
 
-    return typed_tokens.issubset(sheet_tokens)
+    for t_tok in typed_tokens:
+        if not any(token_matches(t_tok, s_tok) for s_tok in sheet_tokens):
+            return False
+
+    return True

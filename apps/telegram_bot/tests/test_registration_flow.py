@@ -153,7 +153,7 @@ class RegistrationFlowTestCase(TestCase):
         message.answer.assert_called_once()
         args, _ = message.answer.call_args
         self.assertIn("mos kelmadi", args[0])
-        self.assertEqual(await state.get_state(), RegistrationStates.enter_id.state)
+        self.assertEqual(await state.get_state(), RegistrationStates.enter_name.state)
 
     async def test_rate_limit_blocks_after_three_failures(self) -> None:
         user_id = 10007
@@ -343,7 +343,7 @@ class RegistrationFlowTestCase(TestCase):
         msg_name.bot.edit_message_text.assert_called_once()
         _, edit_kwargs = msg_name.bot.edit_message_text.call_args
         self.assertIn("mos kelmadi", edit_kwargs.get("text"))
-        self.assertEqual(await state.get_state(), RegistrationStates.enter_id.state)
+        self.assertEqual(await state.get_state(), RegistrationStates.enter_name.state)
 
     async def test_start_unbound_user_empty_fsm(self) -> None:
         """/start from an unbound user with empty FSM displays role selection menu."""
@@ -431,9 +431,26 @@ class RegistrationFlowTestCase(TestCase):
 
         self.assertIsNone(await state.get_state())
         message.answer.assert_called_once()
-        text = message.answer.call_args[0][0]
         self.assertIn("Xatolik yuz berdi (kod: ", text)
         import re
         match = re.search(r"kod:\s*([0-9a-f]{8})\)", text)
         self.assertIsNotNone(match)
+
+    async def test_process_name_allows_typing_new_id(self) -> None:
+        """When user types a valid 4-digit ID in enter_name state, it updates ID smoothly."""
+        user_id = 90010
+        state = self._get_fsm_context(user_id)
+        await state.update_data(employee_id="0001", sheet_name="Elbek Xaydarov")
+        await state.set_state(RegistrationStates.enter_name)
+
+        msg = AsyncMock()
+        msg.from_user.id = user_id
+        msg.text = "0002"
+        msg.chat.id = user_id
+
+        await process_name(msg, state)
+        self.assertEqual(await state.get_state(), RegistrationStates.enter_name.state)
+        data = await state.get_data()
+        self.assertEqual(data.get("employee_id"), "0002")
+        self.assertEqual(data.get("sheet_name"), "Shuhrat Karimov")
 
