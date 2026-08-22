@@ -48,6 +48,7 @@ class SyncStatus(models.TextChoices):
     SUCCESS = "success", "Success"
     SKIPPED = "skipped", "Skipped"
     FAILED = "failed", "Failed"
+    WARNING = "warning", "Warning"
 
 
 class SyncLog(TimeStampedModel):
