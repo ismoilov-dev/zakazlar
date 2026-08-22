@@ -247,41 +247,138 @@ class SuperAdminService:
 
     def get_employee_detail(self, query: str) -> dict[str, Any] | None:
         """Fetch complete detailed metrics for a single employee matching query ID or name."""
+        from django.db.models import Q
         from apps.imports.dto import normalize_employee_id
+        import calendar
+        from decimal import ROUND_HALF_UP
 
-        q = query.strip().lower()
+        q = query.strip()
         norm_q = normalize_employee_id(q)
 
-        all_emps = self.get_company_employees_sorted()
-        for e in all_emps:
-            e_id = e["employee_id"].lower()
-            norm_e_id = normalize_employee_id(e_id)
-            if q == e_id or (norm_q and norm_q == norm_e_id) or q in e["full_name"].lower():
-                return {
-                    "employee_id": e["employee_id"],
-                    "full_name": e["full_name"],
-                    "group_code": e["group_code"],
-                    "group_name": e.get("group_name", ""),
-                    "total_sales": e["sales_val"],
-                    "successful_sales": e["successful_sales"],
-                    "otkaz_sales": e["otkaz_sales"],
-                    "v_proc_sales": e["v_proc_sales"],
-                    "upakovka": e["orders_val"],
-                    "earned_salary": e["earned_salary"],
-                    "salary_1_15": e["salary_1_15"],
-                    "salary_16_31": e["salary_16_31"],
-                    "p1_sales": e.get("p1_sales", Decimal("0.00")),
-                    "p1_successful": e.get("p1_successful", Decimal("0.00")),
-                    "p1_otkaz": e.get("p1_otkaz", Decimal("0.00")),
-                    "p1_vproc": e.get("p1_vproc", Decimal("0.00")),
-                    "p1_upakovka": e.get("p1_upakovka", 0),
-                    "p2_sales": e.get("p2_sales", Decimal("0.00")),
-                    "p2_successful": e.get("p2_successful", Decimal("0.00")),
-                    "p2_otkaz": e.get("p2_otkaz", Decimal("0.00")),
-                    "p2_vproc": e.get("p2_vproc", Decimal("0.00")),
-                    "p2_upakovka": e.get("p2_upakovka", 0),
-                }
-        return None
+        emp = (
+            Employee.objects.filter(is_active=True)
+            .select_related("group")
+            .filter(
+                Q(employee_id__iexact=q)
+                | Q(employee_id__iexact=norm_q)
+                | Q(full_name__icontains=q)
+            )
+            .first()
+        )
+        if not emp:
+            emp = (
+                Employee.objects.filter(is_active=True)
+                .select_related("group")
+                .filter(Q(employee_id__icontains=q) | Q(employee_id__endswith=norm_q))
+                .first()
+            )
+        if not emp:
+            return None
+
+        stats_repo = StatisticsRepository()
+        emp_tot = stats_repo.employee_totals(emp.id)
+        s = emp.summary_data or {}
+
+        # 1. Total monthly sales & orders
+        if emp_tot and emp_tot.get("total_orders", 0) > 0:
+            ts = emp_tot.get("total_sales") or Decimal("0.00")
+            ss = (emp_tot.get("perv_sales") or Decimal("0.00")) + (emp_tot.get("baza_sales") or Decimal("0.00"))
+            os = emp_tot.get("otkaz_sales") or Decimal("0.00")
+            vp = emp_tot.get("v_proc_sales") or Decimal("0.00")
+            upk = emp_tot.get("successful_orders") or 0
+        else:
+            ts = self._parse_decimal(s.get("total_sales"))
+            ss = self._parse_decimal(s.get("successful_sales"))
+            os = self._parse_decimal(s.get("otkaz_sales"))
+            vp = self._parse_decimal(s.get("v_proc_sales"))
+            upk = self._parse_int(s.get("successful_orders"))
+
+            if ss == Decimal("0.00") and ts > Decimal("0.00"):
+                ss = ts
+
+        # 2. Earned Salary & 1-15 / 16-31 Breakdown
+        sal_1_15 = self._parse_decimal(s.get("salary_1_15"))
+        sal_16_31 = self._parse_decimal(s.get("salary_16_31"))
+        earned_sal = self._parse_decimal(s.get("earned_salary"))
+
+        if earned_sal == Decimal("0.00") and ss > Decimal("0.00"):
+            grp_code = emp.group.code.upper() if emp.group else "A"
+            if grp_code == "BAZA":
+                earned_sal = (ss * Decimal("0.12")).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+            else:
+                earned_sal = (ss * Decimal("0.12")).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+
+        target_dt = timezone.localtime().date()
+        num_days = calendar.monthrange(target_dt.year, target_dt.month)[1]
+
+        if sal_1_15 == Decimal("0.00") and sal_16_31 == Decimal("0.00"):
+            if earned_sal > Decimal("0.00"):
+                sal_1_15 = (earned_sal * Decimal("15") / Decimal(str(num_days))).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+                sal_16_31 = earned_sal - sal_1_15
+        elif sal_1_15 > Decimal("0.00") and sal_16_31 == Decimal("0.00"):
+            if earned_sal > sal_1_15:
+                sal_16_31 = earned_sal - sal_1_15
+        elif sal_16_31 > Decimal("0.00") and sal_1_15 == Decimal("0.00"):
+            if earned_sal > sal_16_31:
+                sal_1_15 = earned_sal - sal_16_31
+
+        # 3. Bi-weekly Period 1 and Period 2 breakdown
+        bw = stats_repo.employee_biweekly_totals(emp.id)
+        p1_tot = bw["period1"]
+        p2_tot = bw["period2"]
+
+        if p1_tot.get("total_orders", 0) > 0 or p2_tot.get("total_orders", 0) > 0:
+            p1_sales = p1_tot.get("total_sales") or Decimal("0.00")
+            p1_successful = (p1_tot.get("perv_sales") or Decimal("0.00")) + (p1_tot.get("baza_sales") or Decimal("0.00"))
+            p1_otkaz = p1_tot.get("otkaz_sales") or Decimal("0.00")
+            p1_vproc = p1_tot.get("v_proc_sales") or Decimal("0.00")
+            p1_upakovka = p1_tot.get("successful_orders") or 0
+
+            p2_sales = p2_tot.get("total_sales") or Decimal("0.00")
+            p2_successful = (p2_tot.get("perv_sales") or Decimal("0.00")) + (p2_tot.get("baza_sales") or Decimal("0.00"))
+            p2_otkaz = p2_tot.get("otkaz_sales") or Decimal("0.00")
+            p2_vproc = p2_tot.get("v_proc_sales") or Decimal("0.00")
+            p2_upakovka = p2_tot.get("successful_orders") or 0
+        else:
+            p1_sales = (ts * Decimal("15") / Decimal(str(num_days))).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+            p2_sales = ts - p1_sales
+
+            p1_successful = (ss * Decimal("15") / Decimal(str(num_days))).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+            p2_successful = ss - p1_successful
+
+            p1_otkaz = (os * Decimal("15") / Decimal(str(num_days))).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+            p2_otkaz = os - p1_otkaz
+
+            p1_vproc = (vp * Decimal("15") / Decimal(str(num_days))).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+            p2_vproc = vp - p1_vproc
+
+            p1_upakovka = int(upk * 15 // num_days)
+            p2_upakovka = upk - p1_upakovka
+
+        return {
+            "employee_id": emp.employee_id,
+            "full_name": emp.full_name,
+            "group_code": emp.group.code if emp.group else "—",
+            "group_name": emp.group.name if emp.group else "",
+            "total_sales": ts,
+            "successful_sales": ss,
+            "otkaz_sales": os,
+            "v_proc_sales": vp,
+            "upakovka": upk,
+            "earned_salary": earned_sal,
+            "salary_1_15": sal_1_15,
+            "salary_16_31": sal_16_31,
+            "p1_sales": p1_sales,
+            "p1_successful": p1_successful,
+            "p1_otkaz": p1_otkaz,
+            "p1_vproc": p1_vproc,
+            "p1_upakovka": p1_upakovka,
+            "p2_sales": p2_sales,
+            "p2_successful": p2_successful,
+            "p2_otkaz": p2_otkaz,
+            "p2_vproc": p2_vproc,
+            "p2_upakovka": p2_upakovka,
+        }
 
     @staticmethod
     def _parse_decimal(raw: Any) -> Decimal:
