@@ -149,12 +149,14 @@ class SuperAdminService:
             sal_16_31 = self._parse_decimal(s.get("salary_16_31"))
             earned_sal = self._parse_decimal(s.get("earned_salary"))
 
+            import calendar
+            from decimal import ROUND_HALF_UP
+
+            target_dt = timezone.localtime().date()
+            num_days = calendar.monthrange(target_dt.year, target_dt.month)[1]
+
             if (sal_1_15 is None or sal_1_15 == Decimal("0.00")) and (sal_16_31 is None or sal_16_31 == Decimal("0.00")):
                 if earned_sal > Decimal("0.00"):
-                    import calendar
-                    from decimal import ROUND_HALF_UP
-                    target_dt = timezone.localtime().date()
-                    num_days = calendar.monthrange(target_dt.year, target_dt.month)[1]
                     sal_1_15 = (earned_sal * Decimal("15") / Decimal(str(num_days))).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
                     sal_16_31 = earned_sal - sal_1_15
             elif sal_1_15 is not None and sal_1_15 > Decimal("0.00") and (sal_16_31 is None or sal_16_31 == Decimal("0.00")):
@@ -163,6 +165,38 @@ class SuperAdminService:
             elif sal_16_31 is not None and sal_16_31 > Decimal("0.00") and (sal_1_15 is None or sal_1_15 == Decimal("0.00")):
                 if earned_sal > sal_16_31:
                     sal_1_15 = earned_sal - sal_16_31
+
+            bw = stats_repo.employee_biweekly_totals(emp.id)
+            p1_tot = bw["period1"]
+            p2_tot = bw["period2"]
+
+            if p1_tot.get("total_orders", 0) > 0 or p2_tot.get("total_orders", 0) > 0:
+                p1_sales = p1_tot.get("total_sales") or Decimal("0.00")
+                p1_successful = (p1_tot.get("perv_sales") or Decimal("0.00")) + (p1_tot.get("baza_sales") or Decimal("0.00"))
+                p1_otkaz = p1_tot.get("otkaz_sales") or Decimal("0.00")
+                p1_vproc = p1_tot.get("v_proc_sales") or Decimal("0.00")
+                p1_upakovka = p1_tot.get("successful_orders") or 0
+
+                p2_sales = p2_tot.get("total_sales") or Decimal("0.00")
+                p2_successful = (p2_tot.get("perv_sales") or Decimal("0.00")) + (p2_tot.get("baza_sales") or Decimal("0.00"))
+                p2_otkaz = p2_tot.get("otkaz_sales") or Decimal("0.00")
+                p2_vproc = p2_tot.get("v_proc_sales") or Decimal("0.00")
+                p2_upakovka = p2_tot.get("successful_orders") or 0
+            else:
+                p1_sales = (sales_val * Decimal("15") / Decimal(str(num_days))).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+                p2_sales = sales_val - p1_sales
+
+                p1_successful = (successful_sales * Decimal("15") / Decimal(str(num_days))).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+                p2_successful = successful_sales - p1_successful
+
+                p1_otkaz = (otkaz_sales * Decimal("15") / Decimal(str(num_days))).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+                p2_otkaz = otkaz_sales - p1_otkaz
+
+                p1_vproc = (v_proc_sales * Decimal("15") / Decimal(str(num_days))).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+                p2_vproc = v_proc_sales - p1_vproc
+
+                p1_upakovka = int(orders_val * 15 // num_days)
+                p2_upakovka = orders_val - p1_upakovka
 
             group_code = emp.group.code if emp.group else "—"
 
@@ -180,6 +214,16 @@ class SuperAdminService:
                 "salary_1_15": sal_1_15,
                 "salary_16_31": sal_16_31,
                 "earned_salary": earned_sal,
+                "p1_sales": p1_sales,
+                "p1_successful": p1_successful,
+                "p1_otkaz": p1_otkaz,
+                "p1_vproc": p1_vproc,
+                "p1_upakovka": p1_upakovka,
+                "p2_sales": p2_sales,
+                "p2_successful": p2_successful,
+                "p2_otkaz": p2_otkaz,
+                "p2_vproc": p2_vproc,
+                "p2_upakovka": p2_upakovka,
             })
 
         items.sort(key=lambda x: (x["sales_val"], x["salary_val"]), reverse=True)
@@ -223,9 +267,19 @@ class SuperAdminService:
                     "otkaz_sales": e["otkaz_sales"],
                     "v_proc_sales": e["v_proc_sales"],
                     "upakovka": e["orders_val"],
+                    "earned_salary": e["earned_salary"],
                     "salary_1_15": e["salary_1_15"],
                     "salary_16_31": e["salary_16_31"],
-                    "earned_salary": e["earned_salary"],
+                    "p1_sales": e.get("p1_sales", Decimal("0.00")),
+                    "p1_successful": e.get("p1_successful", Decimal("0.00")),
+                    "p1_otkaz": e.get("p1_otkaz", Decimal("0.00")),
+                    "p1_vproc": e.get("p1_vproc", Decimal("0.00")),
+                    "p1_upakovka": e.get("p1_upakovka", 0),
+                    "p2_sales": e.get("p2_sales", Decimal("0.00")),
+                    "p2_successful": e.get("p2_successful", Decimal("0.00")),
+                    "p2_otkaz": e.get("p2_otkaz", Decimal("0.00")),
+                    "p2_vproc": e.get("p2_vproc", Decimal("0.00")),
+                    "p2_upakovka": e.get("p2_upakovka", 0),
                 }
         return None
 

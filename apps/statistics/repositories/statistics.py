@@ -53,6 +53,14 @@ class StatisticsRepository:
     def employee_totals(self, employee_id: int, target_date=None) -> dict[str, object]:
         return self._aggregate(self._get_current_month_qs(target_date).filter(employee_id=employee_id))
 
+    def employee_biweekly_totals(self, employee_id: int, target_date=None) -> dict[str, dict[str, object]]:
+        """Fetch bi-weekly totals for period 1 (1-15) and period 2 (16-31)."""
+        qs = self._get_current_month_qs(target_date).filter(employee_id=employee_id)
+        return {
+            "period1": self._aggregate(qs.filter(ordered_at__day__lte=15)),
+            "period2": self._aggregate(qs.filter(ordered_at__day__gte=16)),
+        }
+
     def group_totals(self, group_id: int, target_date=None) -> dict[str, object]:
         return self._aggregate(self._get_current_month_qs(target_date).filter(employee__group_id=group_id))
 

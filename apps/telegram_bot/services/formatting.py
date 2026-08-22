@@ -896,7 +896,7 @@ def super_admin_employee_list_keyboard(page: int, total_pages: int) -> InlineKey
 
 
 def super_admin_employee_detail_text(data: dict[str, Any]) -> str:
-    """Render full detailed card for a single searched employee."""
+    """Render full detailed card with bi-weekly breakdown for a single searched employee."""
     name = data.get("full_name", "Noma'lum")
     emp_id = data.get("employee_id", "—")
     group_code = data.get("group_code", "—")
@@ -922,16 +922,37 @@ def super_admin_employee_detail_text(data: dict[str, Any]) -> str:
         if earned_sal > sal_16_31:
             sal_1_15 = earned_sal - sal_16_31
 
+    p1_sales = data.get("p1_sales") or Decimal("0.00")
+    p1_successful = data.get("p1_successful") or Decimal("0.00")
+    p1_otkaz = data.get("p1_otkaz") or Decimal("0.00")
+    p1_vproc = data.get("p1_vproc") or Decimal("0.00")
+    p1_upakovka = data.get("p1_upakovka", 0)
+
+    p2_sales = data.get("p2_sales") or Decimal("0.00")
+    p2_successful = data.get("p2_successful") or Decimal("0.00")
+    p2_otkaz = data.get("p2_otkaz") or Decimal("0.00")
+    p2_vproc = data.get("p2_vproc") or Decimal("0.00")
+    p2_upakovka = data.get("p2_upakovka", 0)
+
     return (
         f"👤 <b>XODIM TAFSILOTLARI: {name}</b> (ID: <code>{emp_id}</code>)\n"
         f"🏢 Bo'lim: <b>{grp_str}</b>\n\n"
-        "📊 <b>SAVDO KO'RSATKICHLARI:</b>\n"
+        "📅 <b>1-DAVR: 1-15 SANALAR (1-15 kunlik)</b>\n"
+        f"   💰 Jami savdo: {money(p1_sales, bold=False)}\n"
+        f"   ✅ Uspeshka: {money(p1_successful, bold=False)} (📦 <b>{p1_upakovka} ta</b> zakaz)\n"
+        f"   ❌ Otkaz: {money(p1_otkaz, bold=False)}\n"
+        f"   ⏳ Jarayonda: {money(p1_vproc, bold=False)}\n"
+        f"   💵 1-15 kunlik oylik: <b>{money(sal_1_15)}</b>\n\n"
+        "📅 <b>2-DAVR: 16-31 SANALAR (16-31 kunlik)</b>\n"
+        f"   💰 Jami savdo: {money(p2_sales, bold=False)}\n"
+        f"   ✅ Uspeshka: {money(p2_successful, bold=False)} (📦 <b>{p2_upakovka} ta</b> zakaz)\n"
+        f"   ❌ Otkaz: {money(p2_otkaz, bold=False)}\n"
+        f"   ⏳ Jarayonda: {money(p2_vproc, bold=False)}\n"
+        f"   💵 16-31 kunlik oylik: <b>{money(sal_16_31)}</b>\n\n"
+        "📊 <b>JAMI OYLIK MANZARA (OY BO'YICHA):</b>\n"
         f"💰 Jami savdo summasi: <b>{money(data.get('total_sales'))}</b>\n"
-        f"✅ Muvaffaqiyatli (Uspeshka): <b>{money(data.get('successful_sales'))}</b> (📦 <b>{data.get('upakovka', 0)} ta</b> zakaz)\n"
-        f"❌ Bekor qilingan (Otkaz): <b>{money(data.get('otkaz_sales'))}</b>\n"
-        f"⏳ Jarayondagi savdo: <b>{money(data.get('v_proc_sales'))}</b>\n\n"
-        "💵 <b>ISHLAB TOPILGAN OYLIK ISH HAQI:</b>\n"
-        f"📅 1-15 kunlik oylik: <b>{money(sal_1_15)}</b>\n"
-        f"📅 16-31 kunlik oylik: <b>{money(sal_16_31)}</b>\n"
-        f"💰 Jami ish haqi: <b>{money(earned_sal)}</b>"
+        f"✅ Jami uspeshka: <b>{money(data.get('successful_sales'))}</b> (📦 <b>{data.get('upakovka', 0)} ta</b> zakaz)\n"
+        f"❌ Jami otkaz: <b>{money(data.get('otkaz_sales'))}</b>\n"
+        f"⏳ Jami jarayonda: <b>{money(data.get('v_proc_sales'))}</b>\n"
+        f"💰 <b>JAMI ISHLAB TOPILGAN OYLIK: {money(earned_sal)}</b>"
     )
