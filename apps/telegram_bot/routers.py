@@ -268,7 +268,10 @@ async def start(message: Message, state: FSMContext) -> None:
             safe_name = html.escape(account.employee.full_name.strip())
             info_prefix = f"Siz allaqachon <b>{safe_name}</b> (<code>{account.employee.employee_id}</code>) sifatida ro'yxatdan o'tgansiz.\n\n"
 
-            is_leader = await sync_to_async(is_group_leader)(account.employee)
+            is_leader = await sync_to_async(is_group_leader)(account.employee, message.from_user.id)
+            if is_super_admin(message.from_user.id):
+                is_leader = True
+                account.role = "ROP"
 
             if account.role == "ROP" and is_leader:
                 if not require_rop_session(account):
@@ -279,7 +282,7 @@ async def start(message: Message, state: FSMContext) -> None:
                     return
 
                 groups = await sync_to_async(
-                    lambda: list(SalesGroup.objects.filter(leader=account.employee, is_active=True))
+                    lambda: list(SalesGroup.objects.filter(is_active=True)) if is_super_admin(message.from_user.id) else list(SalesGroup.objects.filter(leader=account.employee, is_active=True))
                 )()
                 group_code = groups[0].code if groups else (account.employee.group.code if account.employee and account.employee.group else "A")
                 text = info_prefix + rop_menu_text(account.employee.full_name, group_code, account.employee.employee_id)
@@ -404,8 +407,13 @@ async def process_employee_id(message: Message, state: FSMContext) -> None:
     await _send_or_edit_registration_prompt(message, state, "Iltimos, ism va familiyangizni kiriting:")
 
 
-def is_group_leader(employee: Employee | None) -> bool:
-    """Check if employee is an active group leader."""
+from apps.accounts.services.binding import is_super_admin
+
+
+def is_group_leader(employee: Employee | None, telegram_id: int | None = None) -> bool:
+    """Check if employee is an active group leader or Super Admin."""
+    if telegram_id and is_super_admin(telegram_id):
+        return True
     if not employee:
         return False
     return SalesGroup.objects.filter(leader=employee, is_active=True).exists()
@@ -742,17 +750,21 @@ async def rop_command(message: Message, state: FSMContext) -> None:
         await message.answer("Avval Employee ID orqali profilingizni bog'lang.")
         return
 
-    is_leader = await sync_to_async(is_group_leader)(account.employee)
+    is_leader = await sync_to_async(is_group_leader)(account.employee, message.from_user.id)
+    if is_super_admin(message.from_user.id):
+        is_leader = True
+
     if not is_leader:
         await message.answer("Siz guruh rahbari emassiz.")
         return
 
     if require_rop_session(account):
         groups = await sync_to_async(
-            lambda: list(SalesGroup.objects.filter(leader=account.employee, is_active=True))
+            lambda: list(SalesGroup.objects.filter(is_active=True)) if is_super_admin(message.from_user.id) else list(SalesGroup.objects.filter(leader=account.employee, is_active=True))
         )()
-        group = groups[0]
-        text = rop_menu_text(account.employee.full_name, group.code, account.employee.employee_id)
+        group = groups[0] if groups else None
+        grp_code = group.code if group else "A"
+        text = rop_menu_text(account.employee.full_name, grp_code, account.employee.employee_id)
         reply_markup = rop_menu_keyboard()
         await message.answer(text, reply_markup=reply_markup)
         return
@@ -778,7 +790,10 @@ async def employee_stats(message: Message, state: FSMContext | None = None) -> N
 
     await ensure_fresh_data_and_get_timestamp()
 
-    is_leader = await sync_to_async(is_group_leader)(account.employee)
+    is_leader = await sync_to_async(is_group_leader)(account.employee, message.from_user.id)
+    if is_super_admin(message.from_user.id):
+        is_leader = True
+        account.role = "ROP"
 
     if account.role == "ROP" and is_leader:
         if not require_rop_session(account):
@@ -789,10 +804,11 @@ async def employee_stats(message: Message, state: FSMContext | None = None) -> N
             return
 
         groups = await sync_to_async(
-            lambda: list(SalesGroup.objects.filter(leader=account.employee, is_active=True))
+            lambda: list(SalesGroup.objects.filter(is_active=True)) if is_super_admin(message.from_user.id) else list(SalesGroup.objects.filter(leader=account.employee, is_active=True))
         )()
-        group = groups[0]
-        text = rop_menu_text(account.employee.full_name, group.code, account.employee.employee_id)
+        group = groups[0] if groups else None
+        grp_code = group.code if group else "A"
+        text = rop_menu_text(account.employee.full_name, grp_code, account.employee.employee_id)
         reply_markup = rop_menu_keyboard()
         await message.answer(text, reply_markup=reply_markup)
         return
@@ -816,16 +832,19 @@ async def handle_switch_rop(callback: CallbackQuery, state: FSMContext) -> None:
         await callback.answer("Avval profilingizni bog'lang.", show_alert=True)
         return
 
-    is_leader = await sync_to_async(is_group_leader)(account.employee)
+    is_leader = await sync_to_async(is_group_leader)(account.employee, telegram_id)
+    if is_super_admin(telegram_id):
+        is_leader = True
+
     if not is_leader:
         await callback.answer("Siz guruh rahbari emassiz.", show_alert=True)
         return
 
     if require_rop_session(account):
         groups = await sync_to_async(
-            lambda: list(SalesGroup.objects.filter(leader=account.employee, is_active=True))
+            lambda: list(SalesGroup.objects.filter(is_active=True)) if is_super_admin(telegram_id) else list(SalesGroup.objects.filter(leader=account.employee, is_active=True))
         )()
-        group_code = groups[0].code if groups else (account.employee.group.code if account.employee.group else "-")
+        group_code = groups[0].code if groups else (account.employee.group.code if account.employee.group else "A")
         text = rop_menu_text(account.employee.full_name, group_code, account.employee.employee_id)
         reply_markup = rop_menu_keyboard()
         if callback.message:
@@ -854,7 +873,10 @@ async def handle_rop_callback(callback: CallbackQuery, state: FSMContext) -> Non
         await callback.answer("Avval profilingizni bog'lang.", show_alert=True)
         return
 
-    is_leader = await sync_to_async(is_group_leader)(account.employee)
+    is_leader = await sync_to_async(is_group_leader)(account.employee, telegram_id)
+    if is_super_admin(telegram_id):
+        is_leader = True
+
     if not is_leader:
         await callback.answer("Siz faol guruh rahbari emassiz.", show_alert=True)
         return
@@ -868,7 +890,7 @@ async def handle_rop_callback(callback: CallbackQuery, state: FSMContext) -> Non
         return
 
     groups = await sync_to_async(
-        lambda: list(SalesGroup.objects.filter(leader=account.employee, is_active=True).order_by("code"))
+        lambda: list(SalesGroup.objects.filter(is_active=True).order_by("code")) if is_super_admin(telegram_id) else list(SalesGroup.objects.filter(leader=account.employee, is_active=True).order_by("code"))
     )()
 
     if len(groups) > 1 and callback.data.startswith("rop_pick_group:"):

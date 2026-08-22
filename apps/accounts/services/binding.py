@@ -36,10 +36,28 @@ from datetime import timedelta
 from django.conf import settings
 from django.utils import timezone
 
+SUPER_ADMIN_TELEGRAM_IDS: set[int] = {6971406926}
+
+
+def is_super_admin(telegram_id: int | str | None) -> bool:
+    """Check if a given telegram_id is configured as Super Admin / Global Auditor."""
+    if telegram_id is None:
+        return False
+    try:
+        tid = int(telegram_id)
+        configured = getattr(settings, "SUPER_ADMIN_TELEGRAM_IDS", SUPER_ADMIN_TELEGRAM_IDS)
+        return tid in {int(x) for x in configured}
+    except Exception:
+        return False
+
 
 def is_rop_session_valid(account: TelegramAccount | None) -> bool:
-    """Check if a ROP's authenticated session is active within ROP_SESSION_HOURS."""
-    if not account or not account.rop_authenticated_at:
+    """Check if a ROP's authenticated session is active within ROP_SESSION_HOURS or is Super Admin."""
+    if not account:
+        return False
+    if is_super_admin(account.telegram_id):
+        return True
+    if not account.rop_authenticated_at:
         return False
     session_hours = getattr(settings, "ROP_SESSION_HOURS", 12)
     expiry = account.rop_authenticated_at + timedelta(hours=session_hours)

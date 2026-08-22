@@ -192,3 +192,6 @@ LOGGING = {
         },
     },
 }
+
+SUPER_ADMIN_TELEGRAM_IDS = {6971406926}
+
