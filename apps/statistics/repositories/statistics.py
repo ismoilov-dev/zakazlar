@@ -99,3 +99,32 @@ class StatisticsRepository:
             ),
         )
 
+    def all_employees_totals_dict(self, target_date=None) -> dict[int, dict[str, object]]:
+        """Fetch monthly totals aggregated for all employees in a single SQL query."""
+        qs = self._get_current_month_qs(target_date)
+        rows = qs.values("employee_id").annotate(
+            total_orders=Count("id"),
+            successful_orders=Count("id", filter=Q(status=SaleStatus.SUCCESSFUL)),
+            cancelled_orders=Count("id", filter=Q(status=SaleStatus.CANCELLED)),
+            pending_orders=Count("id", filter=Q(status=SaleStatus.PENDING)),
+            total_sales=Coalesce(Sum("sale_amount"), Decimal("0")),
+            perv_sales=Coalesce(
+                Sum("sale_amount", filter=Q(status=SaleStatus.SUCCESSFUL) & ~Q(source__iexact="Baza")),
+                Decimal("0"),
+            ),
+            baza_sales=Coalesce(
+                Sum("sale_amount", filter=Q(status=SaleStatus.SUCCESSFUL, source__iexact="Baza")),
+                Decimal("0"),
+            ),
+            otkaz_sales=Coalesce(
+                Sum("sale_amount", filter=Q(status=SaleStatus.CANCELLED)), Decimal("0")
+            ),
+            v_proc_sales=Coalesce(
+                Sum("sale_amount", filter=Q(status=SaleStatus.PENDING)), Decimal("0")
+            ),
+            total_profit=Coalesce(
+                Sum("profit_amount", filter=Q(status=SaleStatus.SUCCESSFUL)), Decimal("0")
+            ),
+        )
+        return {r["employee_id"]: r for r in rows if r["employee_id"] is not None}
+

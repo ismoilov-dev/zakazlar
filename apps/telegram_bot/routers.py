@@ -116,7 +116,7 @@ async def ensure_fresh_data_and_get_timestamp() -> tuple[str, bool]:
     last_successful = await sync_to_async(SyncLog.get_last_successful)(sync_type="payroll")
 
     should_sync = False
-    if not last_successful or not last_successful.finished_at or (now - last_successful.finished_at).total_seconds() > 15:
+    if not last_successful or not last_successful.finished_at or (now - last_successful.finished_at).total_seconds() > 60:
         should_sync = True
 
     if should_sync:
@@ -932,7 +932,8 @@ async def handle_super_admin_callback(callback: CallbackQuery, state: FSMContext
 
     if action in ("sa_dashboard", "sa_refresh"):
         await state.clear()
-        dash = await sync_to_async(sa_service.get_company_global_dashboard)()
+        force = (action == "sa_refresh")
+        dash = await sync_to_async(sa_service.get_company_global_dashboard)(force_refresh=force)
         text = super_admin_dashboard_text(dash) + footer
         reply_markup = super_admin_dashboard_keyboard()
         if callback.message:

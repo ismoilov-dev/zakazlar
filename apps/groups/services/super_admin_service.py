@@ -1,7 +1,10 @@
 import logging
 from decimal import Decimal
 from typing import Any
+
+from django.core.cache import cache
 from django.utils import timezone
+
 from apps.employees.models import Employee
 from apps.groups.models import SalesGroup
 from apps.groups.services.rop_service import RopService
@@ -9,14 +12,25 @@ from apps.statistics.repositories.statistics import StatisticsRepository
 
 logger = logging.getLogger(__name__)
 
+CACHE_TTL = 30
+
 
 class SuperAdminService:
     """Service to aggregate company-wide metrics and provide drill-down data for Super Admin."""
 
-    def get_company_global_dashboard(self) -> dict[str, Any]:
+    def get_company_global_dashboard(self, force_refresh: bool = False) -> dict[str, Any]:
         """Aggregate company-wide sales, orders, and salary metrics across all active groups & employees."""
+        cache_key = "sa_global_dashboard"
+        if not force_refresh:
+            cached = cache.get(cache_key)
+            if cached:
+                return cached
+
         groups = list(SalesGroup.objects.filter(is_active=True).order_by("code"))
         employees = list(Employee.objects.filter(is_active=True))
+
+        stats_repo = StatisticsRepository()
+        all_db_totals = stats_repo.all_employees_totals_dict()
 
         company_total_sales = Decimal("0.00")
         company_successful_sales = Decimal("0.00")
@@ -26,11 +40,9 @@ class SuperAdminService:
         company_upakovka = 0
         active_sellers_count = 0
 
-        stats_repo = StatisticsRepository()
-
         for emp in employees:
             s = emp.summary_data or {}
-            emp_tot = stats_repo.employee_totals(emp.id)
+            emp_tot = all_db_totals.get(emp.id)
 
             if emp_tot and emp_tot.get("total_orders", 0) > 0:
                 ts = emp_tot.get("total_sales") or Decimal("0.00")
@@ -57,7 +69,7 @@ class SuperAdminService:
             if ts > Decimal("0"):
                 active_sellers_count += 1
 
-        return {
+        data = {
             "groups_count": len(groups),
             "total_employees": len(employees),
             "active_sellers_count": active_sellers_count,
@@ -68,9 +80,17 @@ class SuperAdminService:
             "company_earned_salary": company_earned_salary,
             "company_upakovka": company_upakovka,
         }
+        cache.set(cache_key, data, CACHE_TTL)
+        return data
 
-    def get_all_groups_summary(self) -> list[dict[str, Any]]:
+    def get_all_groups_summary(self, force_refresh: bool = False) -> list[dict[str, Any]]:
         """Return summary of each active sales group."""
+        cache_key = "sa_groups_summary"
+        if not force_refresh:
+            cached = cache.get(cache_key)
+            if cached:
+                return cached
+
         groups = SalesGroup.objects.filter(is_active=True).order_by("code")
         rop_service = RopService()
         result = []
@@ -91,17 +111,25 @@ class SuperAdminService:
                 "active_count": stats.get("active_count", 0),
             })
 
+        cache.set(cache_key, result, CACHE_TTL)
         return result
 
-    def get_company_employees_sorted(self) -> list[dict[str, Any]]:
+    def get_company_employees_sorted(self, force_refresh: bool = False) -> list[dict[str, Any]]:
         """Return all active company employees sorted by sales descending."""
+        cache_key = "sa_employees_sorted"
+        if not force_refresh:
+            cached = cache.get(cache_key)
+            if cached:
+                return cached
+
         employees = Employee.objects.filter(is_active=True).select_related("group")
         stats_repo = StatisticsRepository()
+        all_db_totals = stats_repo.all_employees_totals_dict()
         items = []
 
         for emp in employees:
             s = emp.summary_data or {}
-            emp_tot = stats_repo.employee_totals(emp.id)
+            emp_tot = all_db_totals.get(emp.id)
 
             if emp_tot and emp_tot.get("total_orders", 0) > 0:
                 sales_val = emp_tot.get("total_sales") or Decimal("0.00")
@@ -124,6 +152,7 @@ class SuperAdminService:
             })
 
         items.sort(key=lambda x: (x["sales_val"], x["salary_val"]), reverse=True)
+        cache.set(cache_key, items, CACHE_TTL)
         return items
 
     def search_employees(self, query: str) -> list[dict[str, Any]]:
