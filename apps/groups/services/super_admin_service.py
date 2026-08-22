@@ -134,21 +134,52 @@ class SuperAdminService:
             if emp_tot and emp_tot.get("total_orders", 0) > 0:
                 sales_val = emp_tot.get("total_sales") or Decimal("0.00")
                 orders_val = emp_tot.get("successful_orders") or 0
+                successful_sales = (emp_tot.get("perv_sales") or Decimal("0.00")) + (emp_tot.get("baza_sales") or Decimal("0.00"))
+                otkaz_sales = emp_tot.get("otkaz_sales") or Decimal("0.00")
+                v_proc_sales = emp_tot.get("v_proc_sales") or Decimal("0.00")
             else:
                 sales_val, orders_val, _ = RopService.parse_employee_sales_data(s)
                 sales_val = sales_val or Decimal("0.00")
                 orders_val = orders_val or 0
+                successful_sales = self._parse_decimal(s.get("successful_sales"))
+                otkaz_sales = self._parse_decimal(s.get("otkaz_sales"))
+                v_proc_sales = self._parse_decimal(s.get("v_proc_sales"))
 
-            salary_val = self._parse_decimal(s.get("earned_salary"))
+            sal_1_15 = self._parse_decimal(s.get("salary_1_15"))
+            sal_16_31 = self._parse_decimal(s.get("salary_16_31"))
+            earned_sal = self._parse_decimal(s.get("earned_salary"))
+
+            if (sal_1_15 is None or sal_1_15 == Decimal("0.00")) and (sal_16_31 is None or sal_16_31 == Decimal("0.00")):
+                if earned_sal > Decimal("0.00"):
+                    import calendar
+                    from decimal import ROUND_HALF_UP
+                    target_dt = timezone.localtime().date()
+                    num_days = calendar.monthrange(target_dt.year, target_dt.month)[1]
+                    sal_1_15 = (earned_sal * Decimal("15") / Decimal(str(num_days))).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+                    sal_16_31 = earned_sal - sal_1_15
+            elif sal_1_15 is not None and sal_1_15 > Decimal("0.00") and (sal_16_31 is None or sal_16_31 == Decimal("0.00")):
+                if earned_sal > sal_1_15:
+                    sal_16_31 = earned_sal - sal_1_15
+            elif sal_16_31 is not None and sal_16_31 > Decimal("0.00") and (sal_1_15 is None or sal_1_15 == Decimal("0.00")):
+                if earned_sal > sal_16_31:
+                    sal_1_15 = earned_sal - sal_16_31
+
             group_code = emp.group.code if emp.group else "—"
 
             items.append({
                 "employee_id": emp.employee_id,
                 "full_name": emp.full_name,
                 "group_code": group_code,
+                "group_name": emp.group.name if emp.group else "",
                 "sales_val": sales_val,
+                "successful_sales": successful_sales,
+                "otkaz_sales": otkaz_sales,
+                "v_proc_sales": v_proc_sales,
                 "orders_val": orders_val,
-                "salary_val": salary_val,
+                "salary_val": earned_sal,
+                "salary_1_15": sal_1_15,
+                "salary_16_31": sal_16_31,
+                "earned_salary": earned_sal,
             })
 
         items.sort(key=lambda x: (x["sales_val"], x["salary_val"]), reverse=True)
@@ -172,84 +203,31 @@ class SuperAdminService:
 
     def get_employee_detail(self, query: str) -> dict[str, Any] | None:
         """Fetch complete detailed metrics for a single employee matching query ID or name."""
-        from django.db.models import Q
         from apps.imports.dto import normalize_employee_id
 
-        q = query.strip()
+        q = query.strip().lower()
         norm_q = normalize_employee_id(q)
 
-        emp = (
-            Employee.objects.filter(is_active=True)
-            .select_related("group")
-            .filter(
-                Q(employee_id__iexact=q)
-                | Q(employee_id__iexact=norm_q)
-                | Q(full_name__icontains=q)
-            )
-            .first()
-        )
-
-        if not emp:
-            emp = (
-                Employee.objects.filter(is_active=True)
-                .select_related("group")
-                .filter(Q(employee_id__icontains=q) | Q(employee_id__endswith=norm_q))
-                .first()
-            )
-
-        if not emp:
-            return None
-
-        stats_repo = StatisticsRepository()
-        emp_tot = stats_repo.employee_totals(emp.id)
-        s = emp.summary_data or {}
-
-        if emp_tot and emp_tot.get("total_orders", 0) > 0:
-            ts = emp_tot.get("total_sales") or Decimal("0.00")
-            ss = (emp_tot.get("perv_sales") or Decimal("0.00")) + (emp_tot.get("baza_sales") or Decimal("0.00"))
-            os = emp_tot.get("otkaz_sales") or Decimal("0.00")
-            vp = emp_tot.get("v_proc_sales") or Decimal("0.00")
-            upk = emp_tot.get("successful_orders") or 0
-        else:
-            ts = self._parse_decimal(s.get("total_sales"))
-            ss = self._parse_decimal(s.get("successful_sales"))
-            os = self._parse_decimal(s.get("otkaz_sales"))
-            vp = self._parse_decimal(s.get("v_proc_sales"))
-            upk = self._parse_int(s.get("successful_orders"))
-
-        sal_1_15 = self._parse_decimal(s.get("salary_1_15"))
-        sal_16_31 = self._parse_decimal(s.get("salary_16_31"))
-        earned_sal = self._parse_decimal(s.get("earned_salary"))
-
-        if (sal_1_15 is None or sal_1_15 == Decimal("0.00")) and (sal_16_31 is None or sal_16_31 == Decimal("0.00")):
-            if earned_sal > Decimal("0.00"):
-                import calendar
-                from decimal import ROUND_HALF_UP
-                target_dt = timezone.localtime().date()
-                num_days = calendar.monthrange(target_dt.year, target_dt.month)[1]
-                sal_1_15 = (earned_sal * Decimal("15") / Decimal(str(num_days))).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
-                sal_16_31 = earned_sal - sal_1_15
-        elif sal_1_15 is not None and sal_1_15 > Decimal("0.00") and (sal_16_31 is None or sal_16_31 == Decimal("0.00")):
-            if earned_sal > sal_1_15:
-                sal_16_31 = earned_sal - sal_1_15
-        elif sal_16_31 is not None and sal_16_31 > Decimal("0.00") and (sal_1_15 is None or sal_1_15 == Decimal("0.00")):
-            if earned_sal > sal_16_31:
-                sal_1_15 = earned_sal - sal_16_31
-
-        return {
-            "employee_id": emp.employee_id,
-            "full_name": emp.full_name,
-            "group_code": emp.group.code if emp.group else "—",
-            "group_name": emp.group.name if emp.group else "",
-            "total_sales": ts,
-            "successful_sales": ss,
-            "otkaz_sales": os,
-            "v_proc_sales": vp,
-            "upakovka": upk,
-            "salary_1_15": sal_1_15,
-            "salary_16_31": sal_16_31,
-            "earned_salary": earned_sal,
-        }
+        all_emps = self.get_company_employees_sorted()
+        for e in all_emps:
+            e_id = e["employee_id"].lower()
+            norm_e_id = normalize_employee_id(e_id)
+            if q == e_id or (norm_q and norm_q == norm_e_id) or q in e["full_name"].lower():
+                return {
+                    "employee_id": e["employee_id"],
+                    "full_name": e["full_name"],
+                    "group_code": e["group_code"],
+                    "group_name": e.get("group_name", ""),
+                    "total_sales": e["sales_val"],
+                    "successful_sales": e["successful_sales"],
+                    "otkaz_sales": e["otkaz_sales"],
+                    "v_proc_sales": e["v_proc_sales"],
+                    "upakovka": e["orders_val"],
+                    "salary_1_15": e["salary_1_15"],
+                    "salary_16_31": e["salary_16_31"],
+                    "earned_salary": e["earned_salary"],
+                }
+        return None
 
     @staticmethod
     def _parse_decimal(raw: Any) -> Decimal:
