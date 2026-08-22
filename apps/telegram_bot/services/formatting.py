@@ -612,16 +612,33 @@ def rop_menu_text(full_name: str, group_code: str, employee_id: str) -> str:
     )
 
 
-def rop_menu_keyboard() -> InlineKeyboardMarkup:
-    """Render ROP main menu inline keyboard."""
+def rop_menu_keyboard(groups: list[Any] | None = None, selected_group_id: int | None = None) -> InlineKeyboardMarkup:
+    """Render ROP main menu inline keyboard with dynamic group selector buttons."""
     builder = InlineKeyboardBuilder()
+
+    if groups and len(groups) > 1:
+        for g in groups:
+            is_selected = (selected_group_id == g.id) or (selected_group_id is None and g == groups[0])
+            prefix = "✅ " if is_selected else "🏢 "
+            builder.button(text=f"{prefix}{g.code}", callback_data=f"rop_pick_group:{g.id}")
+
     builder.button(text="📊 GURUH SAVDOSI", callback_data="rop_card:group_sales")
     builder.button(text="📈 GURUH STATS", callback_data="rop_card:group_stats")
     builder.button(text="💵 ROP OYLIK", callback_data="rop_card:rop_salary")
     builder.button(text="💰 MOP OYLIK", callback_data="rop_card:mop_salary")
     builder.button(text="👥 XODIMLAR RO'YXATI", callback_data="rop_card:employee_list")
     builder.button(text="👤 SHAXSIY XIZMATLAR", callback_data="rop_card:mop_xizmatlar")
-    builder.adjust(2, 2, 1, 1)
+
+    if groups and len(groups) > 1:
+        rows = []
+        num_g = len(groups)
+        for i in range(0, num_g, 3):
+            rows.append(min(3, num_g - i))
+        rows.extend([2, 2, 1, 1])
+        builder.adjust(*rows)
+    else:
+        builder.adjust(2, 2, 1, 1)
+
     return builder.as_markup()
 
 
@@ -714,11 +731,16 @@ def rop_employee_list_card_text(
     return "\n".join(lines)
 
 
-def rop_card_keyboard() -> InlineKeyboardMarkup:
-    """Render back button for ROP cards."""
+def rop_card_keyboard(has_multiple_groups: bool = False) -> InlineKeyboardMarkup:
+    """Render back and group selection buttons for ROP cards."""
     builder = InlineKeyboardBuilder()
+    if has_multiple_groups:
+        builder.button(text="🔄 Bo'limni almashtirish", callback_data="rop_select_group")
     builder.button(text="⬅️ Xizmatlarga qaytish", callback_data="rop_menu")
-    builder.adjust(1)
+    if has_multiple_groups:
+        builder.adjust(1, 1)
+    else:
+        builder.adjust(1)
     return builder.as_markup()
 
 

@@ -289,11 +289,15 @@ async def start(message: Message, state: FSMContext) -> None:
                     return
 
                 groups = await sync_to_async(
-                    lambda: list(SalesGroup.objects.filter(is_active=True)) if is_super_admin(message.from_user.id) else list(SalesGroup.objects.filter(leader=account.employee, is_active=True))
+                    lambda: list(SalesGroup.objects.filter(is_active=True).order_by("code")) if is_super_admin(message.from_user.id) else list(SalesGroup.objects.filter(leader=account.employee, is_active=True).order_by("code"))
                 )()
-                group_code = groups[0].code if groups else (account.employee.group.code if account.employee and account.employee.group else "A")
+                data = await state.get_data()
+                sel_id = data.get("selected_group_id")
+                sel_grp = next((g for g in groups if g.id == sel_id), None) if sel_id else None
+                group = sel_grp if sel_grp else (groups[0] if groups else None)
+                group_code = group.code if group else (account.employee.group.code if account.employee and account.employee.group else "A")
                 text = info_prefix + rop_menu_text(account.employee.full_name, group_code, account.employee.employee_id)
-                reply_markup = rop_menu_keyboard()
+                reply_markup = rop_menu_keyboard(groups=groups, selected_group_id=group.id if group else None)
                 await message.answer(text, reply_markup=reply_markup)
                 return
 
@@ -773,12 +777,15 @@ async def rop_command(message: Message, state: FSMContext) -> None:
 
     if require_rop_session(account):
         groups = await sync_to_async(
-            lambda: list(SalesGroup.objects.filter(is_active=True)) if is_super_admin(message.from_user.id) else list(SalesGroup.objects.filter(leader=account.employee, is_active=True))
+            lambda: list(SalesGroup.objects.filter(is_active=True).order_by("code")) if is_super_admin(message.from_user.id) else list(SalesGroup.objects.filter(leader=account.employee, is_active=True).order_by("code"))
         )()
-        group = groups[0] if groups else None
+        data = await state.get_data()
+        sel_id = data.get("selected_group_id")
+        sel_grp = next((g for g in groups if g.id == sel_id), None) if sel_id else None
+        group = sel_grp if sel_grp else (groups[0] if groups else None)
         grp_code = group.code if group else "A"
         text = rop_menu_text(account.employee.full_name, grp_code, account.employee.employee_id)
-        reply_markup = rop_menu_keyboard()
+        reply_markup = rop_menu_keyboard(groups=groups, selected_group_id=group.id if group else None)
         await message.answer(text, reply_markup=reply_markup)
         return
 
@@ -820,12 +827,15 @@ async def employee_stats(message: Message, state: FSMContext | None = None) -> N
             return
 
         groups = await sync_to_async(
-            lambda: list(SalesGroup.objects.filter(is_active=True)) if is_super_admin(message.from_user.id) else list(SalesGroup.objects.filter(leader=account.employee, is_active=True))
+            lambda: list(SalesGroup.objects.filter(is_active=True).order_by("code")) if is_super_admin(message.from_user.id) else list(SalesGroup.objects.filter(leader=account.employee, is_active=True).order_by("code"))
         )()
-        group = groups[0] if groups else None
+        data = await state.get_data() if state is not None else {}
+        sel_id = data.get("selected_group_id")
+        sel_grp = next((g for g in groups if g.id == sel_id), None) if sel_id else None
+        group = sel_grp if sel_grp else (groups[0] if groups else None)
         grp_code = group.code if group else "A"
         text = rop_menu_text(account.employee.full_name, grp_code, account.employee.employee_id)
-        reply_markup = rop_menu_keyboard()
+        reply_markup = rop_menu_keyboard(groups=groups, selected_group_id=group.id if group else None)
         await message.answer(text, reply_markup=reply_markup)
         return
 
@@ -861,11 +871,15 @@ async def handle_switch_rop(callback: CallbackQuery, state: FSMContext) -> None:
 
     if require_rop_session(account):
         groups = await sync_to_async(
-            lambda: list(SalesGroup.objects.filter(is_active=True)) if is_super_admin(telegram_id) else list(SalesGroup.objects.filter(leader=account.employee, is_active=True))
+            lambda: list(SalesGroup.objects.filter(is_active=True).order_by("code")) if is_super_admin(telegram_id) else list(SalesGroup.objects.filter(leader=account.employee, is_active=True).order_by("code"))
         )()
-        group_code = groups[0].code if groups else (account.employee.group.code if account.employee.group else "A")
+        data = await state.get_data()
+        sel_id = data.get("selected_group_id")
+        sel_grp = next((g for g in groups if g.id == sel_id), None) if sel_id else None
+        group = sel_grp if sel_grp else (groups[0] if groups else None)
+        group_code = group.code if group else (account.employee.group.code if account.employee.group else "A")
         text = rop_menu_text(account.employee.full_name, group_code, account.employee.employee_id)
-        reply_markup = rop_menu_keyboard()
+        reply_markup = rop_menu_keyboard(groups=groups, selected_group_id=group.id if group else None)
         if callback.message:
             await callback.message.edit_text(text, reply_markup=reply_markup)
         await callback.answer()
@@ -915,29 +929,28 @@ async def handle_rop_callback(callback: CallbackQuery, state: FSMContext) -> Non
         lambda: list(SalesGroup.objects.filter(is_active=True).order_by("code")) if is_super_admin(telegram_id) else list(SalesGroup.objects.filter(leader=account.employee, is_active=True).order_by("code"))
     )()
 
-    if len(groups) > 1 and callback.data.startswith("rop_pick_group:"):
+    action = callback.data
+
+    if callback.data == "rop_select_group":
+        builder = InlineKeyboardBuilder()
+        for g in groups:
+            builder.button(text=f"🏢 {g.name} ({g.code})", callback_data=f"rop_pick_group:{g.id}")
+        builder.button(text="⬅️ Xizmatlarga qaytish", callback_data="rop_menu")
+        builder.adjust(1)
+        if callback.message:
+            await callback.message.edit_text("<b>Ko'rmoqchi bo'lgan bo'limni tanlang:</b>", reply_markup=builder.as_markup())
+        await callback.answer()
+        return
+
+    if callback.data.startswith("rop_pick_group:"):
         group_id_str = callback.data.split(":", 1)[1]
         selected = next((g for g in groups if str(g.id) == group_id_str), None)
         if selected:
             await state.update_data(selected_group_id=selected.id)
             group = selected
+            action = "rop_menu"
         else:
             await callback.answer("Ruxsat berilmagan guruh.", show_alert=True)
-            return
-    elif len(groups) > 1 and not callback.data.startswith("rop_card:") and not callback.data.startswith("rop_emp_filter:"):
-        data = await state.get_data()
-        selected_id = data.get("selected_group_id")
-        selected = next((g for g in groups if g.id == selected_id), None)
-        if selected:
-            group = selected
-        else:
-            builder = InlineKeyboardBuilder()
-            for g in groups:
-                builder.button(text=f"🏢 {g.name} ({g.code})", callback_data=f"rop_pick_group:{g.id}")
-            builder.adjust(1)
-            if callback.message:
-                await callback.message.edit_text("<b>Guruhni tanlang:</b>", reply_markup=builder.as_markup())
-            await callback.answer()
             return
     else:
         data = await state.get_data()
@@ -945,26 +958,25 @@ async def handle_rop_callback(callback: CallbackQuery, state: FSMContext) -> Non
         selected = next((g for g in groups if g.id == selected_id), None)
         group = selected if selected else groups[0]
 
-
-    action = callback.data
     ts_str, is_stale = await ensure_fresh_data_and_get_timestamp()
     footer = format_footer(ts_str, is_stale)
+    has_multiple_groups = len(groups) > 1
 
     if action == "rop_menu":
         text = rop_menu_text(account.employee.full_name, group.code, account.employee.employee_id)
-        keyboard = rop_menu_keyboard()
+        keyboard = rop_menu_keyboard(groups=groups, selected_group_id=group.id)
     elif action == "rop_card:group_sales":
         totals = await sync_to_async(RopService().get_group_sales_totals)(group)
         text = rop_group_sales_card_text(group.code, totals) + footer
-        keyboard = rop_card_keyboard()
+        keyboard = rop_card_keyboard(has_multiple_groups=has_multiple_groups)
     elif action == "rop_card:group_stats":
         stats = await sync_to_async(RopService().get_group_stats)(group)
         text = rop_group_stats_card_text(group.code, stats) + footer
-        keyboard = rop_card_keyboard()
+        keyboard = rop_card_keyboard(has_multiple_groups=has_multiple_groups)
     elif action == "rop_card:rop_salary":
         salary_info = await sync_to_async(RopService().calculate_rop_salary)(group)
         text = rop_salary_card_text(group.code, salary_info) + footer
-        keyboard = rop_card_keyboard()
+        keyboard = rop_card_keyboard(has_multiple_groups=has_multiple_groups)
     elif action == "rop_card:mop_salary":
         text = (
             card_text(
@@ -976,7 +988,7 @@ async def handle_rop_callback(callback: CallbackQuery, state: FSMContext) -> Non
             )
             + footer
         )
-        keyboard = rop_card_keyboard()
+        keyboard = rop_card_keyboard(has_multiple_groups=has_multiple_groups)
     elif action == "rop_card:mop_xizmatlar":
         text = xizmatlar_menu_text()
         keyboard = xizmatlar_menu_keyboard(show_rop_switch=True, src="rop")
