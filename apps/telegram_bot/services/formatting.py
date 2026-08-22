@@ -815,7 +815,7 @@ def super_admin_dashboard_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text="🏢 Bo'limlar kesimida (A, B, C...)", callback_data="sa_groups")
     builder.button(text="👥 Barcha xodimlar va oyliklar", callback_data="sa_emp_page:1")
-    builder.button(text="🔍 Xodimni qidirish", callback_data="sa_search_prompt")
+    builder.button(text="🔍 Xodimni ID bo'yicha qidirish", callback_data="sa_search_prompt")
     builder.button(text="🔄 Ma'lumotlarni yangilash", callback_data="sa_refresh")
     builder.adjust(1, 1, 1, 1)
     return builder.as_markup()
@@ -881,7 +881,7 @@ def super_admin_employee_list_keyboard(page: int, total_pages: int) -> InlineKey
         if page < total_pages:
             builder.button(text="Keyingi ➡️", callback_data=f"sa_emp_page:{page + 1}")
 
-    builder.button(text="🔍 Xodimni qidirish", callback_data="sa_search_prompt")
+    builder.button(text="🔍 Xodimni ID bo'yicha qidirish", callback_data="sa_search_prompt")
     builder.button(text="🏠 Bosh sahifaga qaytish", callback_data="sa_dashboard")
 
     if total_pages > 1:

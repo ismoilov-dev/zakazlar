@@ -1000,8 +1000,8 @@ async def handle_super_admin_callback(callback: CallbackQuery, state: FSMContext
         builder.adjust(1)
         if callback.message:
             await callback.message.edit_text(
-                "🔍 <b>Xodimni qidirish:</b>\n\n"
-                "Xodim ismi yoki ID raqamini kiriting (masalan: <i>Umidjon</i> yoki <i>0178</i>):",
+                "🔍 <b>Xodimni ID raqami bo'yicha qidirish:</b>\n\n"
+                "Iltimos, xodimning <b>ID raqamini</b> kiriting (masalan: <code>0015</code> yoki <code>0178</code>):",
                 reply_markup=builder.as_markup(),
             )
         await callback.answer()
